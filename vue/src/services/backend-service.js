@@ -16,7 +16,6 @@ export async function startThread() {
 export async function sendMessage(threadId, message, files) {
     try {
         const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files });
-        console.log("Backend response:", result);
         return {
             response: result.data.response,
             references: result.data.references

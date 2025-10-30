@@ -1,12 +1,12 @@
 import logging
-
-# Suppress Azure SDK and HTTP logging
-logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-logging.getLogger("azure").setLevel(logging.WARNING)
 from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client
+
+# Suppress Azure SDK and HTTP logging
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')

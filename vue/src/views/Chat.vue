@@ -83,12 +83,10 @@
         })
 
         // Send message to backend
-        console.log("Sending file data to backend:", files)
         awaitingResponse.value = true
         const { response, references } = await sendMessage(threadId.value, message, files)
 
         // Response received from backend
-        console.log("Backend response:", response, references)
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
         const assistantMessage = new ChatMessage(
             'assistant',
