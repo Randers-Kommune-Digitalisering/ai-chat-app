@@ -1,7 +1,5 @@
 import datetime
-import time
 import re
-from utils.api_requests import APIClient
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
@@ -28,9 +26,7 @@ from utils.config import (
     TOP_P_VALUE,
     TEMPERATURE_VALUE,
     TOP_N_DOCUMENTS,
-    SEARCH_STRICTNESS,
-
-    AZURE_API_VERSION_FILES
+    SEARCH_STRICTNESS
 )
 
 

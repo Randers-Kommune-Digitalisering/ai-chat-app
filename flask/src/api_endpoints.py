@@ -12,6 +12,7 @@ def create_thread():
     thread_id = azure_client.create_thread()
     return jsonify({"success": True, "message": "Thread created successfully", "thread_id": thread_id})
 
+
 @api_endpoints.route('/threads/<thread_id>/messages', methods=['POST'])
 def create_message(thread_id):
     message = request.json.get("message")
