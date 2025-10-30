@@ -10,8 +10,52 @@ DEBUG = os.getenv('DEBUG', 'False') in ['True', 'true']
 PORT = os.getenv('PORT', '8080')
 POD_NAME = os.getenv('POD_NAME', 'pod_name_not_set')
 
-# DB_USER = os.environ["DB_USER"].strip()
-# DB_PASS = os.environ["DB_PASS"].strip()
-# DB_HOST = os.environ["DB_HOST"].strip()
-# DB_PORT = os.environ["DB_PORT"].strip()
-# DB_DATABASE = os.environ["DB_DATABASE"].strip()
+AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '').strip()
+AZURE_CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET', '').strip()
+AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID', '').strip()
+
+AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY').strip()
+AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT').strip()
+AZURE_OPENAI_DEPLOYMENT_NAME = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME').strip()
+AZURE_AISEARCH_ENDPOINT = os.environ.get('AZURE_AISEARCH_ENDPOINT', '').strip()
+AZURE_AISEARCH_INDEX_NAME = os.environ.get('AZURE_AISEARCH_INDEX_NAME', '').strip()
+AZURE_AISEARCH_SEMANTIC_CONFIG = os.environ.get('AZURE_AISEARCH_SEMANTIC_CONFIG', 'default-semantic-config').strip()
+AZURE_AIFOUNDRY_PROJECT_NAME = os.environ.get('AZURE_AIFOUNDRY_PROJECT_NAME', '').strip()  # Used for Agents only
+AZURE_API_VERSION_OPENAI = os.environ.get('AZURE_API_VERSION_OPENAI', '2024-12-01-preview').strip()
+AZURE_API_VERSION_VECTORS = os.environ.get('AZURE_API_VERSION_VECTORS', '2025-03-01-preview').strip()
+AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
+
+ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
+ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent, Assistant or Chat
+ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
+if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
+    ASSISTANT_ID = ASSISTANT_ID.strip()
+ASSISTANT_VECTOR_STORE_ID = os.environ.get('AZURE_VECTOR_STORE_ID', '').strip()  # Used for assistants with vector stores only
+
+SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
+PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
+
+EMPHASIZE_RECENT_CONTENT = os.environ.get('EMPHASIZE_RECENT_CONTENT', 'True') in ['True', 'true']
+USE_GENERAL_KNOWLEDGE = os.environ.get('USE_GENERAL_KNOWLEDGE', 'True') in ['True', 'true']
+try:
+    TOP_P_VALUE = float(os.environ.get('TOP_P_VALUE', 0.8))
+except ValueError:
+    TOP_P_VALUE = 0.8
+try:
+    TEMPERATURE_VALUE = float(os.environ.get('TEMPERATURE_VALUE', 0.2))
+except ValueError:
+    TEMPERATURE_VALUE = 0.2
+try:
+    TOP_N_DOCUMENTS = int(os.environ.get('TOP_N_DOCUMENTS', 10))
+except ValueError:
+    TOP_N_DOCUMENTS = 10
+try:
+    SEARCH_STRICTNESS = int(os.environ.get('SEARCH_STRICTNESS', 3))
+except ValueError:
+    SEARCH_STRICTNESS = 3
+
+FEEDBACK_MAIL_API_URL = os.environ.get('FEEDBACK_MAIL_API_URL').strip()
+FEEDBACK_MAIL_API_RECIPIENT = os.environ.get('FEEDBACK_MAIL_API_RECIPIENT').strip()
+FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
+
+ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
