@@ -1,0 +1,73 @@
+<script setup>
+    import { computed } from 'vue'
+
+    const props = defineProps({
+        type: {
+            type: String,
+            default: 'info',
+            validator: (value) => ['transparent', 'info', 'warning', 'error'].includes(value)
+        },
+        message: {
+            type: String,
+            required: true
+        }
+    })
+
+    const typeClass = computed(() => `alert--${props.type}`)
+
+    const icon = computed(() => {
+        switch (props.type) {
+            case 'warning': return 'exclamation-triangle'
+            case 'error': return 'times-circle'
+            default: return 'info-circle'
+        }
+    })
+</script>
+
+<template>
+    <div :class="['alert', typeClass]">
+        <i :class="`fa-solid fa-${icon}`"></i>
+        <span class="alert__message">{{ message }}</span>
+    </div>
+</template>
+
+<style scoped>
+    .alert {
+        display: flex;
+        align-items: center;
+        padding: 0.75em 1em;
+        border-radius: 0.25rem;
+        margin: 0.5em 0;
+        transform: translateY(-0.7rem);
+        font-size: 1rem;
+        z-index: 11 !important;
+    }
+    .alert i {
+        margin-right: 0.8rem;
+        font-size: 0.9em;
+    }
+    .alert__icon {
+        margin-right: 0.5em;
+        font-size: 1.2em;
+    }
+    .alert--transparent {
+        background: transparent;
+        border: none;
+        color: var(--color-text-faded);
+        border-bottom: 0.05rem solid var(--color-toolbar-border);
+        border-radius: 0;
+        padding-bottom: 1.4rem;
+    }
+    .alert--info {
+        border-left: 0.25rem solid #2196f3;
+        background: #2195f32f;
+    }
+    .alert--warning {
+        border-left: 4px solid #ff9800;
+        background: #ff99032f;
+    }
+    .alert--error {
+        border-left: 4px solid #f44336;
+        background: #f443332f;
+    }
+</style>
