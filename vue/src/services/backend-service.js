@@ -2,8 +2,11 @@ import axios from 'axios';
 
 export async function startThread() {
     try {
-        const response = await axios.post('/api/threads');
-        return response.data;
+        const result = await axios.post('/api/threads');
+        if (!result.data.thread_id) {
+            throw new Error("No thread_id returned from backend");
+        }
+        return result.data.thread_id;
     } catch (error) {
         console.error("Error starting thread:", error);
         throw error;
@@ -12,8 +15,12 @@ export async function startThread() {
 
 export async function sendMessage(threadId, message, files) {
     try {
-        const response = await axios.post('/api/messages', { threadId, message, files });
-        return response.data;
+        const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files });
+        console.log("Backend response:", result);
+        return {
+            response: result.data.response,
+            references: result.data.references
+        }
     } catch (error) {
         console.error("Error sending message:", error);
         throw error;

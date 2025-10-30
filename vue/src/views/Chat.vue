@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendMessage } from '../services/backend-demo.js'
+    import { startThread, sendMessage } from '../services/backend-service.js'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
@@ -63,6 +63,16 @@
     }
 
     async function addChatMessage(message, files) {
+        // Create thread if not exists
+        if (!threadId.value) {
+            threadId.value = await startThread()
+            console.log("Started new thread with ID:", threadId.value)
+            if (!threadId.value) {
+                console.error("Failed to start new thread.")
+                return
+            }
+        }
+
         // Add user message to state
         const newMessage = new ChatMessage('user', message, [], files)
         chatMessages.value.push(newMessage)
@@ -82,7 +92,7 @@
         const assistantMessage = new ChatMessage(
             'assistant',
             response,
-            references.map(ref => new Reference(ref.title, ref.link)),
+            references.map(ref => new Reference("[" + ref.refs[0] + "] " + ref.title, ref.url)),
             [],
             timeSpent
         )

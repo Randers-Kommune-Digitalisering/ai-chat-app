@@ -78,9 +78,6 @@ class AzureOpenAIClient:
 
         return system_prompt
 
-    def clear_thread(self):
-        pass  # To be overridden in subclasses where needed
-
     @staticmethod
     def sort_refs(match):
         refs = re.findall(r'\[(\d+)\]', match.group(0))
@@ -88,11 +85,11 @@ class AzureOpenAIClient:
         return ''.join(f'[{ref}]' for ref in sorted_refs)
 
 
-class Chat(AzureOpenAIClient):
+class Chat(AzureOpenAIClient):  # TODO: Fix method signature to match Agent
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages):
+    def fetch_chat_response(self, thread_id, chat_messages, files):
         ai_search_body = {
             "data_sources": [
                 {
@@ -277,6 +274,3 @@ class Agent(Chat):
     def create_thread(self):
         thread = self.project.agents.threads.create()
         return thread.id
-
-    def clear_thread(self):
-        pass

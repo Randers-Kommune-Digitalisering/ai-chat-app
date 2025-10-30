@@ -1,5 +1,6 @@
 <script setup>
 import { ref, defineEmits, defineProps } from 'vue'
+const ASSISTANT_NAME = import.meta.env.VITE_ASSISTANT_NAME || "AI Assistent";
 
 const props = defineProps({
     showStartNewChat: {
@@ -35,7 +36,7 @@ function clearChat() {
 </script>
 <template>
     <div class="header">
-        <div class="header-title">AI Assistent</div>
+        <div class="header-title">{{ ASSISTANT_NAME }}</div>
         <div
             :class="['header-action', { 'hidden': !showStartNewChat }]"
             @click="clearChat(); triggerRotate()"

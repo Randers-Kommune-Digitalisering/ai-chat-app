@@ -25,4 +25,4 @@ def create_message(thread_id):
     if not response:
         return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
 
-    return jsonify({"success": True, "data": response, "references": refs})
+    return jsonify({"success": True, "response": response, "references": refs})
