@@ -41,7 +41,20 @@
         uploadFiles(files)
     }
 
-    function uploadFiles(files, simulateDrop = false) {
+    async function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // Remove the data:*/*;base64, prefix if present
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function uploadFiles(files, simulateDrop = false) {
         if (simulateDrop) {
             fileDropped.value = true
             setTimeout(() => {
@@ -50,7 +63,16 @@
         }
         const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
         if (acceptedFiles.length > 0) {
-            emit('files-dropped', acceptedFiles)
+            // Read all files as base64
+            const filesWithContent = await Promise.all(
+                acceptedFiles.map(async file => ({
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    content: await readFileAsBase64(file)
+                }))
+            );
+            emit('files-dropped', filesWithContent)
 
             // Simulate upload
             setTimeout(() => {

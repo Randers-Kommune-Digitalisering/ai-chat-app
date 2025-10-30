@@ -83,6 +83,7 @@
         })
 
         // Send message to backend
+        console.log("Sending file data to backend:", files)
         awaitingResponse.value = true
         const { response, references } = await sendMessage(threadId.value, message, files)
 
@@ -114,7 +115,7 @@
     const fileUploader = ref(null)
     function onFilesDropped(files) {
         for (let file of files) {
-            console.log("File dropped:", file)
+            // file already has .content as base64 string
             const fileDetails = new fileUploader.value.FileDetails(file.name, file.size, file.type)
             userFiles.value.push(new File(fileDetails, file.content))
         }

@@ -199,9 +199,11 @@ class Agent(Chat):
         # Append document text to the last user message if available
         request_message = chat_message
         if files:
-            for file in files:
+            if len(files) > 1:
+                request_message = f"{request_message}\n\n# Der er uploadet {len(files)} dokumenter. Benyt følgende indhold fra de uploadede dokumenter som kontekst for forespørgslen:\n\n"
+            for index, file in enumerate(files):
                 doc_text = extract_text_from_file(file)
-            request_message = f"{request_message}\n\nBenyt følgende indhold fra uploaded dokument som kontekst for forespørgslen:\n\n{doc_text}"
+                request_message = f"{request_message}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
 
         self.project.agents.messages.create(
             thread_id=thread_id,
