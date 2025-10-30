@@ -6,6 +6,7 @@ from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents.models import ListSortOrder
+from utils.extract_filedata import extract_text_from_file
 
 from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
@@ -36,8 +37,6 @@ from utils.config import (
 def get_chat_client():
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
-    elif ASSISTANT_TYPE.lower() == "assistant":
-        return Assistant()
     return Chat()
 
 
@@ -194,37 +193,37 @@ class Agent(Chat):
         super().__init__()
         self.assistant_id = ASSISTANT_ID
         self.project_name = AZURE_AIFOUNDRY_PROJECT_NAME
-        self.thread_id = None
-
         self.project = AIProjectClient(
             credential=DefaultAzureCredential(),
             endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}"
         )
         self.agent = self.project.agents.get_agent(self.assistant_id)
-        super().__init__()
 
-    def fetch_chat_response(self, chat_messages):
-        if not self.thread_id:
-            self.thread_id = self.create_thread()
+    def fetch_chat_response(self, thread_id, chat_message, files):
+        if not thread_id:
+            return {"role": "assistant", "content": "Error: No thread_id provided for Agent. Please create a thread first."}, []
 
         # Append document text to the last user message if available
-        request_message = chat_messages[-1]['content']
-        if chat_messages[-1].get("doc_text"):
-            request_message = f"{chat_messages[-1]['content']}\n\nBenyt følgende indhold fra uploaded dokument som kontekst for forespørgslen:\n\n{chat_messages[-1].get('doc_text')}"
+        request_message = chat_message
+        if files:
+            for file in files:
+                doc_text = extract_text_from_file(file)
+            request_message = f"{request_message}\n\nBenyt følgende indhold fra uploaded dokument som kontekst for forespørgslen:\n\n{doc_text}"
 
         self.project.agents.messages.create(
-            thread_id=self.thread_id,
+            thread_id=thread_id,
             role="user",
             content=request_message
         )
         run = self.project.agents.runs.create_and_process(
-            thread_id=self.thread_id,
+            thread_id=thread_id,
             agent_id=self.assistant_id
         )
         if run.status == "failed":
             print(f"Run failed: {run.last_error}")
+            return None, []
         else:
-            messages = self.project.agents.messages.list(thread_id=self.thread_id, order=ListSortOrder.DESCENDING)
+            messages = self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
 
         assistant_message = next(  # Find the latest assistant message in the thread
             (
@@ -243,7 +242,6 @@ class Agent(Chat):
         text_value = ""
         annotations = []
         if assistant_message:
-
             for content_block in assistant_message.content:
                 # Extract the text value from the first content block of type 'text'
                 if getattr(content_block, "type", None) == "text":
@@ -274,115 +272,11 @@ class Agent(Chat):
         # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
         text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
 
-        return {"role": "assistant", "content": text_value}, citations
+        return text_value, citations
 
     def create_thread(self):
         thread = self.project.agents.threads.create()
         return thread.id
 
     def clear_thread(self):
-        self.thread_id = None
-
-
-class Assistant(Chat):
-    def __init__(self):
-        super().__init__()
-        self.files_api_version = AZURE_API_VERSION_FILES
-        self.assistant_id = ASSISTANT_ID
-        self.thread_id = None
-
-    def fetch_chat_response(self, chat_messages):
-        if not self.thread_id:
-            self.thread_id = self.create_thread()
-
-        # Append document text to the last user message if available
-        request_message = chat_messages[-1]['content']
-        if chat_messages[-1].get("doc_text"):
-            request_message = f"{chat_messages[-1]['content']}\n\nBenyt følgende indhold fra uploaded dokument som kontekst for forespørgslen:\n\n{chat_messages[-1].get('doc_text')}"
-
-        self.client.beta.threads.messages.create(
-            thread_id=self.thread_id,
-            role="user",
-            content=request_message,
-        )
-        run = self.client.beta.threads.runs.create(
-            thread_id=self.thread_id,
-            assistant_id=self.assistant_id
-        )
-        while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1)
-            run = self.client.beta.threads.runs.retrieve(
-                thread_id=self.thread_id,
-                run_id=run.id
-            )
-
-        if run.status == 'completed':
-            messages = self.client.beta.threads.messages.list(thread_id=self.thread_id)
-            assistant_message = next(  # Find the latest assistant message in the thread
-                (
-                    msg for msg in messages.data
-                    if msg.role == "assistant"
-                    and msg.content
-                    and len(msg.content) > 0
-                ),
-                None
-            )
-
-            text_value = ""
-            if assistant_message:
-                url_index_map = []
-
-                for content_block in assistant_message.content:
-                    # Extract the text value from the first content block of type 'text'
-                    if getattr(content_block, "type", None) == "text":
-                        text_obj = getattr(content_block, "text", None)
-                        if text_obj and hasattr(text_obj, "value"):
-                            text_value = text_obj.value
-                            break
-
-                for content_block in assistant_message.content:  # TODO: Can't remember why we break and do another for loop here, investigate later
-                    if hasattr(content_block, "text") and hasattr(content_block.text, "annotations"):
-                        unique_refs = set()
-                        for _idx, annotation in enumerate(content_block.text.annotations):
-                            if hasattr(annotation, "file_citation") and annotation.file_citation:
-                                if annotation.file_citation.file_id not in unique_refs:
-                                    unique_refs.add(annotation.file_citation.file_id)
-
-                        for idx, ref in enumerate(unique_refs):
-                            text_refs = [annot.text for annot in content_block.text.annotations if hasattr(annot, "file_citation") and annot.file_citation and annot.file_citation.file_id == ref]
-                            for text_ref in text_refs:
-                                text_value = text_value.replace(text_ref, f" [{idx + 1}]")
-
-                            url_index_map.append({
-                                "url": "",
-                                "title": self.get_filename(ref),
-                                "fromIndex": annotation.start_index,
-                                "toIndex": annotation.end_index,
-                                "refs": [idx + 1]
-                            })
-
-                # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
-                text_value = re.sub(r'(\[\d+\](?:\s*\[\d+\])+)', self.sort_refs, text_value)
-
-            return {"role": "assistant", "content": text_value}, url_index_map
-        else:
-            print(f"Error completing run - Run status: {run.status}")
-        return None, []
-
-    def get_filename(self, file_id):
-        client = APIClient(base_url=AZURE_OPENAI_ENDPOINT, api_key=AZURE_OPENAI_KEY)
-        print(f"Retrieving filename for file id '{file_id}'")
-        path = f"/openai/files/{file_id}?api-version={self.files_api_version}"
-        try:
-            response = client.make_request(path=path, method="GET")
-            return response.get("filename", f"Ukendt fil ({file_id})")
-        except Exception as e:
-            print(f"Failed to retrieve file with id '{file_id}'. Error: {e}")
-            return f"Ukendt fil ({file_id})"
-
-    def create_thread(self):
-        thread = self.client.beta.threads.create()
-        return thread.id
-
-    def clear_thread(self):
-        self.thread_id = None
+        pass
