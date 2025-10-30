@@ -1,5 +1,5 @@
 <script setup>
-import { ref, defineEmits, defineProps } from 'vue'
+import { ref } from 'vue'
 const ASSISTANT_NAME = import.meta.env.VITE_ASSISTANT_NAME || "AI Assistent";
 
 const props = defineProps({
