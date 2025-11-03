@@ -1,5 +1,6 @@
 <script setup>
     import { ref, onMounted, onUnmounted } from 'vue'
+    import Alert from './Alert.vue'
 
     class FileDetails {
         constructor(name, size, type) {
@@ -71,7 +72,7 @@
                     type: file.type,
                     content: await readFileAsBase64(file)
                 }))
-            );
+            )
             emit('files-dropped', filesWithContent)
 
             // Simulate upload
@@ -104,11 +105,17 @@
             emit('file-upload-adjust-css')
         }
     }
+    function addFile(fileDetails) {
+        fileUploads.value.push(fileDetails)
+        emit('file-upload-adjust-css')
+    }
     function clearFiles() {
+        const filesToRemove = [...fileUploads.value]
         fileUploads.value = []
+        return filesToRemove
     }
     defineExpose({
-        clearFiles, FileDetails
+        clearFiles, addFile, FileDetails
     })
 
     function onDropZoneDragEnter(e) {

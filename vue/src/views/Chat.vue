@@ -59,10 +59,20 @@
     async function onUserInput(message) {
         const files = userFiles.value.map(file => ({ name: file.details.name, content: file.content }))
         await addChatMessage(message, files)
-        clearAllFiles()
     }
 
     async function addChatMessage(message, files) {
+        // Update state
+        const newMessage = new ChatMessage('user', message, [], files)
+        chatMessages.value.push(newMessage)
+        await nextTick(() => {
+            updateInputPadding()
+            scrollToMessage(chatMessages.value.length - 1)
+            startTimer()
+        })
+        let removedFileRefs = clearAllFiles()
+        awaitingResponse.value = true
+
         // Create thread if not exists
         if (!threadId.value) {
             threadId.value = await startThread()
@@ -73,17 +83,7 @@
             }
         }
 
-        // Add user message to state
-        const newMessage = new ChatMessage('user', message, [], files)
-        chatMessages.value.push(newMessage)
-        nextTick(() => {
-            updateInputPadding()
-            scrollToMessage(chatMessages.value.length - 1)
-            startTimer()
-        })
-
         // Send message to backend
-        awaitingResponse.value = true
         const { response, references } = await sendMessage(threadId.value, message, files)
 
         // Response received from backend
@@ -96,9 +96,18 @@
             timeSpent
         )
 
-        // Update state
-        chatMessages.value.push(assistantMessage)
         awaitingResponse.value = false
+        if (!response || response.trim() === "") {  // No response
+            // Re-add user files to state
+            for (let file of files) {
+                const fileDetails = removedFileRefs.find(f => f.name === file.name)
+                if (fileDetails) {
+                    addFile(fileDetails, file.content)
+                }
+            }
+            assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
+        }
+        chatMessages.value.push(assistantMessage)
 
         // Update UI
         nextTick(() => {
@@ -139,8 +148,13 @@
         onAdjustCss({ type: 'resize', height, fixed: chatMessages.value.length > 0 })
     }
     function clearAllFiles() {
-        fileUploader.value.clearFiles()
+        let removedFileRefs =fileUploader.value.clearFiles()
         userFiles.value = []
+        return removedFileRefs
+    }
+    function addFile(details, content) {
+        userFiles.value.push(new File(details, content))
+        fileUploader.value.addFile(details)
     }
 
     // Scroll to specific message
