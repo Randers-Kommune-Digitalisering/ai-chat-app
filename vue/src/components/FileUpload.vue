@@ -1,6 +1,5 @@
 <script setup>
     import { ref, onMounted, onUnmounted } from 'vue'
-    import Alert from './Alert.vue'
 
     class FileDetails {
         constructor(name, size, type) {
