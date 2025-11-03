@@ -21,12 +21,6 @@
             this.link = link
         }
     }
-    class File {
-        constructor(details, content) {
-            this.details = details
-            this.content = content
-        }
-    }
 
     const threadId = ref(null)
     const userInput = ref(null)
@@ -57,21 +51,22 @@
 
     // Handle user input
     async function onUserInput(message) {
-        const files = userFiles.value.map(file => ({ name: file.details.name, content: file.content }))
+        // Only send name/content to backend, but keep all file info in userFiles
+        const files = userFiles.value.map(({ name, content }) => ({ name, content }))
         await addChatMessage(message, files)
     }
 
     async function addChatMessage(message, files) {
-        // Update state
-        const newMessage = new ChatMessage('user', message, [], files)
+        // Add user message to state (with all file info for display)
+        const newMessage = new ChatMessage('user', message, [], [...userFiles.value])
+        let removedFiles = clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
-        await nextTick(() => {
+        awaitingResponse.value = true
+        nextTick(() => {
             updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1)
             startTimer()
         })
-        let removedFileRefs = clearAllFiles()
-        awaitingResponse.value = true
 
         // Create thread if not exists
         if (!threadId.value) {
@@ -99,11 +94,8 @@
         awaitingResponse.value = false
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
-            for (let file of files) {
-                const fileDetails = removedFileRefs.find(f => f.name === file.name)
-                if (fileDetails) {
-                    addFile(fileDetails, file.content)
-                }
+            for (let file of removedFiles) {
+                addFile(file)
             }
             assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
         }
@@ -120,27 +112,19 @@
 
     // Handle file uploads
     const fileUploader = ref(null)
-    function onFilesDropped(files) {
-        for (let file of files) {
-            // file already has .content as base64 string
-            const fileDetails = new fileUploader.value.FileDetails(file.name, file.size, file.type)
-            userFiles.value.push(new File(fileDetails, file.content))
-        }
-    }
-    function onFileRemoved(fileDetails) {
-        const index = userFiles.value.findIndex(file => file.details.name === fileDetails.name && file.details.size === fileDetails.size)
+    function onFileRemoved(fileObj) {
+        const index = userFiles.value.findIndex(f => f.name === fileObj.name && f.size === fileObj.size)
         if (index > -1) {
             userFiles.value.splice(index, 1)
-        }
-        else
-        {
+        } else {
             console.warn("File to remove not found in userFiles.")
         }
-    }
-    function onFileUploadAdjustCss() {
         nextTick(() => {
             updateInputPadding()
         })
+    }
+    function onClearFiles() {
+        userFiles.value = []
     }
     function updateInputPadding() {
         // Always get the latest textarea height from UserInput
@@ -148,13 +132,16 @@
         onAdjustCss({ type: 'resize', height, fixed: chatMessages.value.length > 0 })
     }
     function clearAllFiles() {
-        let removedFileRefs =fileUploader.value.clearFiles()
+        // let removedFiles = fileUploader.value.clearFiles()
+        let removedFiles = [...userFiles.value]
         userFiles.value = []
-        return removedFileRefs
+        return removedFiles
     }
-    function addFile(details, content) {
-        userFiles.value.push(new File(details, content))
-        fileUploader.value.addFile(details)
+    function addFile(fileObj) {
+        userFiles.value.push(fileObj)
+        nextTick(() => {
+            updateInputPadding()
+        })
     }
 
     // Scroll to specific message
@@ -200,14 +187,14 @@
         if (!userInputContainer.value) return
         const inputContainer = userInputContainer.value
         const app = document.getElementById('app')
-        const fileContainer = document.getElementById('file-uploads')
         if (payload.type === 'resize') {
             // Adjust textarea container position and app padding
             if (payload.fixed) {
                 // Fixed mode: adjust app padding
                 if (app) {
                     // Add height of  file uploader if visible
-                    const fileUploaderHeight = fileContainer.offsetHeight
+                    const fileContainer = document.getElementById('file-uploads')
+                    let fileUploaderHeight = fileContainer ? fileContainer.offsetHeight : 0
                     const padding = Math.max(payload.height / 16 + 3, 6) + fileUploaderHeight / 16 + 0.5
                     app.style.paddingBottom = padding + 'rem'
                 }
@@ -281,9 +268,10 @@
 
         <FileUpload
             ref="fileUploader"
-            @files-dropped="onFilesDropped"
-            @file-removed="onFileRemoved"
-            @file-upload-adjust-css="onFileUploadAdjustCss" />
+            :files="userFiles"
+            @add-file="addFile"
+            @remove-file="onFileRemoved"
+            @clear-files="onClearFiles" />
     </div>
 </template>
 

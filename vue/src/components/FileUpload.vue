@@ -1,13 +1,6 @@
 <script setup>
-    import { ref, onMounted, onUnmounted } from 'vue'
 
-    class FileDetails {
-        constructor(name, size, type) {
-            this.name = name
-            this.size = size
-            this.type = type
-        }
-    }
+    import { ref, onMounted, onUnmounted } from 'vue'
 
     const fileTypesAccepted = [
         'application/pdf',
@@ -17,9 +10,14 @@
         'text/x-markdown', // .md (alternative MIME type)
         'text/plain' // .txt + .text
     ]
-    const emit = defineEmits(['files-dropped', 'file-removed', 'file-upload-adjust-css'])
+    const emit = defineEmits(['remove-file', 'file-upload-adjust-css', 'add-file', 'clear-files'])
 
-    const fileUploads = ref([])
+    const props = defineProps({
+        files: {
+            type: Array,
+            required: true
+        }
+    })
     const isDragging = ref(false)
     const isOverDropZone = ref(false)
     const fileDropped = ref(false)
@@ -63,59 +61,44 @@
         }
         const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
         if (acceptedFiles.length > 0) {
+
             // Read all files as base64
             const filesWithContent = await Promise.all(
                 acceptedFiles.map(async file => ({
                     name: file.name,
                     size: file.size,
                     type: file.type,
-                    content: await readFileAsBase64(file)
+                    content: await readFileAsBase64(file),
+                    hover: false
                 }))
             )
-            emit('files-dropped', filesWithContent)
 
             // Simulate upload
             setTimeout(() => {
+                // Emit to parent to add files
+                filesWithContent.forEach(file =>  addFile(file))
                 fileUploaded.value = true
-                acceptedFiles.forEach(file => {
-                    const fileDetails = new FileDetails(file.name, file.size, file.type)
-                    fileUploads.value.push(fileDetails)
-                })
-                emit('file-upload-adjust-css')
             }, 800)
             setTimeout(() => {
                 fileUploaded.value = false
             }, 2500)
+
         } else {
             console.log("File type not accepted")
             fileNotAccepted.value = true
-            // Show error notification for 2.5 seconds
+            // Show error notification for 3 seconds
             setTimeout(() => {
                 fileNotAccepted.value = false
-            }, 2500)
+            }, 3000)
         }
     }
 
     function removeFile(file) {
-        const index = fileUploads.value.indexOf(file)
-        if (index > -1) {
-            fileUploads.value.splice(index, 1)
-            emit('file-removed', file)
-            emit('file-upload-adjust-css')
-        }
+        emit('remove-file', file)
     }
-    function addFile(fileDetails) {
-        fileUploads.value.push(fileDetails)
-        emit('file-upload-adjust-css')
+    function addFile(fileObj) {
+        emit('add-file', fileObj)
     }
-    function clearFiles() {
-        const filesToRemove = [...fileUploads.value]
-        fileUploads.value = []
-        return filesToRemove
-    }
-    defineExpose({
-        clearFiles, addFile, FileDetails
-    })
 
     function onDropZoneDragEnter(e) {
         e.preventDefault()
@@ -183,7 +166,7 @@
 <template>
     <div class="fileUploads" id="file-uploads">
         <div
-            v-for="(file, index) in fileUploads"
+            v-for="(file, index) in files"
             :key="index"
             class="file-upload-item"
             @click="removeFile(file)"

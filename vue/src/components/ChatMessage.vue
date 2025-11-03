@@ -94,7 +94,7 @@
         <div class="chat-content" v-html="marked(props.message.content)"></div>
 
         <div v-if="props.sender == 'user'">
-            <div class="fileUploads" id="file-uploads" v-if="props.files.length > 0">
+            <div class="fileUploads" v-if="props.files.length > 0">
                 <div
                     v-for="(file, index) in props.files"
                     :key="index"
