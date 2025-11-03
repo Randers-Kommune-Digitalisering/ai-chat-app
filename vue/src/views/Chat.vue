@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendMessage } from '../services/backend-service.js'
+    import { startThread, sendMessage } from '../services/backend-demo.js'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
@@ -83,6 +83,11 @@
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
+        if (!awaitingResponse.value) {
+            console.warn("Response received but awaitingResponse is false. Ignoring response.")
+            return
+        }
+        awaitingResponse.value = false
         const assistantMessage = new ChatMessage(
             'assistant',
             response,
@@ -90,8 +95,6 @@
             [],
             timeSpent
         )
-
-        awaitingResponse.value = false
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
             for (let file of removedFiles) {
