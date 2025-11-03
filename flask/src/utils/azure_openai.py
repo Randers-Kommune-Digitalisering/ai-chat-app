@@ -259,13 +259,13 @@ class Agent(Chat):
                     citations.append(citation)
 
                 for ref in citation["refs"]:
-                    text_value = text_value.replace(citation["replace_refs"], f" [{ref}]")
+                    text_value = text_value.replace(citation["replace_refs"], "") # Replace with f"[{ref}]" if needed
 
         # Remove spaces between consecutive references (e.g., [1] [2] [3] -> [1][2][3])
-        text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
+        # text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
 
         # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
-        text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
+        # text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
 
         return text_value, citations
 
