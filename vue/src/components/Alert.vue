@@ -1,5 +1,16 @@
 <script setup>
     import { computed } from 'vue'
+    import { marked } from 'marked'
+
+    const renderer = new marked.Renderer();
+    renderer.link = function(obj) {
+        const href = obj.href
+        const title = obj.title
+        const text = obj.text
+        // Add target and rel attributes
+        const titleAttr = title ? ` title="${title}"` : ''
+        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
+    }
 
     const props = defineProps({
         type: {
@@ -14,6 +25,7 @@
     })
 
     const typeClass = computed(() => `alert--${props.type}`)
+    const formattedMessage = computed(() => marked.parseInline(props.message, { renderer }))
 
     const icon = computed(() => {
         switch (props.type) {
@@ -27,7 +39,7 @@
 <template>
     <div :class="['alert', typeClass]">
         <i :class="`fa-solid fa-${icon}`"></i>
-        <span class="alert__message">{{ message }}</span>
+        <span class="alert__message" v-html="formattedMessage"></span>
     </div>
 </template>
 

@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendMessage } from '../services/backend-service.js'
+    import { startThread, sendMessage } from '../services/backend-demo.js'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
@@ -91,7 +91,7 @@
         const assistantMessage = new ChatMessage(
             'assistant',
             response,
-            references.map(ref => new Reference("[" + ref.refs[0] + "] " + ref.title, ref.url)),
+            references.map(ref => new Reference(ref.title, ref.url)),
             [],
             timeSpent
         )
@@ -220,12 +220,12 @@
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="Velkommen! Start en samtale ved at skrive en besked nedenfor. Du kan også uploade filer for at give mere kontekst."
+        message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />[Læs retningslinjerne for brugen af generativ AI her.](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
     />
     <Alert
         v-else
-        type="warning"
-        message="Husk at undgå at dele personfølsomme oplysninger i samtalen."
+        type="info"
+        message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
