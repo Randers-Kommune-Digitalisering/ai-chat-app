@@ -108,8 +108,11 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div v-if="props.references.length > 0" class="references">
-                <div v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)" :key="index">
+            <div class="references">
+                <div
+                    v-if="props.references.length > 0"
+                    v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
+                    :key="index">
                     <a :href="ref.link" target="_blank" rel="noopener">{{ ref.title }}</a>
                 </div>
                 <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
