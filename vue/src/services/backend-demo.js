@@ -10,7 +10,7 @@ export async function sendMessage(threadId, message, files) {
     return {
         response: "This is a demo response to your message: " + message,
         references: [
-            { title: "Eksempel Reference", link: "https://example.com" }
+            { title: "Eksempel Reference", url: "https://example.com" }
         ]
     }
 }

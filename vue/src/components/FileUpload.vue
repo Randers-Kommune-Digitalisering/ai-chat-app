@@ -20,6 +20,8 @@
     })
     const isDragging = ref(false)
     const isOverDropZone = ref(false)
+    const filesAwaitingUpload = ref(0)
+    const filesTotalToUpload = ref(0)
     const fileDropped = ref(false)
     const fileUploaded = ref(false)
     const fileInputRef = ref(null)
@@ -31,10 +33,10 @@
         isOverDropZone.value = false
         const files = [...e.dataTransfer.files]
 
-        fileDropped.value = true
-        setTimeout(() => {
-            fileDropped.value = false
-        }, 2000)
+        // fileDropped.value = true
+        // setTimeout(() => {
+        //     fileDropped.value = false
+        // }, 2000)
 
         uploadFiles(files)
     }
@@ -52,14 +54,10 @@
         });
     }
 
-    async function uploadFiles(files, simulateDrop = false) {
-        if (simulateDrop) {
-            fileDropped.value = true
-            setTimeout(() => {
-                fileDropped.value = false
-            }, 2000)
-        }
+    async function uploadFiles(files, simulateDrop = true) {
         const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
+        filesAwaitingUpload.value = filesTotalToUpload.value = acceptedFiles.length
+        fileDropped.value = true
         if (acceptedFiles.length > 0) {
 
             // Read all files as base64
@@ -73,23 +71,42 @@
                 }))
             )
 
-            // Simulate upload
+            // Initiate upload animation in input field
+            const totalUploadTime = 300 + (filesWithContent.length - 1) * 500
+            const showFileDropTime = totalUploadTime + 1000
             setTimeout(() => {
-                // Emit to parent to add files
-                filesWithContent.forEach(file =>  addFile(file))
+                fileDropped.value = false
+            }, showFileDropTime)
+
+            // Simulate staggered uploads
+            for (let i = 0; i < filesWithContent.length; i++) {
+                setTimeout(() => {
+                    // Emit to parent to add files
+                    addFile(filesWithContent[i])
+                    filesAwaitingUpload.value--
+                }, 300 + i * 500)
+            }
+
+            // When all files are uploaded, show success notification
+            setTimeout(() => {
                 fileUploaded.value = true
-            }, 800)
+            }, totalUploadTime)
+            // Hide success notification after 2 seconds
             setTimeout(() => {
                 fileUploaded.value = false
-            }, 2500)
+                filesTotalToUpload.value = 0
+            }, totalUploadTime + 2000)
 
         } else {
             console.log("File type not accepted")
+            // Show error notification for 2 seconds
             fileNotAccepted.value = true
-            // Show error notification for 3 seconds
+            setTimeout(() => {
+                fileDropped.value = false
+            }, 2000)
             setTimeout(() => {
                 fileNotAccepted.value = false
-            }, 3000)
+            }, 2500)
         }
     }
 
@@ -229,7 +246,13 @@
 
                 <template v-if="fileDropped && !fileUploaded && !fileNotAccepted">
                     <i class="fa-solid fa-rotate rotate"></i>
-                    <span>Filen uploades</span>
+                    <span>
+                        Uploader {{ 
+                            filesTotalToUpload > 1 ?
+                                ((filesTotalToUpload - filesAwaitingUpload + 1) + " / " + filesTotalToUpload)
+                                : "filen"
+                        }}
+                    </span>
                 </template>
 
                 <template v-if="fileNotAccepted">
@@ -239,7 +262,7 @@
 
                 <template v-if="fileUploaded">
                     <i class="fa-solid fa-check"></i>
-                    <span>Filen er uploadet</span>
+                    <span>{{ filesTotalToUpload > 1 ? 'Filerne' : 'Filen' }} er uploadet</span>
                 </template>
 
                 <template v-if="!fileUploaded && !fileDropped && !fileNotAccepted">
