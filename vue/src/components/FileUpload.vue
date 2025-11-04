@@ -33,11 +33,6 @@
         isOverDropZone.value = false
         const files = [...e.dataTransfer.files]
 
-        // fileDropped.value = true
-        // setTimeout(() => {
-        //     fileDropped.value = false
-        // }, 2000)
-
         uploadFiles(files)
     }
 
