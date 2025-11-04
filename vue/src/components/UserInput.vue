@@ -167,7 +167,6 @@
     }
     .user-input {
         width: 100%;
-        min-height: 3.56rem;
         padding: 1rem;
         padding-left: 2.5rem;
         padding-right: 3rem;

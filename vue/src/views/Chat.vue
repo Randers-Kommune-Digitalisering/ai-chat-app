@@ -205,12 +205,12 @@
             } else {
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
-                inputContainer.style.bottom = `calc(50% - ${heightPx}px - 3rem + 57px)`
+                inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
                 if (app) app.style.paddingBottom = '10rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
-            inputContainer.style.bottom = `calc(50% - 3rem)`
+            inputContainer.style.bottom = `calc(40% - 3rem)`
             if (app) app.style.paddingBottom = '10rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
@@ -284,10 +284,22 @@
         font-size: 1.6rem;
         text-align: center;
         left: 50%;
-        bottom: 50%;
+        bottom: 40%;
+        width: max-content;
+        max-width: 90%;
         transform: translate(-50%, -4.5rem);
         z-index: 3;
     }
+        @media screen and (max-width: 600px) { /* Adjust position for small screens */
+            .welcome-header  {
+                bottom: 30% !important;
+            }
+        }
+        @media screen and (max-width: 360px) { /* Adjust position for very small screens */
+            .welcome-header  {
+                bottom: 3rem !important;
+            }
+        }
     .loading-indicator
     {
         font-style: italic;
@@ -319,7 +331,17 @@
         background-color: var(--color-background-primary);
     }
         .user-input-container.landing-page {
-            bottom: calc(50% - 3rem); /* Overwritten by UserInput.vue when not fixed */
+            bottom: calc(40% - 3rem); /* Overwritten by UserInput.vue when not fixed */
+        }
+        @media screen and (max-width: 600px) { /* Adjust position for small screens */
+            .user-input-container.landing-page  {
+                bottom: calc(30% - 3rem) !important; /* Overwritten by UserInput.vue when not fixed */
+            }
+        }
+        @media screen and (max-width: 360px) { /* Adjust position for very small screens */
+            .user-input-container.landing-page  {
+                bottom: 0rem !important; /* Overwritten by UserInput.vue when not fixed */
+            }
         }
     @media screen and (min-width: 875px) {
         .user-input-container  {
