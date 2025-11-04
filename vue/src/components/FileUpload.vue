@@ -1,14 +1,6 @@
 <script setup>
-    import { ref, onMounted, onUnmounted } from 'vue'
-    import Alert from './Alert.vue'
 
-    class FileDetails {
-        constructor(name, size, type) {
-            this.name = name
-            this.size = size
-            this.type = type
-        }
-    }
+    import { ref, onMounted, onUnmounted } from 'vue'
 
     const fileTypesAccepted = [
         'application/pdf',
@@ -18,11 +10,18 @@
         'text/x-markdown', // .md (alternative MIME type)
         'text/plain' // .txt + .text
     ]
-    const emit = defineEmits(['files-dropped', 'file-removed', 'file-upload-adjust-css'])
+    const emit = defineEmits(['remove-file', 'file-upload-adjust-css', 'add-file', 'clear-files'])
 
-    const fileUploads = ref([])
+    const props = defineProps({
+        files: {
+            type: Array,
+            required: true
+        }
+    })
     const isDragging = ref(false)
     const isOverDropZone = ref(false)
+    const filesAwaitingUpload = ref(0)
+    const filesTotalToUpload = ref(0)
     const fileDropped = ref(false)
     const fileUploaded = ref(false)
     const fileInputRef = ref(null)
@@ -33,11 +32,6 @@
         isDragging.value = false
         isOverDropZone.value = false
         const files = [...e.dataTransfer.files]
-
-        fileDropped.value = true
-        setTimeout(() => {
-            fileDropped.value = false
-        }, 2000)
 
         uploadFiles(files)
     }
@@ -55,42 +49,56 @@
         });
     }
 
-    async function uploadFiles(files, simulateDrop = false) {
-        if (simulateDrop) {
-            fileDropped.value = true
-            setTimeout(() => {
-                fileDropped.value = false
-            }, 2000)
-        }
+    async function uploadFiles(files, simulateDrop = true) {
         const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
+        filesAwaitingUpload.value = filesTotalToUpload.value = acceptedFiles.length
+        fileDropped.value = true
         if (acceptedFiles.length > 0) {
+
             // Read all files as base64
             const filesWithContent = await Promise.all(
                 acceptedFiles.map(async file => ({
                     name: file.name,
                     size: file.size,
                     type: file.type,
-                    content: await readFileAsBase64(file)
+                    content: await readFileAsBase64(file),
+                    hover: false
                 }))
             )
-            emit('files-dropped', filesWithContent)
 
-            // Simulate upload
+            // Initiate upload animation in input field
+            const totalUploadTime = 300 + (filesWithContent.length - 1) * 500
+            const showFileDropTime = totalUploadTime + 1000
+            setTimeout(() => {
+                fileDropped.value = false
+            }, showFileDropTime)
+
+            // Simulate staggered uploads
+            for (let i = 0; i < filesWithContent.length; i++) {
+                setTimeout(() => {
+                    // Emit to parent to add files
+                    addFile(filesWithContent[i])
+                    filesAwaitingUpload.value--
+                }, 300 + i * 500)
+            }
+
+            // When all files are uploaded, show success notification
             setTimeout(() => {
                 fileUploaded.value = true
-                acceptedFiles.forEach(file => {
-                    const fileDetails = new FileDetails(file.name, file.size, file.type)
-                    fileUploads.value.push(fileDetails)
-                })
-                emit('file-upload-adjust-css')
-            }, 800)
+            }, totalUploadTime)
+            // Hide success notification after 2 seconds
             setTimeout(() => {
                 fileUploaded.value = false
-            }, 2500)
+                filesTotalToUpload.value = 0
+            }, totalUploadTime + 2000)
+
         } else {
             console.log("File type not accepted")
+            // Show error notification for 2 seconds
             fileNotAccepted.value = true
-            // Show error notification for 2.5 seconds
+            setTimeout(() => {
+                fileDropped.value = false
+            }, 2000)
             setTimeout(() => {
                 fileNotAccepted.value = false
             }, 2500)
@@ -98,25 +106,11 @@
     }
 
     function removeFile(file) {
-        const index = fileUploads.value.indexOf(file)
-        if (index > -1) {
-            fileUploads.value.splice(index, 1)
-            emit('file-removed', file)
-            emit('file-upload-adjust-css')
-        }
+        emit('remove-file', file)
     }
-    function addFile(fileDetails) {
-        fileUploads.value.push(fileDetails)
-        emit('file-upload-adjust-css')
+    function addFile(fileObj) {
+        emit('add-file', fileObj)
     }
-    function clearFiles() {
-        const filesToRemove = [...fileUploads.value]
-        fileUploads.value = []
-        return filesToRemove
-    }
-    defineExpose({
-        clearFiles, addFile, FileDetails
-    })
 
     function onDropZoneDragEnter(e) {
         e.preventDefault()
@@ -184,7 +178,7 @@
 <template>
     <div class="fileUploads" id="file-uploads">
         <div
-            v-for="(file, index) in fileUploads"
+            v-for="(file, index) in files"
             :key="index"
             class="file-upload-item"
             @click="removeFile(file)"
@@ -213,6 +207,7 @@
     <input
         ref="fileInputRef"
         type="file"
+        multiple
         style="display: none;"
         @change="e => {
             const files = [...e.target.files]
@@ -247,7 +242,13 @@
 
                 <template v-if="fileDropped && !fileUploaded && !fileNotAccepted">
                     <i class="fa-solid fa-rotate rotate"></i>
-                    <span>Filen uploades</span>
+                    <span>
+                        Uploader {{ 
+                            filesTotalToUpload > 1 ?
+                                ((filesTotalToUpload - filesAwaitingUpload + 1) + " / " + filesTotalToUpload)
+                                : "filen"
+                        }}
+                    </span>
                 </template>
 
                 <template v-if="fileNotAccepted">
@@ -257,7 +258,7 @@
 
                 <template v-if="fileUploaded">
                     <i class="fa-solid fa-check"></i>
-                    <span>Filen er uploadet</span>
+                    <span>{{ filesTotalToUpload > 1 ? 'Filerne' : 'Filen' }} er uploadet</span>
                 </template>
 
                 <template v-if="!fileUploaded && !fileDropped && !fileNotAccepted">
