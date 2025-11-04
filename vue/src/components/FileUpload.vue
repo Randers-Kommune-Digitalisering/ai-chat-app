@@ -8,7 +8,9 @@
         'application/msword', // .doc + .dot
         'text/markdown', // .md
         'text/x-markdown', // .md (alternative MIME type)
-        'text/plain' // .txt + .text
+        'text/plain', // .txt + .text
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel' // .xls + .xlsm + .xlt + .xltm
     ]
     const emit = defineEmits(['remove-file', 'file-upload-adjust-css', 'add-file', 'clear-files'])
 
