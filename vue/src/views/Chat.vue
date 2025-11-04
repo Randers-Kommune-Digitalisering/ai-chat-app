@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendMessage } from '../services/backend-demo.js'
+    import { startThread, sendMessage } from '../services/backend-service.js'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
