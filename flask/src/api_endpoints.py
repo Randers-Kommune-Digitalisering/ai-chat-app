@@ -4,6 +4,7 @@ import base64
 import io
 from utils.azure_openai import get_chat_client
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME
+from utils.mail_client import send_user_feedback
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -30,6 +31,7 @@ def create_thread():
     return jsonify({"success": True, "message": "Thread created successfully", "thread_id": thread_id})
 
 
+# Endpoint to handle messages in a thread (Agent mode)
 @api_endpoints.route('/threads/<thread_id>/messages', methods=['POST'])
 def create_thread_message(thread_id):
     message = request.json.get("message")
@@ -61,6 +63,7 @@ def create_thread_message(thread_id):
     return jsonify({"success": True, "response": response, "references": refs})
 
 
+# Endpoint to handle chat messages (Chat mode)
 @api_endpoints.route('/chat/messages', methods=['POST'])
 def create_chat_message():
     messages = request.json.get("messages", [])
@@ -89,3 +92,18 @@ def create_chat_message():
         return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
 
     return jsonify({"success": True, "response": response, "references": refs})
+
+
+# Feedback endpoint
+@api_endpoints.route('/feedback', methods=['POST'])
+def send_feedback():
+    data = request.json
+    feedback = data.get('feedback')
+    response_index = data.get('response_index')
+    chat_history = data.get('chat_history')
+    if not feedback or response_index is None or chat_history is None:
+        return jsonify({"success": False, "message": "Missing feedback, response_index, or chat_history"}), 400
+    result = send_user_feedback(feedback, response_index, chat_history)
+    if result is None:
+        return jsonify({"success": False, "message": "Failed to send feedback"}), 500
+    return jsonify({"success": True, "data": result})

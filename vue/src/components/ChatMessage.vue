@@ -1,6 +1,7 @@
 <script setup>
     import { nextTick, ref } from 'vue'
     import { marked } from 'marked'
+    import { sendFeedback } from '../services/backend-service.js'
 
     // Configure marked to treat single line breaks as <br>
     marked.setOptions({ breaks: true })
@@ -58,6 +59,26 @@
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+
+    // Send feedback to backend
+    async function submitFeedback() {
+        if (!feedbackText.value.trim()) return;
+        // Prepare chat history for backend (only content)
+        let chatHistory = [];
+        chatHistory.push({ content: props.message.content });
+        // If you have full chat history in parent, pass as prop and use that instead
+        try {
+            const data = await sendFeedback(feedbackText.value, props.id ?? '1', chatHistory);
+            if (data.success) {
+                feedbackSent.value = true;
+                feedbackDialogOpen.value = false;
+            } else {
+                alert('Kunne ikke sende feedback: ' + (data.message || 'Ukendt fejl'));
+            }
+        } catch (err) {
+            alert('Fejl ved afsendelse af feedback: ' + err);
+        }
+    }
 
     const resizeTextareaToFitContent = () => {
         let maxHeight = 218 // pixels = 10 lines
@@ -159,7 +180,7 @@
                 <div class="submit-feedback-button-container">
                     <button
                         class="submit-feedback-button"
-                        @click="feedbackSent = true; feedbackDialogOpen = false"
+                        @click="submitFeedback"
                         :disabled="!feedbackText.trim()">
                         Send feedback
                     </button>

@@ -25,3 +25,15 @@ export async function sendChatMessage(messages, files) {
         ]
     }
 }
+
+export async function sendFeedback(feedback, responseIndex, chatHistory) {
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 100)); // Simulate network delay
+    return {
+        success: true,
+        data: {
+            feedback,
+            responseIndex,
+            chatHistory
+        }
+    };
+}

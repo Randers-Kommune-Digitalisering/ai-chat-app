@@ -38,3 +38,17 @@ export async function sendChatMessage(messages) {
         throw error;
     }
 }
+
+export async function sendFeedback(feedback, responseIndex, chatHistory) {
+    try {
+        const result = await axios.post('/api/feedback', {
+            feedback,
+            response_index: responseIndex,
+            chat_history: chatHistory
+        });
+        return result.data;
+    } catch (error) {
+        console.error("Error sending feedback:", error);
+        throw error;
+    }
+}
