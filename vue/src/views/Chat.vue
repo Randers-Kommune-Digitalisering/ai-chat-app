@@ -308,11 +308,6 @@
         transform: translate(-50%, -4.5rem);
         z-index: 3;
     }
-        @media screen and (max-width: 600px) { /* Adjust position for small screens */
-            .welcome-header  {
-                bottom: 30% !important;
-            }
-        }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .welcome-header  {
                 bottom: 3rem !important;
@@ -350,11 +345,6 @@
     }
         .user-input-container.landing-page {
             bottom: calc(40% - 3rem); /* Overwritten by UserInput.vue when not fixed */
-        }
-        @media screen and (max-width: 600px) { /* Adjust position for small screens */
-            .user-input-container.landing-page  {
-                bottom: calc(30% - 3rem) !important; /* Overwritten by UserInput.vue when not fixed */
-            }
         }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .user-input-container.landing-page  {
