@@ -168,8 +168,8 @@ class Chat(AzureOpenAIClient):
                 )
                 url_index_map = [
                     {
-                        "url": url,
-                        "title": next((c.get('title') for c in all_citations if c.get('url') == url), None),
+                        "url": self.parse_urlencoding(url),
+                        "title": self.parse_urlencoding(next((c.get('title') for c in all_citations if c.get('url') == url), None)),
                         "refs": [i + 1 for i, u in enumerate(all_citations) if u and u.get('url') == url]
                     }
                     for url in unique_urls
@@ -178,12 +178,30 @@ class Chat(AzureOpenAIClient):
                 # Reduce citations to referenced ones only
                 referenced_citations = [item for item in url_index_map if any(ref in item['refs'] for ref in unique_refs)]
 
-                # Update assistant response with new reference numbers
+                # Update assistant response with new reference numbers and update title accordingly
+                def replace_ref(m):
+                    orig_ref = int(m.group(1))
+                    # Find the URL for this original reference
+                    if 0 < orig_ref <= len(all_citations):
+                        citation_url = self.parse_urlencoding(all_citations[orig_ref - 1].get('url'))
+
+                        # Find the new reference number based on url_index_map order
+                        for idx, url_info in enumerate(url_index_map):
+                            if url_info['url'] == citation_url:
+                                # Update the title for the referenced citation
+                                ref_number = idx + 1
+                                for item in referenced_citations:
+                                    if item['url'] == citation_url:
+                                        old_title = item.get('title')
+                                        item["title"] = f"[{ref_number}] {old_title}"
+                                return f"[{ref_number}]"
+
+                    # fallback if not found
+                    return f"[{orig_ref}]"
+
                 assistant_response = re.sub(
                     r'\[(?:doc)?(\d{1,2})\]',
-                    lambda m: (
-                        f"[{next((i + 1 for i, url_info in enumerate(url_index_map) if (0 < int(m.group(1)) <= len(all_citations)) and all_citations[int(m.group(1)) - 1] is not None and all_citations[int(m.group(1)) - 1].get('url') == url_info['url']), '?')}]"
-                    ),
+                    replace_ref,
                     assistant_response
                 )
 
@@ -194,6 +212,12 @@ class Chat(AzureOpenAIClient):
                 assistant_response = re.sub(r'(\[\d+\]){2,}', self.sort_refs, assistant_response)
 
         return assistant_response, referenced_citations if 'referenced_citations' in locals() else []
+
+    def parse_urlencoding(self, s):
+        if not s:
+            return s
+        import urllib.parse
+        return urllib.parse.unquote(s)
 
 
 class Agent(Chat):
