@@ -4,7 +4,8 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendMessage } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage } from '../services/backend-service.js'
+    const IS_AGENT = false
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
@@ -37,7 +38,9 @@
         clearAllFiles()
         stopTimer()
 
-        // start new thread
+        if (!IS_AGENT)
+            return
+        // Start new thread if Agent mode
         threadId.value = await startThread()
         if (!threadId.value) {
             console.error("Failed to start new thread.")
@@ -51,12 +54,12 @@
 
     // Handle user input
     async function onUserInput(message) {
-        // Only send name/content to backend, but keep all file info in userFiles
+        // Only send name/content of files to backend, but keep all file info in userFiles
         const files = userFiles.value.map(({ name, content }) => ({ name, content }))
-        await addChatMessage(message, files)
+        await addMessage(message, files)
     }
 
-    async function addChatMessage(message, files) {
+    async function addMessage(message, files) {
         // Add user message to state (with all file info for display)
         const newMessage = new ChatMessage('user', message, [], [...userFiles.value])
         let removedFiles = clearAllFiles() // Remove all files from UI
@@ -68,8 +71,16 @@
             startTimer()
         })
 
-        // Create thread if not exists
-        if (!threadId.value) {
+        // Prepare messages for chat mode
+        let messages = []
+        if (!IS_AGENT) {
+            messages = chatMessages.value.map(msg => ({
+                role: msg.sender,
+                content: msg.content
+            }))
+        }
+        // Create thread if agent mode and thread does not exists
+        else if (IS_AGENT && !threadId.value) {
             threadId.value = await startThread()
             console.log("Started new thread with ID:", threadId.value)
             if (!threadId.value) {
@@ -79,7 +90,9 @@
         }
 
         // Send message to backend
-        const { response, references } = await sendMessage(threadId.value, message, files)
+        const { response, references } = IS_AGENT ?
+            await sendThreadMessage(threadId.value, message, files) :
+            await sendChatMessage(messages, files)
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
@@ -135,7 +148,6 @@
         onAdjustCss({ type: 'resize', height, fixed: chatMessages.value.length > 0 })
     }
     function clearAllFiles() {
-        // let removedFiles = fileUploader.value.clearFiles()
         let removedFiles = [...userFiles.value]
         userFiles.value = []
         return removedFiles
@@ -224,7 +236,7 @@
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />[Læs retningslinjerne for brugen af generativ AI her.](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+        message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
     />
     <Alert
         v-else

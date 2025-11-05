@@ -85,7 +85,7 @@ class Chat(AzureOpenAIClient):  # TODO: Fix method signature to match Agent
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, thread_id, chat_messages, files):
+    def fetch_chat_response(self, chat_messages, files, thread_id = None):
         ai_search_body = {
             "data_sources": [
                 {
@@ -178,7 +178,7 @@ class Chat(AzureOpenAIClient):  # TODO: Fix method signature to match Agent
                 # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
                 assistant_response = re.sub(r'(\[\d+\]){2,}', self.sort_refs, assistant_response)
 
-        return {"role": "assistant", "content": assistant_response}, referenced_citations
+        return assistant_response, referenced_citations if 'referenced_citations' in locals() else []
 
 
 class Agent(Chat):
@@ -192,7 +192,7 @@ class Agent(Chat):
         )
         self.agent = self.project.agents.get_agent(self.assistant_id)
 
-    def fetch_chat_response(self, thread_id, chat_message, files):
+    def fetch_chat_response(self, chat_message, files, thread_id):
         if not thread_id:
             return {"role": "assistant", "content": "Error: No thread_id provided for Agent. Please create a thread first."}, []
 
