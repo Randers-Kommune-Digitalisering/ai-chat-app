@@ -76,7 +76,8 @@
         if (!IS_AGENT) {
             messages = chatMessages.value.map(msg => ({
                 role: msg.sender,
-                content: msg.content
+                content: msg.content,
+                files: msg.files.map(({ name, content }) => ({ name, content }))
             }))
         }
         // Create thread if agent mode and thread does not exists
@@ -92,7 +93,7 @@
         // Send message to backend
         const { response, references } = IS_AGENT ?
             await sendThreadMessage(threadId.value, message, files) :
-            await sendChatMessage(messages, files)
+            await sendChatMessage(messages)
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals

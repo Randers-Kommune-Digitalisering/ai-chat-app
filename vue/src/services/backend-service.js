@@ -26,9 +26,9 @@ export async function sendThreadMessage(threadId, message, files) {
     }
 }
 
-export async function sendChatMessage(messages, files) {
+export async function sendChatMessage(messages) {
     try {
-        const result = await axios.post('/api/chat/messages', { messages, files });
+        const result = await axios.post('/api/chat/messages', { messages });
         return {
             response: result.data.response,
             references: result.data.references

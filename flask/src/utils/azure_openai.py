@@ -1,5 +1,6 @@
 import datetime
 import re
+from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
@@ -74,6 +75,10 @@ class AzureOpenAIClient:
 
         return system_prompt
 
+    @abstractmethod
+    def fetch_chat_response(self, chat_messages, files=None, thread_id=None):
+        pass
+
     @staticmethod
     def sort_refs(match):
         refs = re.findall(r'\[(\d+)\]', match.group(0))
@@ -81,11 +86,11 @@ class AzureOpenAIClient:
         return ''.join(f'[{ref}]' for ref in sorted_refs)
 
 
-class Chat(AzureOpenAIClient):  # TODO: Fix method signature to match Agent
+class Chat(AzureOpenAIClient):
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages, files, thread_id = None):
+    def fetch_chat_response(self, chat_messages, files=None, thread_id=None):
         ai_search_body = {
             "data_sources": [
                 {
@@ -108,15 +113,25 @@ class Chat(AzureOpenAIClient):  # TODO: Fix method signature to match Agent
             ]
         } if self.search_endpoint and self.search_index and self.search_index != "" else {}
 
-        # Append document text to user messages if available
+        # Add system prompt to messages
         request_messages = []
-        for message in chat_messages:
+        system_prompt = {
+            "role": "system",
+            "content": self.get_system_prompt()
+        }
+        request_messages.append(system_prompt)
+
+        # Append document text to each user message if available
+        for chat_message in chat_messages:
             request_message = {
-                "role": message["role"],
-                "content": message["content"]
+                "role": chat_message["role"],
+                "content": chat_message["content"]
             }
-            if message.get("doc_text"):
-                request_message["content"] = f"{request_message['content']}\n\nBenyt følgende indhold fra uploaded dokument som kontekst for forespørgslen:\n\n{message['doc_text']}"
+            if chat_message.get("files") and chat_message["role"] == "user":
+                request_message["content"] = f"{request_message['content']}\n\n# Der er uploadet {len(chat_message['files'])} dokument{'er' if len(chat_message['files']) > 1 else ''}. Benyt følgende indhold fra {'de uploadede dokumenter' if len(chat_message['files']) > 1 else 'det uploadede dokument'} som kontekst for forespørgslen:\n\n"
+                for index, file in enumerate(chat_message["files"]):
+                    doc_text = extract_text_from_file(file)
+                    request_message["content"] = f"{request_message['content']}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
             request_messages.append(request_message)
 
         response = self.client.chat.completions.create(

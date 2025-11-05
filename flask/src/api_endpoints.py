@@ -53,26 +53,27 @@ def create_thread_message(thread_id):
 @api_endpoints.route('/chat/messages', methods=['POST'])
 def create_chat_message():
     messages = request.json.get("messages", [])
-    files_data = request.json.get("files", [])
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
 
     # Parse files from JSON: each file is { name, content (base64) }
-    files = []
-    for file_info in files_data:
-        name = file_info.get("name")
-        content_b64 = file_info.get("content")
-        if not name or not content_b64:
-            continue
-        try:
-            file_bytes = base64.b64decode(content_b64)
-            file_obj = io.BytesIO(file_bytes)
-            file_obj.filename = name  # For extract_text_from_file
-            files.append(file_obj)
-        except Exception as e:
-            logger.warning(f"Failed to decode file {name}: {e}")
+    for msg in messages:
+        new_files = []
+        for file_info in msg.get("files", []):
+            name = file_info.get("name")
+            content_b64 = file_info.get("content")
+            if not name or not content_b64:
+                continue
+            try:
+                file_bytes = base64.b64decode(content_b64)
+                file_obj = io.BytesIO(file_bytes)
+                file_obj.filename = name  # For extract_text_from_file
+                new_files.append(file_obj)
+            except Exception as e:
+                logger.warning(f"Failed to decode file {name}: {e}")
+        msg["files"] = new_files
 
-    response, refs = azure_client.fetch_chat_response(messages, files)
+    response, refs = azure_client.fetch_chat_response(messages)
     if not response:
         return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
 
