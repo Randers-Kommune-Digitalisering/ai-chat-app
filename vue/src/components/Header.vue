@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue'
-const ASSISTANT_NAME = import.meta.env.VITE_ASSISTANT_NAME || "AI Assistent";
+import { ref, getCurrentInstance } from 'vue'
+const ASSISTANT_NAME = getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent'
 
 const props = defineProps({
     showStartNewChat: {

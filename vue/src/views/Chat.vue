@@ -1,11 +1,11 @@
 <script setup>
-    import { ref, nextTick } from 'vue'
+    import { ref, nextTick, getCurrentInstance } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage } from '../services/backend-service.js'
-    const IS_AGENT = false
+    const IS_AGENT = getCurrentInstance().appContext.config.globalProperties.$config.isAgent === 'true'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {

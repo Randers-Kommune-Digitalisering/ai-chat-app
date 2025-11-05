@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -11,6 +12,16 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
+
+
+# Config endpoint for frontend
+@api_endpoints.route('/config', methods=['GET'])
+def get_config():
+    config = {
+        "assistantName": ASSISTANT_NAME,
+        "isAgent": ASSISTANT_TYPE.lower() == "agent"
+    }
+    return jsonify(config)
 
 
 @api_endpoints.route('/threads', methods=['POST'])
