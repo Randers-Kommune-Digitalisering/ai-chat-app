@@ -38,4 +38,4 @@ jobs:
           pytest
       - name: Lint with flake8
         run: | 
-          flake8 --ignore=E501,W293,W503,W504  flask/src flask/tests --show-source
+          flake8 --ignore=E501,W293,W503,W504 flask/src flask/tests --show-source
