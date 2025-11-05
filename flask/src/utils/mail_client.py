@@ -16,11 +16,15 @@ def send_mail(body: str) -> requests.Response:
 
 
 def create_feedback_mail(feedback: str, response_index: str, chat_history: list) -> str:
+    try:
+        index = int(response_index.split("_")[1]) + 1  # Extract index from 'msg_0', make it 1-based
+    except (IndexError, ValueError):
+        index = response_index  # Fallback to raw value if parsing fails
     mail_body = f"Feedback fra bruger modtaget:\n\n`{feedback}`\n"
-    mail_body += f"\nFeedback er vedr. svar #{response_index}\n"
+    mail_body += f"\nFeedback er vedr. svar #{index}\n"
     mail_body += "\nFuld chathistorik:\n\n"
-    for idx, message in enumerate(chat_history, 1):
-        mail_body += f"#{idx}: {message['content']}\n"
+    for idx, message in enumerate(chat_history):
+        mail_body += f"#{idx + 1}: {message['content']}\n"
     return mail_body
 
 
