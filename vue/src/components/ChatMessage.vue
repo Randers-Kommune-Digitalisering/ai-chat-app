@@ -9,7 +9,7 @@
     const props = defineProps({
         id: {
             type: String,
-            required: false,
+            required: true,
             default: null
         },
         message: {
@@ -68,7 +68,7 @@
         chatHistory.push({ content: props.message.content });
         // If you have full chat history in parent, pass as prop and use that instead
         try {
-            const data = await sendFeedback(feedbackText.value, props.id ?? '1', chatHistory);
+            const data = await sendFeedback(feedbackText.value, props.id, chatHistory);
             if (data.success) {
                 feedbackSent.value = true;
                 feedbackDialogOpen.value = false;

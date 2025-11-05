@@ -81,7 +81,7 @@
             }))
         }
         // Create thread if agent mode and thread does not exists
-        else if (IS_AGENT && !threadId.value) {
+        else if (!threadId.value) {
             threadId.value = await startThread()
             console.log("Started new thread with ID:", threadId.value)
             if (!threadId.value) {

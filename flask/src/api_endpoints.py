@@ -101,7 +101,7 @@ def send_feedback():
     feedback = data.get('feedback')
     response_index = data.get('response_index')
     chat_history = data.get('chat_history')
-    if not feedback or response_index is None or chat_history is None:
+    if feedback is None or response_index is None or chat_history is None:
         return jsonify({"success": False, "message": "Missing feedback, response_index, or chat_history"}), 400
     result = send_user_feedback(feedback, response_index, chat_history)
     if result is None:

@@ -15,7 +15,7 @@ export async function sendThreadMessage(threadId, message, files) {
     }
 }
 
-export async function sendChatMessage(messages, files) {
+export async function sendChatMessage(messages) {
     console.log("Sending chat message with messages:", messages);
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000)); // Wait for 1-3 seconds
     return {
