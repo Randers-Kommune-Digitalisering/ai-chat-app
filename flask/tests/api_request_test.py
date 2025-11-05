@@ -1,9 +1,18 @@
 import pytest
 import base64
-
+import os
 from unittest.mock import MagicMock, patch
 
 from utils.api_requests import APIClient
+
+# Set all required environment variables to dummy values for tests
+os.environ['AZURE_OPENAI_KEY'] = 'dummy-key'
+os.environ['AZURE_OPENAI_ENDPOINT'] = 'dummy-endpoint'
+os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'] = 'dummy-deployment'
+os.environ['ASSISTANT_ID'] = 'dummy-assistant-id'
+os.environ['FEEDBACK_MAIL_API_URL'] = 'dummy-feedback-url'
+os.environ['FEEDBACK_MAIL_API_RECIPIENT'] = 'dummy-recipient@example.com'
+os.environ['FEEDBACK_MAIL_API_SENDER'] = 'dummy-sender@example.com'
 
 
 def test_init():
