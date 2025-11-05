@@ -178,7 +178,12 @@ class Chat(AzureOpenAIClient):
                 # Reduce citations to referenced ones only
                 referenced_citations = [item for item in url_index_map if any(ref in item['refs'] for ref in unique_refs)]
 
-                # Update assistant response with new reference numbers and update title accordingly
+                # Update titles for referenced citations only once
+                for idx, item in enumerate(referenced_citations):
+                    old_title = item.get('title')
+                    item["title"] = f"[{idx + 1}] {old_title}"
+
+                # Update assistant response with new reference numbers
                 def replace_ref(m):
                     orig_ref = int(m.group(1))
                     # Find the URL for this original reference
@@ -188,12 +193,7 @@ class Chat(AzureOpenAIClient):
                         # Find the new reference number based on url_index_map order
                         for idx, url_info in enumerate(url_index_map):
                             if url_info['url'] == citation_url:
-                                # Update the title for the referenced citation
                                 ref_number = idx + 1
-                                for item in referenced_citations:
-                                    if item['url'] == citation_url:
-                                        old_title = item.get('title')
-                                        item["title"] = f"[{ref_number}] {old_title}"
                                 return f"[{ref_number}]"
 
                     # fallback if not found
