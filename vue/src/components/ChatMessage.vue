@@ -34,6 +34,11 @@
             type: Number,
             required: false,
             default: 0
+        },
+        chatHistory: {
+            type: Array,
+            required: false,
+            default: () => []
         }
     })
 
@@ -56,6 +61,7 @@
 
     const feedbackLiked = ref(false)
     const feedbackDialogOpen = ref(false)
+    const feedbackIsSubmitting = ref(false)
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
@@ -63,10 +69,11 @@
     // Send feedback to backend
     async function submitFeedback() {
         if (!feedbackText.value.trim()) return;
+        feedbackIsSubmitting.value = true;
         // Prepare chat history for backend (only content)
-        let chatHistory = [];
-        chatHistory.push({ content: props.message.content });
-        // If you have full chat history in parent, pass as prop and use that instead
+        let chatHistory = Array.isArray(props.chatHistory)
+            ? props.chatHistory.map(msg => ({ content: msg.content }))
+            : [{ content: props.message.content }];
         try {
             const data = await sendFeedback(feedbackText.value, props.id, chatHistory);
             if (data.success) {
@@ -75,7 +82,9 @@
             } else {
                 alert('Kunne ikke sende feedback: ' + (data.message || 'Ukendt fejl'));
             }
+            feedbackIsSubmitting.value = false;
         } catch (err) {
+            feedbackIsSubmitting.value = false;
             alert('Fejl ved afsendelse af feedback: ' + err);
         }
     }
@@ -181,8 +190,13 @@
                     <button
                         class="submit-feedback-button"
                         @click="submitFeedback"
-                        :disabled="!feedbackText.trim()">
-                        Send feedback
+                        :disabled="!feedbackText.trim() || feedbackIsSubmitting">
+                        <template v-if="feedbackIsSubmitting">
+                            <i class="fa-solid fa-spinner fa-spin"></i> Sender ...
+                        </template>
+                        <template v-else>
+                            Send feedback
+                        </template>
                     </button>
                     <button class="cancel-feedback-button" @click="feedbackDialogOpen = false">
                         Annuller
@@ -408,6 +422,9 @@
             background-color: var(--color-button-green);
             border: 0.05rem solid var(--color-button-green-border);
         }
+            .submit-feedback-button > i {
+                margin-right: 0.4rem;
+            }
         .submit-feedback-button:not(:disabled):hover {
             background-color: var(--color-button-green-hover);
             border: 0.05rem solid var(--color-button-green-border-hover);

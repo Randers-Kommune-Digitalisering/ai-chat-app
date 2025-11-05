@@ -265,6 +265,7 @@
                 :references="msg.references"
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
+                :chatHistory="chatMessages"
             />
         </template>
 
