@@ -1,11 +1,10 @@
 <script setup>
-    import { ref, nextTick, getCurrentInstance } from 'vue'
+    import { ref, nextTick, getCurrentInstance, onMounted } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage } from '../services/backend-service.js'
-    const IS_AGENT = getCurrentInstance().appContext.config.globalProperties.$config.isAgent === 'true'
 
     class ChatMessage {
         constructor(sender, content, references = [], files = [], timeSpent = 0) {
@@ -23,6 +22,12 @@
         }
     }
 
+    const isAgent = ref(false)
+    onMounted(() => {
+        const instance = getCurrentInstance()
+        const config = instance.appContext.config.globalProperties.$config
+        isAgent.value = !!config?.isAgent
+    })
     const threadId = ref(null)
     const userInput = ref(null)
     const userFiles = ref([])
@@ -38,7 +43,7 @@
         clearAllFiles()
         stopTimer()
 
-        if (!IS_AGENT)
+    if (!isAgent.value)
             return
         // Start new thread if Agent mode
         threadId.value = await startThread()
@@ -73,7 +78,7 @@
 
         // Prepare messages for chat mode
         let messages = []
-        if (!IS_AGENT) {
+        if (!isAgent.value) {
             messages = chatMessages.value.map(msg => ({
                 role: msg.sender,
                 content: msg.content,
@@ -91,7 +96,7 @@
         }
 
         // Send message to backend
-        const { response, references } = IS_AGENT ?
+        const { response, references } = isAgent.value ?
             await sendThreadMessage(threadId.value, message, files) :
             await sendChatMessage(messages)
 

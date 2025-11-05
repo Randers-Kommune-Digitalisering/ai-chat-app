@@ -55,10 +55,13 @@ def create_thread_message(thread_id):
             files.append(file_obj)
         except Exception as e:
             logger.warning(f"Failed to decode file {name}: {e}")
-
-    response, refs = azure_client.fetch_chat_response(message, files, thread_id)
-    if not response:
-        return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+    try:
+        response, refs = azure_client.fetch_chat_response(message, files, thread_id)
+        if not response:
+            return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+    except Exception as e:
+        logger.error(f"Error fetching chat response: {e}")
+        return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
     return jsonify({"success": True, "response": response, "references": refs})
 
@@ -87,9 +90,13 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
-    response, refs = azure_client.fetch_chat_response(messages)
-    if not response:
-        return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+    try:
+        response, refs = azure_client.fetch_chat_response(messages)
+        if not response:
+            return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+    except Exception as e:
+        logger.error(f"Error fetching chat response: {e}")
+        return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
     return jsonify({"success": True, "response": response, "references": refs})
 
