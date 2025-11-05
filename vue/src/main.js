@@ -13,5 +13,6 @@ async function fetchConfig() {
 fetchConfig().then(config => {
 	const app = createApp(App);
 	app.config.globalProperties.$config = config;
+    document.title = config.assistantName || "AI Chat";
 	app.mount('#app');
 });
