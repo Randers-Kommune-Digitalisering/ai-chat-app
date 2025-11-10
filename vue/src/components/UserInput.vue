@@ -133,6 +133,16 @@
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
         suggestions.value = !!config?.predefinedQuestions ? config.predefinedQuestions : []
+        // Shuffle suggestions except the first one
+        if (suggestions.value.length > 1) {
+            const first = suggestions.value[0]
+            const rest = suggestions.value.slice(1)
+            for (let i = rest.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1))
+                ;[rest[i], rest[j]] = [rest[j], rest[i]]
+            }
+            suggestions.value = [first, ...rest]
+        }
 
         // If no predefined questions, use default suggestions
         if (suggestions.value.length === 0)
