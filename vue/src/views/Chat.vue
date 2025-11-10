@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-demo.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -92,6 +92,7 @@
     }
 
     const undoAndEditMessage = async (chatMessage) => {
+        awaitingUserInput.value = false
         // Re-add user files to state
         for (let file of chatMessage.files) {
             addFile(file)
@@ -175,11 +176,13 @@
 
     function unfilterResponseContent(content) {
         // Replace [REDACTED #1] with original user input for display
+        console.log("Unfiltering response content:", content)
         let filtered = content
-        const regex = /\[REDACTED?#(\d+)\]/g
+        const regex = /\[REDACTED\s*#\s*(\d+)\]/g
         const unfiltered = filtered.replace(regex, (fullMatch, group1) => {
-            const redactedIndex = parseInt(group1, 10) - 1
+            console.log("Unfiltering match:", fullMatch, "index:", group1)
             // Find the previous user message (before the assistant's response)
+            const redactedIndex = parseInt(group1, 10) - 1
             const prevUserMsg = [...chatMessages.value].reverse().find(msg => msg.sender === 'user')
             if (
                 prevUserMsg &&

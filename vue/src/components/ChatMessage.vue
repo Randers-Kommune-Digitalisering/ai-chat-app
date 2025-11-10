@@ -1,7 +1,7 @@
 <script setup>
     import { nextTick, ref, computed } from 'vue'
     import { marked } from 'marked'
-    import { sendFeedback } from '../services/backend-demo.js'
+    import { sendFeedback } from '../services/backend-service.js'
 
     // Configure marked to treat single line breaks as <br>
     marked.setOptions({ breaks: true })

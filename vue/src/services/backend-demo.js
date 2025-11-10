@@ -8,7 +8,7 @@ export async function startThread() {
 export async function sendThreadMessage(threadId, message, files) {
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000)); // Wait for 1-3 seconds
     return {
-        response: "This is a demo response to your message: " + message.replace("test", "[REDACTED#1]"),
+        response: "This is a demo response to your message: " + message.replace("test", "[REDACTED #1]"),
         references: [
             { title: "Eksempel Reference", url: "https://example.com" }
         ]
