@@ -61,11 +61,10 @@
     // Handle user input
     async function onUserInput(message) {
         // Only send name/content of files to backend, but keep all file info in userFiles
-        const files = userFiles.value.map(({ name, content }) => ({ name, content }))
-        await addMessage(message, files)
+        await addMessage(message)
     }
 
-    async function addMessage(message, files) {
+    async function addMessage(message) {
         // Filter user message for illegal content
         let illegalContents = []
         try {
@@ -76,16 +75,43 @@
 
         // Add user message to state (with all file info for display)
         const newMessage = new ChatMessage('user', message, illegalContents, [], [...userFiles.value])
-        let removedFiles = clearAllFiles() // Remove all files from UI
+        clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
-        awaitingResponse.value = true
         nextTick(() => {
             updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1)
-            startTimer()
         })
 
+        // Send message if no illegal content
+        if (illegalContents.length === 0)
+            await sendMessage(newMessage)
+    }
+
+    const undoAndEditMessage = async (chatMessage) => {
+        // Re-add user files to state
+        for (let file of chatMessage.files) {
+            addFile(file)
+        }
+        // Remove last user message
+        chatMessages.value.pop()
+        nextTick(() => {
+            updateInputPadding()
+            const input = document.querySelector('.user-input')
+            if (input) input.focus()
+            scrollToMessage(chatMessages.value.length - 1)
+        })
+        // Set user input to previous message content
+        userInput.value.setUserInput(chatMessage.content)
+    }
+
+    const sendMessage = async (chatMessage) => {
+        // Update state
+        chatMessage.illegalContents = [] // Clear illegal contents
+        awaitingResponse.value = true
+        startTimer()
+
         // Prepare messages for chat mode
+        let message = chatMessage.content
         let messages = []
         if (!isAgent.value) {
             messages = chatMessages.value.map(msg => ({
@@ -106,7 +132,7 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, files) :
+            await sendThreadMessage(threadId.value, message, chatMessage.files) :
             await sendChatMessage(messages)
 
         // Response received from backend
@@ -126,7 +152,7 @@
         )
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
-            for (let file of removedFiles) {
+            for (let file of chatMessage.files) {
                 addFile(file)
             }
             assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
@@ -140,10 +166,6 @@
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
-    }
-
-    const sendMessage = async () => {
-        // Send message logic here
     }
 
     // Handle file uploads
@@ -290,8 +312,8 @@
                     message="**Advarsel**: Din besked indeholder potentielt følsomt eller fortroligt indhold. Hvordan vil du fortsætte?"
                 >
                     <div class="alert--buttons">
-                        <button>Redigér</button>
-                        <button>Anonymisér og send</button>
+                        <button @click="undoAndEditMessage(msg)">Redigér</button>
+                        <button @click="sendMessage(msg)">Anonymisér og send</button>
                     </div>
                 </Alert>
             </div>

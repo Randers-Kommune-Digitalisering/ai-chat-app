@@ -28,6 +28,13 @@
         }
     })
 
+    function setUserInput(value) {
+        userInput.value = value
+        nextTick(() => {
+            emitTextareaResize()
+        })
+    }
+
     function clearUserInput() {
         userInput.value = ''
         nextTick(() => {
@@ -41,6 +48,7 @@
     }
 
     defineExpose({
+        setUserInput,
         clearUserInput,
         getTextareaHeight
     })
