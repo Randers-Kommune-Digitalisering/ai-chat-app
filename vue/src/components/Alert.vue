@@ -21,6 +21,10 @@
         message: {
             type: String,
             required: true
+        },
+        inline: {
+            type: Boolean,
+            default: false
         }
     })
 
@@ -37,9 +41,10 @@
 </script>
 
 <template>
-    <div :class="['alert', typeClass]">
+    <div :class="['alert', typeClass, { 'alert--inline': props.inline }]">
         <i :class="`fa-solid fa-${icon}`"></i>
         <span class="alert__message" v-html="formattedMessage"></span>
+        <slot />
     </div>
 </template>
 
@@ -81,5 +86,8 @@
     .alert--error {
         border-left: 4px solid #f44336;
         background: #f443332f;
+    }
+    .alert--inline {
+        transform: translateY(0);
     }
 </style>

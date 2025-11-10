@@ -4,12 +4,13 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, filterMessage } from '../services/backend-demo.js'
 
     class ChatMessage {
-        constructor(sender, content, references = [], files = [], timeSpent = 0) {
+        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
             this.sender = sender
             this.content = content
+            this.illegalContents = illegalContents
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
@@ -65,8 +66,16 @@
     }
 
     async function addMessage(message, files) {
+        // Filter user message for illegal content
+        let illegalContents = []
+        try {
+            illegalContents = await filterMessage(message)
+        } catch (error) {
+            console.error("Error filtering message:", error)
+        }
+
         // Add user message to state (with all file info for display)
-        const newMessage = new ChatMessage('user', message, [], [...userFiles.value])
+        const newMessage = new ChatMessage('user', message, illegalContents, [], [...userFiles.value])
         let removedFiles = clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         awaitingResponse.value = true
@@ -110,6 +119,7 @@
         const assistantMessage = new ChatMessage(
             'assistant',
             response,
+            [],
             references.map(ref => new Reference(ref.title, ref.url)),
             [],
             timeSpent
@@ -130,6 +140,10 @@
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
+    }
+
+    const sendMessage = async () => {
+        // Send message logic here
     }
 
     // Handle file uploads
@@ -260,13 +274,27 @@
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
-                :message="msg"
+                :message="msg.content"
+                :highlightedWords="msg.illegalContents"
                 :sender="msg.sender"
                 :references="msg.references"
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
                 :chatHistory="chatMessages"
             />
+           
+            <div v-if="msg.illegalContents.length > 0">
+                <Alert v-if="msg.illegalContents.length > 0"
+                    type="warning"
+                    :inline="true"
+                    message="**Advarsel**: Din besked indeholder potentielt følsomt eller fortroligt indhold. Hvordan vil du fortsætte?"
+                >
+                    <div class="alert--buttons">
+                        <button>Redigér</button>
+                        <button>Anonymisér og send</button>
+                    </div>
+                </Alert>
+            </div>
         </template>
 
         <div v-if="awaitingResponse" class="loading-indicator">
@@ -364,4 +392,28 @@
     @keyframes l24 {
         100% {transform: rotate(1turn)}
     }
+
+    .alert--buttons {
+        margin-left: auto;
+        width: max-content;
+        display: flex;
+    }
+        .alert--buttons button {
+            margin-left: 0.5rem;
+            padding: 0.3rem 0.8rem;
+            border: 0.05rem solid var(--color-button-gray-border);
+            border-radius: 0.25rem;
+            background-color: #8a8a8a11;
+            color: var(--color-button-text);
+            cursor: pointer;
+            font-size: 0.9rem;
+            min-width: max-content;
+            transition: 0.2s;
+            padding-top: 0.6rem;
+            padding-bottom: 0.6rem;
+        }
+        .alert--buttons button:hover {
+            background-color: #8a8a8a27;
+            color: white;
+        }
 </style>

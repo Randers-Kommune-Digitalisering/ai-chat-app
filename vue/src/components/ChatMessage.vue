@@ -1,7 +1,7 @@
 <script setup>
-    import { nextTick, ref } from 'vue'
+    import { nextTick, ref, computed } from 'vue'
     import { marked } from 'marked'
-    import { sendFeedback } from '../services/backend-service.js'
+    import { sendFeedback } from '../services/backend-demo.js'
 
     // Configure marked to treat single line breaks as <br>
     marked.setOptions({ breaks: true })
@@ -13,8 +13,13 @@
             default: null
         },
         message: {
-            type: Object,
+            type: String,
             required: true
+        },
+        highlightedWords: {
+            type: Array,
+            required: false,
+            default: () => []
         },
         sender: {
             type: String,
@@ -73,7 +78,7 @@
         // Prepare chat history for backend (only content)
         let chatHistory = Array.isArray(props.chatHistory)
             ? props.chatHistory.map(msg => ({ content: msg.content }))
-            : [{ content: props.message.content }];
+            : [{ content: props.message }];
         try {
             const data = await sendFeedback(feedbackText.value, props.id, chatHistory);
             if (data.success) {
@@ -88,6 +93,15 @@
             alert('Fejl ved afsendelse af feedback: ' + err);
         }
     }
+
+    const highlightedMessage = computed(() => {
+        let content = props.message
+        props.highlightedWords.forEach(word => {
+            const regex = new RegExp(`(${word})`, 'gi')
+            content = content.replace(regex, '<mark>$1</mark>')
+        })
+        return content
+    })
 
     const resizeTextareaToFitContent = () => {
         let maxHeight = 218 // pixels = 10 lines
@@ -121,7 +135,7 @@
 
 <template>
     <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="marked(props.message.content)"></div>
+        <div class="chat-content" v-html="marked(highlightedMessage)"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -159,7 +173,7 @@
             </div>
 
             <div class="options">
-                <div class="option" @click="copyTextToClipboard(props.message.content)">
+                <div class="option" @click="copyTextToClipboard(props.message)">
                     <i class="fa-regular fa-copy"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
@@ -245,6 +259,13 @@
             font-family: var(--font-code);
             border: 0.05rem solid var(--color-code-border);
             font-size: 0.8em;
+        }
+        :deep(.chat-content mark) {
+            padding-left: 0.2rem;
+            padding-right: 0.2rem;
+            background-color: #ff615579;
+            color: inherit;
+            border-radius: 0.2rem;
         }
 
     .fileUploads {

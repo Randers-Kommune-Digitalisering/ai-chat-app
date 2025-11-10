@@ -37,3 +37,10 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
         }
     };
 }
+
+export function filterMessage(message) {
+    // Simple demo filter that returns list of filtered words
+    const filteredWords = ["test"];
+    const foundWords = filteredWords.filter(word => message.toLowerCase().includes(word));
+    return foundWords;
+}
