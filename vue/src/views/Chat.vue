@@ -4,13 +4,14 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, filterMessage } from '../services/backend-demo.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-demo.js'
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
+            this.redactedContents = illegalContents.slice() // Copy illegal contents for record
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
@@ -34,6 +35,7 @@
     const userFiles = ref([])
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
+    const awaitingUserInput = ref(false)
 
     async function clearChat() {
         // Clear UI state
@@ -68,7 +70,7 @@
         // Filter user message for illegal content
         let illegalContents = []
         try {
-            illegalContents = await filterMessage(message)
+            illegalContents = await getIllegalContents(message)
         } catch (error) {
             console.error("Error filtering message:", error)
         }
@@ -85,6 +87,8 @@
         // Send message if no illegal content
         if (illegalContents.length === 0)
             await sendMessage(newMessage)
+        else
+            awaitingUserInput.value = true
     }
 
     const undoAndEditMessage = async (chatMessage) => {
@@ -106,6 +110,7 @@
 
     const sendMessage = async (chatMessage) => {
         // Update state
+        awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
         startTimer()
@@ -144,7 +149,7 @@
         awaitingResponse.value = false
         const assistantMessage = new ChatMessage(
             'assistant',
-            response,
+            unfilterResponseContent(response),
             [],
             references.map(ref => new Reference(ref.title, ref.url)),
             [],
@@ -166,6 +171,27 @@
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
+    }
+
+    function unfilterResponseContent(content) {
+        // Replace [REDACTED #1] with original user input for display
+        let filtered = content
+        const regex = /\[REDACTED?#(\d+)\]/g
+        const unfiltered = filtered.replace(regex, (fullMatch, group1) => {
+            const redactedIndex = parseInt(group1, 10) - 1
+            // Find the previous user message (before the assistant's response)
+            const prevUserMsg = [...chatMessages.value].reverse().find(msg => msg.sender === 'user')
+            if (
+                prevUserMsg &&
+                Array.isArray(prevUserMsg.redactedContents) &&
+                redactedIndex >= 0 &&
+                redactedIndex < prevUserMsg.redactedContents.length
+            ) {
+                return prevUserMsg.redactedContents[redactedIndex]
+            }
+            return fullMatch
+        })
+        return unfiltered
     }
 
     // Handle file uploads
@@ -333,7 +359,7 @@
         <UserInput
             ref="userInput"
             @send="onUserInput"
-            :disabled="awaitingResponse"
+            :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
             @adjust-css="onAdjustCss"
         />

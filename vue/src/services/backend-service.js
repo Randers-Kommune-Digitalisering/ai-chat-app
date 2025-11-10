@@ -53,7 +53,7 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
     }
 }
 
-export async function filterMessage(message) {
+export async function getIllegalContents(message) {
     try {
         const result = await axios.post('/api/filter', { content: message });
         return result.data.filtered_content || [];

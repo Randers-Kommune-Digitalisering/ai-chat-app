@@ -5,7 +5,7 @@ import io
 from utils.azure_openai import get_chat_client
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME
 from utils.mail_client import send_user_feedback
-from utils.input_filter import filter_content
+from utils.input_filter import redact_content, get_filter_content
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -42,6 +42,9 @@ def create_thread_message(thread_id):
     if not message:
         return jsonify({"success": False, "message": "Message is required"}), 400
 
+    # Redact sensitive content in user messages
+    message = redact_content(message)
+
     # Parse files from JSON: each file is { name, content (base64) }
     files = []
     for file_info in files_data:
@@ -74,8 +77,11 @@ def create_chat_message():
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
 
-    # Parse files from JSON: each file is { name, content (base64) }
     for msg in messages:
+        # Redact sensitive content in user messages
+        msg["content"] = redact_content(msg.get("content", ""))
+
+        # Parse files from JSON: each file is { name, content (base64) }
         new_files = []
         for file_info in msg.get("files", []):
             name = file_info.get("name")
@@ -109,7 +115,7 @@ def filter_content():
     if not content:
         return jsonify({"success": False, "message": "Content is required"}), 400
     try:
-        filtered_content = filter_content(content)
+        filtered_content = get_filter_content(content)
     except Exception as e:
         logger.error(f"Error filtering content: {e}")
         return jsonify({"success": False, "message": "Error filtering content", "error": str(e)}), 500
