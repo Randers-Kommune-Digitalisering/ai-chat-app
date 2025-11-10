@@ -1,5 +1,5 @@
 <script setup>
-    import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+    import { ref, onMounted, onBeforeUnmount, nextTick, watch, getCurrentInstance } from 'vue'
 
     const userInput = ref('')
     const textarea = ref(null)
@@ -102,17 +102,9 @@
 
     /* Placeholder typing effect */
 
-    const suggestions = [
-        "Fortæl mig hvad du kan hjælpe med",
-        "Hvordan opretter jeg en IT supportsag?",
-        "Hvad må jeg bruge AI til?",
-        "Hvordan opsætter jeg min email på mobilen?",
-        "Hvor kan jeg finde interne retningslinjer?",
-        "Hjælp mig med at skrive en email til en leverandør",
-        "Forklar forskellen på SBSYS og NemSag"
-    ]
+    const suggestions = ref([])
 
-    const placeholder = ref(suggestions[0])
+    const placeholder = ref(suggestions.value[0])
     let suggestionIndex = 0
     let typingInterval = null
     let cycleInterval = null
@@ -132,13 +124,22 @@
     }
 
     function cyclePlaceholder() {
-        suggestionIndex = (suggestionIndex + 1) % suggestions.length
-        typePlaceholder(suggestions[suggestionIndex])
+        suggestionIndex = (suggestionIndex + 1) % suggestions.value.length
+        typePlaceholder(suggestions.value[suggestionIndex])
     }
 
     onMounted(() => {
-        cycleInterval = setInterval(cyclePlaceholder, 4000 + suggestions[suggestionIndex].length * 50)
-        typePlaceholder(suggestions[0])
+        // Get placeholders from global config
+        const instance = getCurrentInstance()
+        const config = instance.appContext.config.globalProperties.$config
+        suggestions.value = !!config?.predefinedQuestions ? config.predefinedQuestions : []
+
+        // If no predefined questions, use default suggestions
+        if (suggestions.value.length === 0)
+            return
+
+        cycleInterval = setInterval(cyclePlaceholder, 4000 + suggestions.value[suggestionIndex].length * 50)
+        typePlaceholder(suggestions.value[0])
     })
 
     onBeforeUnmount(() => {
