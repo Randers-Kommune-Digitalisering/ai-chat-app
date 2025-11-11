@@ -52,16 +52,24 @@
 
     const recentlyCopied = ref(false)
 
-    const copyTextToClipboard = (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-            console.log('Text copied to clipboard:', text)
-            recentlyCopied.value = true
-            setTimeout(() => {
-                recentlyCopied.value = false
-            }, 1500)
-        }).catch(err => {
+    const copyTextToClipboard = async (text) => {
+        try {
+            // Use Clipboard API if available and page is secure
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text)
+                recentlyCopied.value = true
+                setTimeout(() => {
+                    recentlyCopied.value = false
+                }, 1500)
+                console.log('Text copied to clipboard:', text)
+            } else {
+                throw new Error('Clipboard API not available or context not secure')
+            }
+        } catch (err) {
+            recentlyCopied.value = false
+            alert('Kunne ikke kopiere tekst: ' + err)
             console.error('Could not copy text: ', err)
-        })
+        }
     }
 
     const feedbackLiked = ref(false)
