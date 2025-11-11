@@ -26,7 +26,7 @@ AZURE_API_VERSION_VECTORS = os.environ.get('AZURE_API_VERSION_VECTORS', '2025-03
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
 
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
-ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent, Assistant or Chat
+ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
 if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
     ASSISTANT_ID = ASSISTANT_ID.strip()

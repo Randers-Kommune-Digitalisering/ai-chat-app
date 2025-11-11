@@ -13,7 +13,7 @@ export async function startThread() {
     }
 }
 
-export async function sendMessage(threadId, message, files) {
+export async function sendThreadMessage(threadId, message, files) {
     try {
         const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files });
         return {
@@ -22,6 +22,33 @@ export async function sendMessage(threadId, message, files) {
         }
     } catch (error) {
         console.error("Error sending message:", error);
+        throw error;
+    }
+}
+
+export async function sendChatMessage(messages) {
+    try {
+        const result = await axios.post('/api/chat/messages', { messages });
+        return {
+            response: result.data.response,
+            references: result.data.references
+        }
+    } catch (error) {
+        console.error("Error sending chat message:", error);
+        throw error;
+    }
+}
+
+export async function sendFeedback(feedback, responseIndex, chatHistory) {
+    try {
+        const result = await axios.post('/api/feedback', {
+            feedback,
+            response_index: responseIndex,
+            chat_history: chatHistory
+        });
+        return result.data;
+    } catch (error) {
+        console.error("Error sending feedback:", error);
         throw error;
     }
 }

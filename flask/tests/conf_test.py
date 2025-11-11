@@ -1,5 +1,15 @@
 import pytest
+import os
 from main import create_app
+
+# Set all required environment variables to dummy values for tests
+os.environ['AZURE_OPENAI_KEY'] = 'dummy-key'
+os.environ['AZURE_OPENAI_ENDPOINT'] = 'dummy-endpoint'
+os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'] = 'dummy-deployment'
+os.environ['ASSISTANT_ID'] = 'dummy-assistant-id'
+os.environ['FEEDBACK_MAIL_API_URL'] = 'dummy-feedback-url'
+os.environ['FEEDBACK_MAIL_API_RECIPIENT'] = 'dummy-recipient@example.com'
+os.environ['FEEDBACK_MAIL_API_SENDER'] = 'dummy-sender@example.com'
 
 
 @pytest.fixture()
