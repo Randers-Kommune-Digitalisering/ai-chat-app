@@ -102,10 +102,15 @@
         }
     }
 
+    // Helper function to escape special regex characters in a string
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     const highlightedMessage = computed(() => {
         let content = props.message
         props.highlightedWords.forEach(word => {
-            const regex = new RegExp(`(${word})`, 'gi')
+            const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
             content = content.replace(regex, '<mark>$1</mark>')
         })
         return content

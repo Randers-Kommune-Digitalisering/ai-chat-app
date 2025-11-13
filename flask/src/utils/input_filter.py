@@ -4,8 +4,8 @@ import re
 def redact_content(text):
     filtered_content = get_filter_content(text)
     redacted_text = text
-    for content in filtered_content:
-        redacted_text = redacted_text.replace(content, f"[REDACTED #{filtered_content.index(content) + 1}]")
+    for idx, content in enumerate(filtered_content):
+        redacted_text = redacted_text.replace(content, f"[REDACTED #{idx + 1}]")
     return redacted_text
 
 

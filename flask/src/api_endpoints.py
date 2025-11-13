@@ -22,7 +22,7 @@ def get_config():
     config = {
         "assistantName": ASSISTANT_NAME,
         "isAgent": ASSISTANT_TYPE.lower() == "agent",
-        "predefinedQuestions": PREDEFINED_QUESTIONS if 'PREDEFINED_QUESTIONS' in globals() else []
+        "predefinedQuestions": PREDEFINED_QUESTIONS
     }
     return jsonify(config)
 

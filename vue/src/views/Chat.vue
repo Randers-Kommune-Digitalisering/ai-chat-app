@@ -11,7 +11,7 @@
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
-            this.redactedContents = illegalContents.slice() // Copy illegal contents for record
+            this.redactedContents = illegalContents.slice() // Preserve original filtered content for later restoration when unfiltering assistant responses
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
@@ -335,7 +335,7 @@
             />
            
             <div v-if="msg.illegalContents.length > 0">
-                <Alert v-if="msg.illegalContents.length > 0"
+                <Alert
                     type="warning"
                     :inline="true"
                     message="**Advarsel**: Din besked indeholder potentielt følsomt eller fortroligt indhold. Hvordan vil du fortsætte?"
