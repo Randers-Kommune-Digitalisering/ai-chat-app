@@ -116,6 +116,15 @@
         return content
     })
 
+    const isUrl = (string) => {
+        try {
+            new URL(string)
+            return true
+        } catch (_) {
+            return false
+        }
+    }
+
     const resizeTextareaToFitContent = () => {
         let maxHeight = 218 // pixels = 10 lines
         feedbackTextareaRef.value.style.height = 'auto'
@@ -170,7 +179,16 @@
                     v-if="props.references.length > 0"
                     v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
                     :key="index">
-                    <a :href="ref.link" target="_blank" rel="noopener">{{ ref.title }}</a>
+                    <a
+                        :href="isUrl(ref.link) ? ref.link : null"
+                        target="_blank"
+                        rel="noopener"
+                        :tabindex="isUrl(ref.link) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.link)"
+                        :class="{'disabled': !isUrl(ref.link)}  "
+                    >
+                        {{ ref.title }}
+                    </a>
                 </div>
                 <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
@@ -335,6 +353,10 @@
     .references a:hover {
         color: var(--color-reference-text-hover);
         background-color: var(--color-reference-background-hover);
+    }
+    .references a.disabled {
+        pointer-events: none;
+        color: var(--color-reference-text-disabled);
     }
     .references .time-spent {
         display: inline-block;
