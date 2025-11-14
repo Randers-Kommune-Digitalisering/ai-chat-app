@@ -138,7 +138,7 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, chatMessage.files) :
+            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content }))):
             await sendChatMessage(messages)
 
         // Response received from backend

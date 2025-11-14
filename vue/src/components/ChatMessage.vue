@@ -109,7 +109,8 @@
 
     const highlightedMessage = computed(() => {
         let content = props.message
-        props.highlightedWords.forEach(word => {
+        let uniqueWords = [...new Set(props.highlightedWords)]
+        uniqueWords.forEach(word => {
             const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
             content = content.replace(regex, '<mark>$1</mark>')
         })
@@ -185,7 +186,7 @@
                         rel="noopener"
                         :tabindex="isUrl(ref.link) ? 0 : -1"
                         :aria-disabled="!isUrl(ref.link)"
-                        :class="{'disabled': !isUrl(ref.link)}  "
+                        :class="{'disabled': !isUrl(ref.link)}"
                     >
                         {{ ref.title }}
                     </a>
