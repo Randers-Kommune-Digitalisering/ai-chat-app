@@ -41,6 +41,7 @@
         // Clear UI state
         chatMessages.value = []
         awaitingResponse.value = false
+        awaitingUserInput.value = false
         threadId.value = null
         userInput.value.clearUserInput()
         clearAllFiles()
