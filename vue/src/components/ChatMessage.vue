@@ -1,7 +1,7 @@
 <script setup>
     import { nextTick, ref, computed } from 'vue'
     import { marked } from 'marked'
-    import { sendFeedback } from '../services/backend-demo.js'
+    import { sendFeedback } from '../services/backend-service.js'
 
     // Configure marked to treat single line breaks as <br>
     marked.setOptions({ breaks: true })
@@ -504,14 +504,14 @@
             color: var(--color-button-text-hover);
         }
 
-    @media screen and (min-width: 600px) {
+    @media screen and (min-width: 680px) {
         .chat-message.user {
             max-width: 40.5rem;
         }
         .feedback-dialog {
             max-width: 40.5rem;
         }
-    }
+    } 
     @media screen and (min-width: 875px)  {
         .chat-message.user {
             max-width: 75%;

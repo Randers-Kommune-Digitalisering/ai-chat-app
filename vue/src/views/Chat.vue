@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-demo.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -29,6 +29,7 @@
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
+        showAssistantToggle.value = !!config?.showAssistantToggle
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -36,6 +37,7 @@
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
     const awaitingUserInput = ref(false)
+    const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
 
     async function clearChat() {
@@ -307,20 +309,22 @@
 
 <template>
     <Alert
-        v-if="chatMessages.length == 0"
-        type="transparent"
-        message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
-    />
-    <Alert
-        v-else
-        type="info"
-        message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
-    />
-    <Alert
         v-if="useAltAssistant"
         type="warning"
         message="**Bemærk**: Assistenten søger nu efter oplysninger på internettet for at besvare dine spørgsmål. Dette betyder at dele af din samtale kan blive sendt til tredjepartstjenester for at hente disse oplysninger."
     />
+    <template v-else>
+        <Alert
+            v-if="chatMessages.length == 0"
+            type="transparent"
+            message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+        />
+        <Alert
+            v-else
+            type="info"
+            message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
+        />
+    </template>
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?
@@ -365,18 +369,13 @@
         </div>
     </div>
 
-    <div class="alt-assistant-toggle">
-        <label class="switch" for="checkbox">
-            <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
-            <div class="slider round"></div>
-        </label>
-        <div>Søg på internettet</div>
-    </div>
-
     <div :class="['user-input-container', { 'landing-page': chatMessages.length == 0 }]" ref="userInputContainer">
         <UserInput
             ref="userInput"
             @send="onUserInput"
+            @toggle-alt-assistant="val => useAltAssistant = val"
+            :showAssistantToggle="showAssistantToggle"
+            :hasFiles="userFiles.length > 0"
             :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
             @adjust-css="onAdjustCss"
@@ -385,6 +384,7 @@
         <FileUpload
             ref="fileUploader"
             :files="userFiles"
+            :showAssistantTogglePadding="showAssistantToggle"
             @add-file="addFile"
             @remove-file="onFileRemoved"
             @clear-files="onClearFiles" />
@@ -482,61 +482,4 @@
             background-color: #8a8a8a27;
             color: white;
         }
-
-
-.alt-assistant-toggle {
-    display: flex;
-    align-items: center;
-    padding-left: 1rem;
-    gap: 1rem;
-    font-size: 0.9rem;
-    color: var(--color-text-primary);
-}
-
-.switch {
-    display: inline-block;
-    height: 2rem; /* 34px */
-    position: relative;
-    width: 3.75rem; /* 60px */
-}
-.switch input {
-    display: none;
-}
-.slider {
-    background-color: var(--color-input-background);
-    outline: 0.05rem solid var(--color-input-border);
-    bottom: 0;
-    cursor: pointer;
-    left: 0;
-    position: absolute;
-    right: 0;
-    top: 0;
-    transition: 200ms;
-}
-.slider:before {
-    background-color: var(--color-button-text);
-    bottom: 0.25rem; /* 4px */
-    content: "";
-    height: 1.5rem; /* 24px */
-    left: 0.25rem; /* 4px */
-    position: absolute;
-    transition: 200ms;
-    width: 1.5rem; /* 24px */
-}
-.slider:hover:before {
-    background-color: var(--color-button-text-hover);
-}
-input:checked + .slider {
-    background-color: var(--color-button-green-hover);
-    outline: 0.05rem solid var(--color-button-green-border-hover);
-}
-input:checked + .slider:before {
-    transform: translateX(1.750rem); /* 28px */
-}
-.slider.round {
-    border-radius: 2rem; /* 32px */
-}
-.slider.round:before {
-    border-radius: 50%;
-}
 </style>
