@@ -214,7 +214,7 @@
                     <div class="tooltip">Synes godt om</div>
                 </div>
                 <div :class="['option', { disabled: feedbackSent }]" @click="feedbackDialogOpen = !feedbackDialogOpen; scrollToFeedbackDialog()">
-                    <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-thumbs-down']"></i>
+                    <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
                 </div>
                 <div v-if="feedbackSent" class="feedback-sent-message">
