@@ -41,14 +41,21 @@
 </script>
 
 <template>
-    <div :class="['alert', typeClass, { 'alert--inline': props.inline }]">
-        <i :class="`fa-solid fa-${icon}`"></i>
-        <span class="alert__message" v-html="formattedMessage"></span>
-        <slot />
+    <div class="alert-wrapper">
+        <div :class="['alert', typeClass, { 'alert--inline': props.inline }]">
+            <i :class="`fa-solid fa-${icon}`"></i>
+            <span class="alert__message" v-html="formattedMessage"></span>
+            <slot />
+        </div>
     </div>
 </template>
 
 <style scoped>
+    .alert-wrapper {
+        background-color: var(--color-background-primary);
+        position: relative;
+        z-index: 11;
+    }
     .alert {
         display: flex;
         align-items: center;
@@ -57,7 +64,6 @@
         margin: 0.5em 0;
         transform: translateY(-0.7rem);
         font-size: 1rem;
-        z-index: 11 !important;
     }
     .alert i {
         margin-right: 0.8rem;

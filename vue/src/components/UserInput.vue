@@ -277,7 +277,7 @@
     }
 
     .alt-assistant-toggle {
-        position: fixed;
+        position: absolute;
         display: flex;
         align-items: center;
         padding-right: 0.5rem;

@@ -345,7 +345,7 @@
                 :chatHistory="chatMessages"
             />
            
-            <div v-if="msg.illegalContents.length > 0">
+            <div v-if="msg.illegalContents.length > 0" class="alert-content-filter">
                 <Alert
                     type="warning"
                     :inline="true"
@@ -374,7 +374,7 @@
             ref="userInput"
             @send="onUserInput"
             @toggle-alt-assistant="val => useAltAssistant = val"
-            :showAssistantToggle="showAssistantToggle"
+            :showAssistantToggle="showAssistantToggle && (chatMessages.length == 0 || chatMessages[chatMessages.length - 1].illegalContents.length == 0)"
             :hasFiles="userFiles.length > 0"
             :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
@@ -457,6 +457,12 @@
     }
     @keyframes l24 {
         100% {transform: rotate(1turn)}
+    }
+
+    .alert-content-filter {
+        position: relative;
+        z-index: 11 !important;
+        transform: translateY(1rem);
     }
 
     .alert--buttons {

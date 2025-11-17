@@ -67,7 +67,7 @@ function clearChat() {
         border-bottom: 0.05rem solid var(--color-toolbar-border);
         color: var(--color-text-faded);
         text-align: center;
-        z-index: 12;
+        z-index: 12 !important;
     }
     .header > div.header-title {
         font-size: 1.1rem;

@@ -256,10 +256,12 @@
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap');
     .chat-message {
-        margin-bottom: 0.5rem;
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+    }
+    .chat-message:not(:last-of-type) {
+        margin-bottom: 0.5rem;
     }
     .chat-message.user {
         background-color: var(--color-chat-user-background);
