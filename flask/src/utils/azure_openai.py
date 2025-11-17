@@ -21,6 +21,7 @@ from utils.config import (
     ASSISTANT_NAME,
     ASSISTANT_TYPE,
     ASSISTANT_ID,
+    ASSISTANT_ALT_ID,
 
     USE_GENERAL_KNOWLEDGE,
     EMPHASIZE_RECENT_CONTENT,
@@ -81,7 +82,7 @@ class AzureOpenAIClient:
         return system_prompt
 
     @abstractmethod
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None):
+    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
         pass
 
     @staticmethod
@@ -95,7 +96,7 @@ class Chat(AzureOpenAIClient):
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None):
+    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
         ai_search_body = {
             "data_sources": [
                 {
@@ -229,14 +230,15 @@ class Agent(Chat):
     def __init__(self):
         super().__init__()
         self.assistant_id = ASSISTANT_ID
+        self.assistant_alt_id = ASSISTANT_ALT_ID
         self.project_name = AZURE_AIFOUNDRY_PROJECT_NAME
         self.project = AIProjectClient(
             credential=DefaultAzureCredential(),
             endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}"
         )
-        self.agent = self.project.agents.get_agent(self.assistant_id)
+        # self.agent = self.project.agents.get_agent(self.assistant_id)
 
-    def fetch_chat_response(self, chat_message, files, thread_id):
+    def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
             return {"role": "assistant", "content": "Error: No thread_id provided for Agent. Please create a thread first."}, []
 
@@ -256,7 +258,7 @@ class Agent(Chat):
         )
         run = self.project.agents.runs.create_and_process(
             thread_id=thread_id,
-            agent_id=self.assistant_id
+            agent_id=self.assistant_id if not use_alt else self.assistant_alt_id
         )
         if run.status == "failed":
             print(f"Run failed: {run.last_error}")

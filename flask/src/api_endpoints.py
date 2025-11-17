@@ -38,6 +38,7 @@ def create_thread():
 def create_thread_message(thread_id):
     message = request.json.get("message")
     files_data = request.json.get("files", [])
+    use_alt = request.json.get("use_alt", False)
     if not thread_id:
         return jsonify({"success": False, "message": "thread_id is required"}), 400
     if not message:
@@ -61,7 +62,7 @@ def create_thread_message(thread_id):
         except Exception as e:
             logger.warning(f"Failed to decode file {name}: {e}")
     try:
-        response, refs = azure_client.fetch_chat_response(message, files, thread_id)
+        response, refs = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
         if not response:
             return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
     except Exception as e:

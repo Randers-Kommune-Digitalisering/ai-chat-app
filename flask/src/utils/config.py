@@ -28,6 +28,7 @@ AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21'
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
+ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', '').strip()  # Second assistant ID for assistant toggle
 if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
     ASSISTANT_ID = ASSISTANT_ID.strip()
 ASSISTANT_VECTOR_STORE_ID = os.environ.get('AZURE_VECTOR_STORE_ID', '').strip()  # Used for assistants with vector stores only

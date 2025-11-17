@@ -36,6 +36,7 @@
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
     const awaitingUserInput = ref(false)
+    const useAltAssistant = ref(false)
 
     async function clearChat() {
         // Clear UI state
@@ -139,7 +140,7 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content }))):
+            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
             await sendChatMessage(messages)
 
         // Response received from backend
@@ -322,6 +323,7 @@
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
 
+    <div><input type="checkbox" v-model="useAltAssistant" /> Brug alternativ assistent</div>
     <div id="chat-messages">
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
