@@ -5,6 +5,7 @@ from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents.models import ListSortOrder
+import urllib
 from utils.extract_filedata import extract_text_from_file
 
 from utils.config import (
@@ -35,6 +36,10 @@ def get_chat_client():
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
     return Chat()
+
+
+def desanitize_metadata_value(value):
+    return urllib.parse.unquote(value)
 
 
 class AzureOpenAIClient:
@@ -180,7 +185,7 @@ class Chat(AzureOpenAIClient):
 
                 # Update titles for referenced citations only once
                 for idx, item in enumerate(referenced_citations):
-                    old_title = item.get('title')
+                    old_title = desanitize_metadata_value(item.get('title'))
                     item["title"] = f"[{idx + 1}] {old_title}"
 
                 # Update assistant response with new reference numbers
@@ -276,6 +281,7 @@ class Agent(Chat):
         text_value = ""
         annotations = []
         if assistant_message:
+            print(f"\nAssistant message content blocks: {assistant_message.content}\n")
             for content_block in assistant_message.content:
                 # Extract the text value from the first content block of type 'text'
                 if getattr(content_block, "type", None) == "text":
@@ -287,9 +293,11 @@ class Agent(Chat):
                         break
 
             citations = []
+            print(f"\nCitations found in context: {annotations}\n")
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
+                citation["title"] = desanitize_metadata_value(citation.get("title", ""))
 
                 # Find the index of the citation URL in the unique list of annotation URLs
                 citation["refs"] = [i + 1 for i, a in enumerate(annotations) if a.get("url_citation") and a.get("url_citation").get("url") == citation.get("url")]

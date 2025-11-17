@@ -3,8 +3,9 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS
 from utils.mail_client import send_user_feedback
+from utils.input_filter import redact_content, get_filter_content
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -20,7 +21,8 @@ azure_client = get_chat_client()
 def get_config():
     config = {
         "assistantName": ASSISTANT_NAME,
-        "isAgent": ASSISTANT_TYPE.lower() == "agent"
+        "isAgent": ASSISTANT_TYPE.lower() == "agent",
+        "predefinedQuestions": PREDEFINED_QUESTIONS
     }
     return jsonify(config)
 
@@ -40,6 +42,9 @@ def create_thread_message(thread_id):
         return jsonify({"success": False, "message": "thread_id is required"}), 400
     if not message:
         return jsonify({"success": False, "message": "Message is required"}), 400
+
+    # Redact sensitive content in user messages
+    message = redact_content(message)
 
     # Parse files from JSON: each file is { name, content (base64) }
     files = []
@@ -73,8 +78,11 @@ def create_chat_message():
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
 
-    # Parse files from JSON: each file is { name, content (base64) }
     for msg in messages:
+        # Redact sensitive content in user messages
+        msg["content"] = redact_content(msg.get("content", ""))
+
+        # Parse files from JSON: each file is { name, content (base64) }
         new_files = []
         for file_info in msg.get("files", []):
             name = file_info.get("name")
@@ -99,6 +107,20 @@ def create_chat_message():
         return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
     return jsonify({"success": True, "response": response, "references": refs})
+
+
+# Filter endpoint
+@api_endpoints.route('/filter', methods=['POST'])
+def filter_content():
+    content = request.json.get("content")
+    if not content:
+        return jsonify({"success": False, "message": "Content is required"}), 400
+    try:
+        filtered_content = get_filter_content(content)
+    except Exception as e:
+        logger.error(f"Error filtering content: {e}")
+        return jsonify({"success": False, "message": "Error filtering content", "error": str(e)}), 500
+    return jsonify({"success": True, "filtered_content": filtered_content})
 
 
 # Feedback endpoint

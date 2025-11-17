@@ -4,12 +4,14 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
 
     class ChatMessage {
-        constructor(sender, content, references = [], files = [], timeSpent = 0) {
+        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
             this.sender = sender
             this.content = content
+            this.illegalContents = illegalContents
+            this.redactedContents = illegalContents.slice() // Preserve original filtered content for later restoration when unfiltering assistant responses
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
@@ -33,11 +35,13 @@
     const userFiles = ref([])
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
+    const awaitingUserInput = ref(false)
 
     async function clearChat() {
         // Clear UI state
         chatMessages.value = []
         awaitingResponse.value = false
+        awaitingUserInput.value = false
         threadId.value = null
         userInput.value.clearUserInput()
         clearAllFiles()
@@ -60,23 +64,61 @@
     // Handle user input
     async function onUserInput(message) {
         // Only send name/content of files to backend, but keep all file info in userFiles
-        const files = userFiles.value.map(({ name, content }) => ({ name, content }))
-        await addMessage(message, files)
+        await addMessage(message)
     }
 
-    async function addMessage(message, files) {
+    async function addMessage(message) {
+        // Filter user message for illegal content
+        let illegalContents = []
+        try {
+            illegalContents = await getIllegalContents(message)
+        } catch (error) {
+            console.error("Error filtering message:", error)
+        }
+
         // Add user message to state (with all file info for display)
-        const newMessage = new ChatMessage('user', message, [], [...userFiles.value])
-        let removedFiles = clearAllFiles() // Remove all files from UI
+        const newMessage = new ChatMessage('user', message, illegalContents, [], [...userFiles.value])
+        clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
-        awaitingResponse.value = true
         nextTick(() => {
             updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1)
-            startTimer()
         })
 
+        // Send message if no illegal content
+        if (illegalContents.length === 0)
+            await sendMessage(newMessage)
+        else
+            awaitingUserInput.value = true
+    }
+
+    const undoAndEditMessage = async (chatMessage) => {
+        awaitingUserInput.value = false
+        // Re-add user files to state
+        for (let file of chatMessage.files) {
+            addFile(file)
+        }
+        // Remove last user message
+        chatMessages.value.pop()
+        nextTick(() => {
+            updateInputPadding()
+            const input = document.querySelector('.user-input')
+            if (input) input.focus()
+            scrollToMessage(chatMessages.value.length - 1)
+        })
+        // Set user input to previous message content
+        userInput.value.setUserInput(chatMessage.content)
+    }
+
+    const sendMessage = async (chatMessage) => {
+        // Update state
+        awaitingUserInput.value = false
+        chatMessage.illegalContents = [] // Clear illegal contents
+        awaitingResponse.value = true
+        startTimer()
+
         // Prepare messages for chat mode
+        let message = chatMessage.content
         let messages = []
         if (!isAgent.value) {
             messages = chatMessages.value.map(msg => ({
@@ -97,7 +139,7 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, files) :
+            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content }))):
             await sendChatMessage(messages)
 
         // Response received from backend
@@ -109,14 +151,15 @@
         awaitingResponse.value = false
         const assistantMessage = new ChatMessage(
             'assistant',
-            response,
+            unfilterResponseContent(response),
+            [],
             references.map(ref => new Reference(ref.title, ref.url)),
             [],
             timeSpent
         )
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
-            for (let file of removedFiles) {
+            for (let file of chatMessage.files) {
                 addFile(file)
             }
             assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
@@ -130,6 +173,29 @@
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
+    }
+
+    function unfilterResponseContent(content) {
+        // Replace [REDACTED #1] with original user input for display
+        console.log("Unfiltering response content:", content)
+        let filtered = content
+        const regex = /\[REDACTED\s*#\s*(\d+)\]/g
+        const unfiltered = filtered.replace(regex, (fullMatch, group1) => {
+            console.log("Unfiltering match:", fullMatch, "index:", group1)
+            // Find the previous user message (before the assistant's response)
+            const redactedIndex = parseInt(group1, 10) - 1
+            const prevUserMsg = [...chatMessages.value].reverse().find(msg => msg.sender === 'user')
+            if (
+                prevUserMsg &&
+                Array.isArray(prevUserMsg.redactedContents) &&
+                redactedIndex >= 0 &&
+                redactedIndex < prevUserMsg.redactedContents.length
+            ) {
+                return prevUserMsg.redactedContents[redactedIndex]
+            }
+            return fullMatch
+        })
+        return unfiltered
     }
 
     // Handle file uploads
@@ -260,13 +326,27 @@
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
-                :message="msg"
+                :message="msg.content"
+                :highlightedWords="msg.illegalContents"
                 :sender="msg.sender"
                 :references="msg.references"
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
                 :chatHistory="chatMessages"
             />
+           
+            <div v-if="msg.illegalContents.length > 0">
+                <Alert
+                    type="warning"
+                    :inline="true"
+                    message="**Advarsel**: Din besked indeholder potentielt følsomt eller fortroligt indhold. Hvordan vil du fortsætte?"
+                >
+                    <div class="alert--buttons">
+                        <button @click="undoAndEditMessage(msg)">Redigér</button>
+                        <button @click="sendMessage(msg)">Anonymisér og send</button>
+                    </div>
+                </Alert>
+            </div>
         </template>
 
         <div v-if="awaitingResponse" class="loading-indicator">
@@ -283,7 +363,7 @@
         <UserInput
             ref="userInput"
             @send="onUserInput"
-            :disabled="awaitingResponse"
+            :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
             @adjust-css="onAdjustCss"
         />
@@ -364,4 +444,28 @@
     @keyframes l24 {
         100% {transform: rotate(1turn)}
     }
+
+    .alert--buttons {
+        margin-left: auto;
+        width: max-content;
+        display: flex;
+    }
+        .alert--buttons button {
+            margin-left: 0.5rem;
+            padding: 0.3rem 0.8rem;
+            border: 0.05rem solid var(--color-button-gray-border);
+            border-radius: 0.25rem;
+            background-color: #8a8a8a11;
+            color: var(--color-button-text);
+            cursor: pointer;
+            font-size: 0.9rem;
+            min-width: max-content;
+            transition: 0.2s;
+            padding-top: 0.6rem;
+            padding-bottom: 0.6rem;
+        }
+        .alert--buttons button:hover {
+            background-color: #8a8a8a27;
+            color: white;
+        }
 </style>

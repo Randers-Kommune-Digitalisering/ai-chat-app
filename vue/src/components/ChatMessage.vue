@@ -1,5 +1,5 @@
 <script setup>
-    import { nextTick, ref } from 'vue'
+    import { nextTick, ref, computed } from 'vue'
     import { marked } from 'marked'
     import { sendFeedback } from '../services/backend-service.js'
 
@@ -13,8 +13,13 @@
             default: null
         },
         message: {
-            type: Object,
+            type: String,
             required: true
+        },
+        highlightedWords: {
+            type: Array,
+            required: false,
+            default: () => []
         },
         sender: {
             type: String,
@@ -47,16 +52,24 @@
 
     const recentlyCopied = ref(false)
 
-    const copyTextToClipboard = (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-            console.log('Text copied to clipboard:', text)
-            recentlyCopied.value = true
-            setTimeout(() => {
-                recentlyCopied.value = false
-            }, 1500)
-        }).catch(err => {
+    const copyTextToClipboard = async (text) => {
+        try {
+            // Use Clipboard API if available and page is secure
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text)
+                recentlyCopied.value = true
+                setTimeout(() => {
+                    recentlyCopied.value = false
+                }, 1500)
+                console.log('Text copied to clipboard:', text)
+            } else {
+                throw new Error('Clipboard API not available or context not secure')
+            }
+        } catch (err) {
+            recentlyCopied.value = false
+            alert('Kunne ikke kopiere tekst: ' + err)
             console.error('Could not copy text: ', err)
-        })
+        }
     }
 
     const feedbackLiked = ref(false)
@@ -73,7 +86,7 @@
         // Prepare chat history for backend (only content)
         let chatHistory = Array.isArray(props.chatHistory)
             ? props.chatHistory.map(msg => ({ content: msg.content }))
-            : [{ content: props.message.content }];
+            : [{ content: props.message }];
         try {
             const data = await sendFeedback(feedbackText.value, props.id, chatHistory);
             if (data.success) {
@@ -86,6 +99,30 @@
         } catch (err) {
             feedbackIsSubmitting.value = false;
             alert('Fejl ved afsendelse af feedback: ' + err);
+        }
+    }
+
+    // Helper function to escape special regex characters in a string
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    const highlightedMessage = computed(() => {
+        let content = props.message
+        let uniqueWords = [...new Set(props.highlightedWords)]
+        uniqueWords.forEach(word => {
+            const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
+            content = content.replace(regex, '<mark>$1</mark>')
+        })
+        return content
+    })
+
+    const isUrl = (string) => {
+        try {
+            new URL(string)
+            return true
+        } catch (_) {
+            return false
         }
     }
 
@@ -121,7 +158,7 @@
 
 <template>
     <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="marked(props.message.content)"></div>
+        <div class="chat-content" v-html="marked(highlightedMessage)"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -143,7 +180,16 @@
                     v-if="props.references.length > 0"
                     v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
                     :key="index">
-                    <a :href="ref.link" target="_blank" rel="noopener">{{ ref.title }}</a>
+                    <a
+                        :href="isUrl(ref.link) ? ref.link : null"
+                        target="_blank"
+                        rel="noopener"
+                        :tabindex="isUrl(ref.link) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.link)"
+                        :class="{'disabled': !isUrl(ref.link)}"
+                    >
+                        {{ ref.title }}
+                    </a>
                 </div>
                 <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
@@ -159,7 +205,7 @@
             </div>
 
             <div class="options">
-                <div class="option" @click="copyTextToClipboard(props.message.content)">
+                <div class="option" @click="copyTextToClipboard(props.message)">
                     <i class="fa-regular fa-copy"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
@@ -246,6 +292,13 @@
             border: 0.05rem solid var(--color-code-border);
             font-size: 0.8em;
         }
+        :deep(.chat-content mark) {
+            padding-left: 0.2rem;
+            padding-right: 0.2rem;
+            background-color: #ff615579;
+            color: inherit;
+            border-radius: 0.2rem;
+        }
 
     .fileUploads {
         padding-top: 0.3rem;
@@ -301,6 +354,10 @@
     .references a:hover {
         color: var(--color-reference-text-hover);
         background-color: var(--color-reference-background-hover);
+    }
+    .references a.disabled {
+        pointer-events: none;
+        color: var(--color-reference-text-disabled);
     }
     .references .time-spent {
         display: inline-block;

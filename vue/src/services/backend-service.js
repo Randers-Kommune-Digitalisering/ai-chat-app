@@ -52,3 +52,13 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
         throw error;
     }
 }
+
+export async function getIllegalContents(message) {
+    try {
+        const result = await axios.post('/api/filter', { content: message });
+        return result.data.filtered_content || [];
+    } catch (error) {
+        console.error("Error filtering message:", error);
+        throw error;
+    }
+}
