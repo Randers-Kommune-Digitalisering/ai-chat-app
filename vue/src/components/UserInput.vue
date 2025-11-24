@@ -174,16 +174,6 @@
 </script>
 
 <template>
-    
-    <div v-if="props.showAssistantToggle"
-        :class="['alt-assistant-toggle', { 'landing-page': !props.fixed, 'has-files': props.hasFiles }]">
-        <label class="switch" for="checkbox">
-            <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
-            <div class="slider round"></div>
-        </label>
-        <div>Søg på internettet</div>
-    </div>
-
     <form class="user-input-form" @submit.prevent="onSubmit">
         <textarea
             ref="textarea"
@@ -198,7 +188,17 @@
         <button type="submit" :disabled="userInput.trim() === ''">
             <i class="fa-solid fa-paper-plane"></i>
         </button>
+            
+        <div v-if="props.showAssistantToggle"
+            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed, 'has-files': props.hasFiles }]">
+            <label class="switch" for="checkbox">
+                <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
+                <div class="slider round"></div>
+            </label>
+            <div>Søg på internettet</div>
+        </div>
     </form>
+
 </template>
 
 <style scoped>
@@ -277,11 +277,12 @@
     }
 
     .alt-assistant-toggle {
+        width: max-content;
         position: absolute;
         display: flex;
         align-items: center;
         padding-right: 0.5rem;
-        padding-left: 0.5rem;
+        padding-left: 1.5rem;
         padding-top: 0.5rem;
         border-top-left-radius: 0.5rem;
         gap: 1rem;
@@ -295,16 +296,21 @@
         color: var(--color-text-primary);
     }
     .alt-assistant-toggle.landing-page {
-        top: 6.5rem;
+        bottom: -5rem;
         left: 50%;
         transform: translateX(-50%);
     }
-    .alt-assistant-toggle.landing-page.has-files {
-        top: 9.5rem;
+    @media screen and (max-width: 360px) { /* Adjust position for very small screens */
+        .alt-assistant-toggle.landing-page {
+            top: -15rem;
+            bottom: auto;
+        }
     }
-
+    .alt-assistant-toggle.landing-page.has-files {
+        transform: translate(-50%, 2rem);
+    }
     .alt-assistant-toggle:not(.landing-page) {
-        bottom: 6.5rem;
+        bottom: 4.5rem;
         right: 1rem;
     }
 

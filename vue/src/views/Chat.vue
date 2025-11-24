@@ -30,6 +30,8 @@
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
         showAssistantToggle.value = !!config?.showAssistantToggle
+        assistantDescription.value = config?.description || ''
+        knowledgeSources.value = config?.sources || []
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -39,6 +41,8 @@
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
+    const assistantDescription = ref('')
+    const knowledgeSources = ref([])
 
     async function clearChat() {
         // Clear UI state
@@ -327,6 +331,21 @@
     </template>
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
+        <div class="title">
+            {{ getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent' }}
+            <div class="icons">
+                <span v-if="assistantDescription"><i class="fa-solid fa-robot"></i> Info
+                    <div class="tooltip">{{ assistantDescription }}</div>
+                </span>
+                <span v-if="knowledgeSources.length > 0"><i class="fa-solid fa-book"></i> Materiale
+                    <div class="tooltip">Assistenten har adgang til følgende materiale og ressourcer:
+                        <ul>
+                            <li v-for ="(source, index) in knowledgeSources" :key="index">{{ source }}</li>
+                        </ul>
+                    </div>
+                </span>
+            </div>
+        </div>
         Hej, hvad kan jeg hjælpe med?
     </div>
 
@@ -384,7 +403,7 @@
         <FileUpload
             ref="fileUploader"
             :files="userFiles"
-            :showAssistantTogglePadding="showAssistantToggle"
+            :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
             @add-file="addFile"
             @remove-file="onFileRemoved"
             @clear-files="onClearFiles" />
@@ -400,14 +419,58 @@
         bottom: 40%;
         width: max-content;
         max-width: 90%;
-        transform: translate(-50%, -4.5rem);
+        transform: translate(-50%, -5rem);
         z-index: 3;
+        pointer-events: none;
     }
+        .welcome-header .title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 10dvh;
+        }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .welcome-header  {
                 bottom: 3rem !important;
             }
+            .welcome-header .title {
+                margin-bottom: 20dvh;
+            }
         }
+            .welcome-header .title .icons {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 1rem;
+                margin-top: 0.5rem;
+                font-size: 1rem;
+                user-select: none;
+                pointer-events: auto;
+                pointer-events: all;
+                color: var(--color-text-faded);
+            }
+            .title .icons span {
+                transition: color 0.2s ease;
+            }
+            .title .icons span:hover {
+                cursor: default;
+                color: var(--color-text-primary);
+            }
+            .welcome-header .title .icons i {
+                margin-right: 0.3rem;
+            }
+            .icons .tooltip {
+                font-size: 0.9rem;
+                top: 5rem;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: left;
+                max-width: calc(100dvw - 1.6rem) !important;
+            }
+            .tooltip ul {
+                margin: 0.2rem 0 0 1.2rem;
+                padding-left: 0;
+                list-style-type: disc;
+            }
     .loading-indicator
     {
         font-style: italic;
