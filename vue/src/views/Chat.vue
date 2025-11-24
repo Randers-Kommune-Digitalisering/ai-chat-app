@@ -335,7 +335,7 @@
             {{ getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent' }}
             <div class="icons">
                 <span v-if="assistantDescription"><i class="fa-solid fa-robot"></i> Info
-                    <div class="tooltip">{{ assistantDescription }}</div>
+                    <div class="tooltip" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
                 </span>
                 <span v-if="knowledgeSources.length > 0"><i class="fa-solid fa-book"></i> Materiale
                     <div class="tooltip">Assistenten har adgang til følgende materiale og ressourcer:
