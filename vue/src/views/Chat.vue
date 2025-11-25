@@ -30,8 +30,6 @@
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
         showAssistantToggle.value = !!config?.showAssistantToggle
-        assistantDescription.value = config?.description || ''
-        knowledgeSources.value = config?.sources || []
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -41,8 +39,6 @@
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
-    const assistantDescription = ref('')
-    const knowledgeSources = ref([])
 
     async function clearChat() {
         // Clear UI state
@@ -331,21 +327,6 @@
     </template>
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
-        <div class="title">
-            {{ getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent' }}
-            <div class="icons">
-                <span v-if="assistantDescription"><i class="fa-solid fa-robot"></i> Info
-                    <div class="tooltip" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
-                </span>
-                <span v-if="knowledgeSources.length > 0"><i class="fa-solid fa-book"></i> Materiale
-                    <div class="tooltip">Assistenten har adgang til følgende materiale og ressourcer:
-                        <ul>
-                            <li v-for ="(source, index) in knowledgeSources" :key="index">{{ source }}</li>
-                        </ul>
-                    </div>
-                </span>
-            </div>
-        </div>
         Hej, hvad kan jeg hjælpe med?
     </div>
 
