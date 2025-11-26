@@ -311,13 +311,13 @@
     <Alert
         v-if="useAltAssistant"
         type="warning"
-        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele følsomme personoplysninger eller forretningskritiske oplysninger."
+        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele forretningskritiske oplysninger. Husk at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige."
     />
     <template v-else>
         <Alert
             v-if="chatMessages.length == 0"
             type="transparent"
-            message="**Bemærk**: Her må du gerne dele personoplysninger og forretningskritiske oplysninger.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+            message="**Bemærk**: Her må du dele forretningskritiske- og personoplysninger, men husk, at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
         />
         <Alert
             v-else
