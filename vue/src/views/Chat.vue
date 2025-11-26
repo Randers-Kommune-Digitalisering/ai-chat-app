@@ -313,7 +313,7 @@ import { use } from 'marked'
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Her må du dele forretningskritiske- og personoplysninger. Husk, at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige. Du må ikke bruge AI til sagsbehandling.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+        message="**Bemærk**: Almindelige personoplysninger kan blive følsomme eller fortrolige, hvis de sammenkobles. Det er ikke tilladt at behandle CPR-numre, følsomme / fortrolige personoplysninger eller foretage afgørelser med AI. <br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
     />
     <Alert
         v-else
