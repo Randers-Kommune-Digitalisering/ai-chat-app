@@ -293,12 +293,12 @@
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
                 inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
-                if (app) app.style.paddingBottom = '10rem'
+                if (app) app.style.paddingBottom = '1rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
             inputContainer.style.bottom = `calc(40% - 3rem)`
-            if (app) app.style.paddingBottom = '10rem'
+            if (app) app.style.paddingBottom = '1rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
             inputContainer.style.bottom = '0rem'

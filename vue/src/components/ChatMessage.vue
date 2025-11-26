@@ -309,6 +309,7 @@
         flex-direction: row;
         flex-wrap: wrap-reverse;
         gap: 0.8rem;
+        border-top-right-radius: 0.5rem;
     }
     .fileUploads div {
         background-color: var(--color-options-background-hover);

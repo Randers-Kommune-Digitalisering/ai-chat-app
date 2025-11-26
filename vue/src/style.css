@@ -152,7 +152,6 @@ main, #app {
   margin: 0 auto;
   padding: 1rem;
   padding-top: 4.5rem;
-  padding-bottom: 10rem; /* Landing page padding - controlled dynamically in UserInput.vue after first message */
 
   display: flex;
   flex-direction: column;

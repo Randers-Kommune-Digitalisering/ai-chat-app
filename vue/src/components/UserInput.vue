@@ -282,7 +282,7 @@
         display: flex;
         align-items: center;
         padding-right: 0.5rem;
-        padding-left: 1.5rem;
+        padding-left: 0.55rem;
         padding-top: 0.5rem;
         border-top-left-radius: 0.5rem;
         gap: 1rem;
@@ -310,7 +310,8 @@
         transform: translate(-50%, 2rem);
     }
     .alt-assistant-toggle:not(.landing-page) {
-        bottom: 4.5rem;
+        top: -3.5rem;
+        bottom: auto;
         right: 1rem;
     }
 
