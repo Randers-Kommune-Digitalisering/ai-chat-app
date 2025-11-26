@@ -42,7 +42,7 @@
 
 <template>
     <div class="alert-wrapper">
-        <div :class="['alert', typeClass, { 'alert--inline': props.inline }]">
+        <div :class="['alert', 'fade-in', typeClass, { 'alert--inline': props.inline }]">
             <i :class="`fa-solid fa-${icon}`"></i>
             <span class="alert__message" v-html="formattedMessage"></span>
             <slot />
