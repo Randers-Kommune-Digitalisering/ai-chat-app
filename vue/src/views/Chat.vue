@@ -5,6 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
+import { use } from 'marked'
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -46,17 +47,18 @@
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
+        useAltAssistant.value = false
         userInput.value.clearUserInput()
         clearAllFiles()
         stopTimer()
 
-    if (!isAgent.value)
-            return
+        if (!isAgent.value)
+                return
+
         // Start new thread if Agent mode
         threadId.value = await startThread()
-        if (!threadId.value) {
+        if (!threadId.value)
             console.error("Failed to start new thread.")
-        }
     }
 
     defineExpose({
@@ -309,22 +311,21 @@
 
 <template>
     <Alert
+        v-if="chatMessages.length == 0"
+        type="transparent"
+        message="**Bemærk**: Her må du dele forretningskritiske- og personoplysninger. Husk, at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige. Du må ikke bruge AI til sagsbehandling.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+    />
+    <Alert
+        v-else
+        type="info"
+        message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
+    />
+    
+    <Alert
         v-if="useAltAssistant"
         type="warning"
-        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele forretningskritiske oplysninger. Husk at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige."
+        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele forretningskritiske oplysninger."
     />
-    <template v-else>
-        <Alert
-            v-if="chatMessages.length == 0"
-            type="transparent"
-            message="**Bemærk**: Her må du dele forretningskritiske- og personoplysninger, men husk, at almindelige personoplysninger skal behandles som følsomme, hvis de sammenkobles og dermed bliver fortrolige.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
-        />
-        <Alert
-            v-else
-            type="info"
-            message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
-        />
-    </template>
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?

@@ -50,6 +50,7 @@
         nextTick(() => {
             emitTextareaResize()
         })
+        useAltAssistant.value = false
     }
 
     function getTextareaHeight() {
