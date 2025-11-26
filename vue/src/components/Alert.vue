@@ -75,7 +75,7 @@
     }
     .alert--transparent {
         background: transparent;
-        border: none;
+        border-left: 4px solid transparent;
         color: var(--color-text-faded);
         border-bottom: 0.05rem solid var(--color-toolbar-border);
         border-radius: 0;

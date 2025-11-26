@@ -311,13 +311,13 @@
     <Alert
         v-if="useAltAssistant"
         type="warning"
-        message="**Bemærk**: Assistenten søger nu efter oplysninger på internettet for at besvare dine spørgsmål. Dette betyder at dele af din samtale kan blive sendt til tredjepartstjenester for at hente disse oplysninger."
+        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele følsomme personoplysninger eller forretningskritiske oplysninger."
     />
     <template v-else>
         <Alert
             v-if="chatMessages.length == 0"
             type="transparent"
-            message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+            message="**Bemærk**: Her må du gerne dele personoplysninger og forretningskritiske oplysninger.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
         />
         <Alert
             v-else
