@@ -283,7 +283,6 @@ class Agent(Chat):
         text_value = ""
         annotations = []
         if assistant_message:
-            # print(f"\nAssistant message content blocks: {assistant_message.content}\n")
             for content_block in assistant_message.content:
                 # Extract the text value from the first content block of type 'text'
                 if getattr(content_block, "type", None) == "text":
@@ -295,7 +294,6 @@ class Agent(Chat):
                         break
 
             citations = []
-            # print(f"\nCitations found in context: {annotations}\n")
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
