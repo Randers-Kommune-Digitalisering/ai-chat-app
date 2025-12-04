@@ -5,7 +5,7 @@
 
     // Configure marked to treat single line breaks as <br>
     // and links to open in new tabs by default
-    var renderer = new marked.Renderer();
+    var renderer = new marked.Renderer()
     renderer.link = function(href, title, text) {
         var link = marked.Renderer.prototype.link.call(this, href, title, text)
         return link.replace("<a","<a target='_blank' ")
