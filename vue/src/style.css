@@ -152,7 +152,6 @@ main, #app {
   margin: 0 auto;
   padding: 1rem;
   padding-top: 4.5rem;
-  padding-bottom: 10rem; /* Landing page padding - controlled dynamically in UserInput.vue after first message */
 
   display: flex;
   flex-direction: column;
@@ -201,7 +200,8 @@ main, #app {
   font-size: 0.75rem;
   transition: opacity 0.3s;
   position: absolute;
-  z-index: 1;
+  z-index: 9;
+  user-select: none;
 }
 
 *:hover > .tooltip {

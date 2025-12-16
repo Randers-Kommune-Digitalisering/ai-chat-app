@@ -5,7 +5,7 @@
     const textarea = ref(null)
     const maxHeight = 258 // 190 for 7 lines
 
-    const emit = defineEmits(['send', 'adjust-css'])
+    const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({
         disabled: {
             type: Boolean,
@@ -13,6 +13,16 @@
             default: false
         },
         fixed: {
+            type: Boolean,
+            required: false,
+            default: false
+        },
+        showAssistantToggle: {
+            type: Boolean,
+            required: false,
+            default: false
+        },
+        hasFiles: {
             type: Boolean,
             required: false,
             default: false
@@ -40,6 +50,7 @@
         nextTick(() => {
             emitTextareaResize()
         })
+        useAltAssistant.value = false
     }
 
     function getTextareaHeight() {
@@ -99,6 +110,11 @@
             fixed: props.fixed
         })
     }
+
+    const useAltAssistant = ref(false)
+    watch(useAltAssistant, (newVal) => {
+        emit('toggle-alt-assistant', newVal)
+    })
 
     /* Placeholder typing effect */
 
@@ -173,7 +189,17 @@
         <button type="submit" :disabled="userInput.trim() === ''">
             <i class="fa-solid fa-paper-plane"></i>
         </button>
+            
+        <div v-if="props.showAssistantToggle"
+            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed, 'has-files': props.hasFiles }]">
+            <label class="switch" for="checkbox">
+                <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
+                <div class="slider round"></div>
+            </label>
+            <div>Søg på internettet</div>
+        </div>
     </form>
+
 </template>
 
 <style scoped>
@@ -249,5 +275,91 @@
         cursor: pointer;
         background-color: var(--color-input-button-submit-hover);
         color: var(--color-text-primary);
+    }
+
+    .alt-assistant-toggle {
+        width: max-content;
+        position: absolute;
+        display: flex;
+        align-items: center;
+        padding-right: 0.5rem;
+        padding-left: 0.55rem;
+        padding-top: 0.5rem;
+        border-top-left-radius: 0.5rem;
+        gap: 1rem;
+        font-size: 0.9rem;
+        color: var(--color-text-faded);
+        z-index: 1;
+        transition: color 0.2s;
+        background-color: var(--color-background-primary);
+    }
+    .alt-assistant-toggle:has(input:checked) {
+        color: var(--color-text-primary);
+    }
+    .alt-assistant-toggle.landing-page {
+        bottom: -5rem;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+    @media screen and (max-width: 360px) { /* Adjust position for very small screens */
+        .alt-assistant-toggle.landing-page {
+            top: -15rem;
+            bottom: auto;
+        }
+    }
+    .alt-assistant-toggle.landing-page.has-files {
+        transform: translate(-50%, 2rem);
+    }
+    .alt-assistant-toggle:not(.landing-page) {
+        top: -3.5rem;
+        bottom: auto;
+        right: 1rem;
+    }
+
+    .switch {
+        display: inline-block;
+        height: 2rem; /* 34px */
+        position: relative;
+        width: 3.75rem; /* 60px */
+    }
+    .switch input {
+        display: none;
+    }
+    .slider {
+        background-color: var(--color-input-background);
+        outline: 0.05rem solid var(--color-input-border);
+        bottom: 0;
+        cursor: pointer;
+        left: 0;
+        position: absolute;
+        right: 0;
+        top: 0;
+        transition: 200ms;
+    }
+    .slider:before {
+        background-color: var(--color-button-text);
+        bottom: 0.25rem; /* 4px */
+        content: "";
+        height: 1.5rem; /* 24px */
+        left: 0.25rem; /* 4px */
+        position: absolute;
+        transition: 200ms;
+        width: 1.5rem; /* 24px */
+    }
+    .slider:hover:before {
+        background-color: var(--color-button-text-hover);
+    }
+    input:checked + .slider {
+        background-color: var(--color-button-green-hover);
+        outline: 0.05rem solid var(--color-button-green-border-hover);
+    }
+    input:checked + .slider:before {
+        transform: translateX(1.750rem); /* 28px */
+    }
+    .slider.round {
+        border-radius: 2rem; /* 32px */
+    }
+    .slider.round:before {
+        border-radius: 50%;
     }
 </style>

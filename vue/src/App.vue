@@ -20,6 +20,9 @@
             const input = document.querySelector('.user-input')
             if (input) input.focus()
         }, 500)
+        setTimeout(() => {
+            document.querySelector('#app').classList.remove('fade-in')
+        }, 1100)
     }
 
     onMounted(() => {

@@ -13,9 +13,9 @@ export async function startThread() {
     }
 }
 
-export async function sendThreadMessage(threadId, message, files) {
+export async function sendThreadMessage(threadId, message, files, useAlt = false) {
     try {
-        const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files });
+        const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files, use_alt: useAlt });
         return {
             response: result.data.response,
             references: result.data.references

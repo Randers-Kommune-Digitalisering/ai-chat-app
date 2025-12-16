@@ -5,6 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
+import { use } from 'marked'
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -29,6 +30,7 @@
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
+        showAssistantToggle.value = !!config?.showAssistantToggle
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -36,6 +38,8 @@
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
     const awaitingUserInput = ref(false)
+    const showAssistantToggle = ref(false)
+    const useAltAssistant = ref(false)
 
     async function clearChat() {
         // Clear UI state
@@ -43,17 +47,18 @@
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
+        useAltAssistant.value = false
         userInput.value.clearUserInput()
         clearAllFiles()
         stopTimer()
 
-    if (!isAgent.value)
-            return
+        if (!isAgent.value)
+                return
+
         // Start new thread if Agent mode
         threadId.value = await startThread()
-        if (!threadId.value) {
+        if (!threadId.value)
             console.error("Failed to start new thread.")
-        }
     }
 
     defineExpose({
@@ -139,7 +144,7 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content }))):
+            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
             await sendChatMessage(messages)
 
         // Response received from backend
@@ -177,11 +182,9 @@
 
     function unfilterResponseContent(content) {
         // Replace [REDACTED #1] with original user input for display
-        console.log("Unfiltering response content:", content)
         let filtered = content
         const regex = /\[REDACTED\s*#\s*(\d+)\]/g
         const unfiltered = filtered.replace(regex, (fullMatch, group1) => {
-            console.log("Unfiltering match:", fullMatch, "index:", group1)
             // Find the previous user message (before the assistant's response)
             const redactedIndex = parseInt(group1, 10) - 1
             const prevUserMsg = [...chatMessages.value].reverse().find(msg => msg.sender === 'user')
@@ -290,12 +293,12 @@
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
                 inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
-                if (app) app.style.paddingBottom = '10rem'
+                if (app) app.style.paddingBottom = '1rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
             inputContainer.style.bottom = `calc(40% - 3rem)`
-            if (app) app.style.paddingBottom = '10rem'
+            if (app) app.style.paddingBottom = '1rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
             inputContainer.style.bottom = '0rem'
@@ -308,12 +311,18 @@
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Det er ikke tilladt at dele følsomme personoplysninger eller fortrolige oplysninger med AI.<br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+        message="**Bemærk**: Almindelige personoplysninger kan blive følsomme eller fortrolige, hvis de sammenkobles. Det er ikke tilladt at behandle CPR-numre, følsomme / fortrolige personoplysninger eller foretage afgørelser med AI. <br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
     />
     <Alert
         v-else
         type="info"
         message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
+    />
+    
+    <Alert
+        v-if="useAltAssistant"
+        type="warning"
+        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele forretningskritiske oplysninger."
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
@@ -335,7 +344,7 @@
                 :chatHistory="chatMessages"
             />
            
-            <div v-if="msg.illegalContents.length > 0">
+            <div v-if="msg.illegalContents.length > 0" class="alert-content-filter">
                 <Alert
                     type="warning"
                     :inline="true"
@@ -363,6 +372,9 @@
         <UserInput
             ref="userInput"
             @send="onUserInput"
+            @toggle-alt-assistant="val => useAltAssistant = val"
+            :showAssistantToggle="showAssistantToggle && (chatMessages.length == 0 || chatMessages[chatMessages.length - 1].illegalContents.length == 0)"
+            :hasFiles="userFiles.length > 0"
             :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
             @adjust-css="onAdjustCss"
@@ -371,6 +383,7 @@
         <FileUpload
             ref="fileUploader"
             :files="userFiles"
+            :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
             @add-file="addFile"
             @remove-file="onFileRemoved"
             @clear-files="onClearFiles" />
@@ -386,14 +399,58 @@
         bottom: 40%;
         width: max-content;
         max-width: 90%;
-        transform: translate(-50%, -4.5rem);
+        transform: translate(-50%, -5rem);
         z-index: 3;
+        pointer-events: none;
     }
+        .welcome-header .title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 10dvh;
+        }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .welcome-header  {
                 bottom: 3rem !important;
             }
+            .welcome-header .title {
+                margin-bottom: 20dvh;
+            }
         }
+            .welcome-header .title .icons {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 1rem;
+                margin-top: 0.5rem;
+                font-size: 1rem;
+                user-select: none;
+                pointer-events: auto;
+                pointer-events: all;
+                color: var(--color-text-faded);
+            }
+            .title .icons span {
+                transition: color 0.2s ease;
+            }
+            .title .icons span:hover {
+                cursor: default;
+                color: var(--color-text-primary);
+            }
+            .welcome-header .title .icons i {
+                margin-right: 0.3rem;
+            }
+            .icons .tooltip {
+                font-size: 0.9rem;
+                top: 5rem;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: left;
+                max-width: calc(100dvw - 1.6rem) !important;
+            }
+            .tooltip ul {
+                margin: 0.2rem 0 0 1.2rem;
+                padding-left: 0;
+                list-style-type: disc;
+            }
     .loading-indicator
     {
         font-style: italic;
@@ -443,6 +500,12 @@
     }
     @keyframes l24 {
         100% {transform: rotate(1turn)}
+    }
+
+    .alert-content-filter {
+        position: relative;
+        z-index: 11 !important;
+        transform: translateY(1rem);
     }
 
     .alert--buttons {

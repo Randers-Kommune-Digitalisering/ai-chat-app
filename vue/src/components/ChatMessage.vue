@@ -4,7 +4,13 @@
     import { sendFeedback } from '../services/backend-service.js'
 
     // Configure marked to treat single line breaks as <br>
-    marked.setOptions({ breaks: true })
+    // and links to open in new tabs by default
+    var renderer = new marked.Renderer();
+    renderer.link = function(href, title, text) {
+        var link = marked.Renderer.prototype.link.call(this, href, title, text)
+        return link.replace("<a","<a target='_blank' ")
+    }
+    marked.setOptions({ breaks: true, renderer: renderer })
 
     const props = defineProps({
         id: {
@@ -214,7 +220,7 @@
                     <div class="tooltip">Synes godt om</div>
                 </div>
                 <div :class="['option', { disabled: feedbackSent }]" @click="feedbackDialogOpen = !feedbackDialogOpen; scrollToFeedbackDialog()">
-                    <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-thumbs-down']"></i>
+                    <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
                 </div>
                 <div v-if="feedbackSent" class="feedback-sent-message">
@@ -256,10 +262,12 @@
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap');
     .chat-message {
-        margin-bottom: 0.5rem;
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+    }
+    .chat-message:not(:last-of-type) {
+        margin-bottom: 0.5rem;
     }
     .chat-message.user {
         background-color: var(--color-chat-user-background);
@@ -307,6 +315,7 @@
         flex-direction: row;
         flex-wrap: wrap-reverse;
         gap: 0.8rem;
+        border-top-right-radius: 0.5rem;
     }
     .fileUploads div {
         background-color: var(--color-options-background-hover);
@@ -504,14 +513,14 @@
             color: var(--color-button-text-hover);
         }
 
-    @media screen and (min-width: 600px) {
+    @media screen and (min-width: 680px) {
         .chat-message.user {
             max-width: 40.5rem;
         }
         .feedback-dialog {
             max-width: 40.5rem;
         }
-    }
+    } 
     @media screen and (min-width: 875px)  {
         .chat-message.user {
             max-width: 75%;

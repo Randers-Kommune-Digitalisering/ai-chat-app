@@ -1,6 +1,8 @@
 <script setup>
-import { ref, getCurrentInstance } from 'vue'
+import { ref, getCurrentInstance, onMounted } from 'vue'
+
 const ASSISTANT_NAME = getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent'
+const assistantDescription = getCurrentInstance().appContext.config.globalProperties.$config.description || ''
 
 const props = defineProps({
     showStartNewChat: {
@@ -36,7 +38,13 @@ function clearChat() {
 </script>
 <template>
     <div class="header">
-        <div class="header-title">{{ ASSISTANT_NAME }}</div>
+        <div class="header-title">
+            {{ ASSISTANT_NAME }}
+            <span class="header-description" v-if="assistantDescription">
+                <i class="fa-solid fa-question"></i>
+                <div class="tooltip" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
+            </span>
+        </div>
         <div
             :class="['header-action', { 'hidden': !showStartNewChat }]"
             @click="clearChat(); triggerRotate()"
@@ -67,7 +75,7 @@ function clearChat() {
         border-bottom: 0.05rem solid var(--color-toolbar-border);
         color: var(--color-text-faded);
         text-align: center;
-        z-index: 12;
+        z-index: 12 !important;
     }
     .header > div.header-title {
         font-size: 1.1rem;
@@ -106,6 +114,27 @@ function clearChat() {
     }
     .rotate {
         animation: shake-rotate 1.5s linear;
+    }
+    .header-description {
+        margin-left: 0.5rem;
+        font-size: 0.8rem;
+        position: relative;
+        cursor: help;
+        background-color: var(--color-reference-background);
+        border-radius: 0.3rem;
+        padding: 0.1rem 0.5rem;
+        color: var(--color-text-faded);
+        transition: color 0.2s ease, background-color 0.2s ease;
+        position: relative;
+    }
+    .header-description:hover {
+        color: var(--color-text-primary);
+        background-color: var(--color-reference-background-hover);
+    }
+    .header-description .tooltip {
+        text-align: left;
+        left: 2rem;
+        top: -0.8rem;
     }
     @keyframes shake-rotate {
         0% {

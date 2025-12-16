@@ -18,6 +18,11 @@
         files: {
             type: Array,
             required: true
+        },
+        showAssistantTogglePadding: {
+            type: Boolean,
+            required: false,
+            default: false
         }
     })
     const isDragging = ref(false)
@@ -178,7 +183,7 @@
 </script>
 
 <template>
-    <div class="fileUploads" id="file-uploads">
+    <div :class="['fileUploads', { 'with-assistant-toggle-padding': showAssistantTogglePadding }]" id="file-uploads">
         <div
             v-for="(file, index) in files"
             :key="index"
@@ -396,6 +401,9 @@
         flex-direction: row;
         flex-wrap: wrap-reverse;
         gap: 0.8rem;
+    }
+    .fileUploads.with-assistant-toggle-padding {
+        right: 13.5rem;
     }
     .fileUploads div {
         background-color: var(--color-options-background-hover);
