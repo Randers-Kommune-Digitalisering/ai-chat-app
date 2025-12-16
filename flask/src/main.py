@@ -1,7 +1,7 @@
 import os
-from flask import Flask, send_from_directory
+from flask import Flask, Response, send_from_directory
 from healthcheck import HealthCheck
-from prometheus_client import generate_latest
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.logging import set_logging_configuration, is_ready_gauge, last_updated_gauge
 from utils.config import DEBUG, PORT, POD_NAME
 from api_endpoints import api_endpoints
@@ -13,7 +13,11 @@ def create_app():
     app = Flask(__name__, static_folder='dist', static_url_path='/')
     health = HealthCheck()
     app.add_url_rule('/healthz', 'healthcheck', view_func=lambda: health.run())
-    app.add_url_rule('/metrics', 'metrics', view_func=generate_latest)
+
+    def metrics():
+        return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+    app.add_url_rule('/metrics', 'metrics', view_func=metrics)
 
     app.register_blueprint(api_endpoints)
 

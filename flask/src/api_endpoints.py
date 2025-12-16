@@ -6,6 +6,7 @@ from utils.azure_openai import get_chat_client
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
+from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -46,6 +47,8 @@ def create_thread_message(thread_id):
     if not message:
         return jsonify({"success": False, "message": "Message is required"}), 400
 
+    chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
+
     # Redact sensitive content in user messages
     message = redact_content(message)
 
@@ -80,6 +83,9 @@ def create_chat_message():
     messages = request.json.get("messages", [])
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
+
+    # Count as a single user message (frontend sends full history).
+    chat_messages_counter.labels(**metrics_base_labels(), mode='chat').inc()
 
     for msg in messages:
         # Redact sensitive content in user messages
@@ -135,7 +141,15 @@ def send_feedback():
     chat_history = data.get('chat_history')
     if feedback is None or response_index is None or chat_history is None:
         return jsonify({"success": False, "message": "Missing feedback, response_index, or chat_history"}), 400
+
+    chat_feedback_counter.labels(**metrics_base_labels(), feedback_type='custom').inc()
     result = send_user_feedback(feedback, response_index, chat_history)
     if result is None:
         return jsonify({"success": False, "message": "Failed to send feedback"}), 500
     return jsonify({"success": True, "data": result})
+
+
+@api_endpoints.route('/feedback/like', methods=['POST'])
+def send_like_feedback():
+    chat_feedback_counter.labels(**metrics_base_labels(), feedback_type='like').inc()
+    return jsonify({"success": True})

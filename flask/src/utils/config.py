@@ -10,6 +10,11 @@ DEBUG = os.getenv('DEBUG', 'False') in ['True', 'true']
 PORT = os.getenv('PORT', '8080')
 POD_NAME = os.getenv('POD_NAME', 'pod_name_not_set')
 
+# Prometheus metric labels (used to distinguish deployments/instances)
+METRICS_APP = os.getenv('METRICS_APP', 'ai-chat-app').strip()
+METRICS_DEPLOYMENT = os.getenv('METRICS_DEPLOYMENT', os.getenv('DEPLOYMENT', 'unknown')).strip() or 'unknown'
+METRICS_INSTANCE = os.getenv('METRICS_INSTANCE', POD_NAME).strip() or POD_NAME
+
 AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '').strip()
 AZURE_CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET', '').strip()
 AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID', '').strip()
