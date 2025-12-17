@@ -311,7 +311,7 @@ import { use } from 'marked'
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Det er ikke tilladt at behandle CPR-numre, følsomme / fortrolige [personoplysninger](https://www.datatilsynet.dk/regler-og-vejledning/grundlaeggende-begreber/hvad-er-personoplysninger) eller foretage afgørelser med AI. Almindelige personoplysninger kan blive følsomme eller fortrolige, hvis de sammenkobles."
+        message="**Bemærk**: Del ikke [personoplysninger](https://www.datatilsynet.dk/regler-og-vejledning/grundlaeggende-begreber/hvad-er-personoplysninger), følsomme personoplysninger og fortrolige oplysninger. Søgningen skal være saglig, arbejdsbetinget relevant samt have hjemmelgrundlag."
     />
     <Alert
         v-else
