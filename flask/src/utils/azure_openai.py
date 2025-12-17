@@ -272,8 +272,8 @@ class Agent(Chat):
                 if getattr(msg, "role", None) == "assistant"
                 and getattr(msg, "content", None)
                 and any(
-                    getattr(content_block, "type", None) == "text" and
-                    hasattr(getattr(content_block, "text", None), "value")
+                    getattr(content_block, "type", None) == "text"
+                    and hasattr(getattr(content_block, "text", None), "value")
                     for content_block in msg.content
                 )
             ),

@@ -4,6 +4,7 @@
     const userInput = ref('')
     const textarea = ref(null)
     const maxHeight = 258 // 190 for 7 lines
+    const altToggleLabel = ref("Brug alternativ assistent")
 
     const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({
@@ -159,6 +160,8 @@
             }
             suggestions.value = [first, ...rest]
         }
+        // Assistant toggle
+        altToggleLabel.value = config?.altToggleLabel
 
         // If no predefined questions, use default suggestions
         if (suggestions.value.length === 0)
@@ -196,7 +199,7 @@
                 <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
                 <div class="slider round"></div>
             </label>
-            <div>Søg på internettet</div>
+            <div>{{ $config.altToggleLabel }}</div>
         </div>
     </form>
 

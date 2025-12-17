@@ -31,6 +31,8 @@ import { use } from 'marked'
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
         showAssistantToggle.value = !!config?.showAssistantToggle
+        altAssistantAlertMsg.value = config?.altAlertMsg
+        altAssistantAlertType.value = config?.altAlertType
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -40,6 +42,8 @@ import { use } from 'marked'
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
+    const altAssistantAlertType = ref('info')
+    const altAssistantAlertMsg = ref('')
 
     async function clearChat() {
         // Clear UI state
@@ -320,9 +324,9 @@ import { use } from 'marked'
     />
     
     <Alert
-        v-if="useAltAssistant"
-        type="warning"
-        message="**Bemærk**: Websøgning er slået til. Du må derfor ikke dele [forretningskritisk information](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/#block-352eee5f-1450-4f5b-a41c-e17182cb528b) eller personoplysninger, der ikke i forvejen er offentliggjorte."
+        v-if="useAltAssistant && altAssistantAlertMsg"
+        :type="altAssistantAlertType"
+        :message="altAssistantAlertMsg"
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
