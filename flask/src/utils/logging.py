@@ -3,9 +3,9 @@ import logging
 import re
 
 from werkzeug import serving
-from prometheus_client import Gauge, Counter, Summary
+from prometheus_client import Gauge, Counter
 
-from utils.config import DEBUG
+from utils.config import DEBUG, METRICS_APP, METRICS_DEPLOYMENT, METRICS_INSTANCE
 
 # Prometheus metricts
 
@@ -17,9 +17,31 @@ last_updated_gauge = Gauge('last_updated_ms', "Timestamp in milliseconds of the 
 is_available_gauge = Gauge('is_available', '1 - dependency is available, 0 - dependency is not available', labelnames=['dependency_name'])
 
 # Job metrics
-job_start_counter = Counter('job_start', 'Number of times a job has started', labelnames=['job_name'])
-job_complete_counter = Counter('job_complete', 'Number of times a job has completed', labelnames=['job_name', 'status'])
-job_duration_summary = Summary('job_duration_s', 'Duration of a job in seconds', labelnames=['job_name', 'status'])
+# job_start_counter = Counter('job_start', 'Number of times a job has started', labelnames=['job_name'])
+# job_complete_counter = Counter('job_complete', 'Number of times a job has completed', labelnames=['job_name', 'status'])
+# job_duration_summary = Summary('job_duration_s', 'Duration of a job in seconds', labelnames=['job_name', 'status'])
+
+
+def metrics_base_labels() -> dict:
+    return {
+        'app': METRICS_APP,
+        'deployment': METRICS_DEPLOYMENT,
+        'instance': METRICS_INSTANCE,
+    }
+
+
+# App metrics
+chat_messages_counter = Counter(
+    'chat_messages_total',
+    'Number of user messages received by the backend',
+    labelnames=['app', 'deployment', 'instance', 'mode'],
+)
+
+chat_feedback_counter = Counter(
+    'chat_feedback_total',
+    'Number of feedback events received by the backend',
+    labelnames=['app', 'deployment', 'instance', 'feedback_type'],
+)
 
 
 # Logging configuration
