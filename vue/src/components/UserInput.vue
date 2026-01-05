@@ -4,7 +4,7 @@
     const userInput = ref('')
     const textarea = ref(null)
     const maxHeight = 258 // 190 for 7 lines
-    const altToggleLabel = ref("Brug alternativ assistent")
+    const altToggleLabel = ref('')
 
     const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({

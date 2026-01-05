@@ -45,7 +45,7 @@ SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
 ASSISTANT_DESCRIPTION = os.environ.get('ASSISTANT_DESCRIPTION', '').strip()
 
-ALT_TOGGLE_LABEL = os.environ.get('ALT_TOGGLE_LABEL', '').strip()
+ALT_TOGGLE_LABEL = os.environ.get('ALT_TOGGLE_LABEL', "Brug alternativ assistent").strip()
 ALT_ALERT_MSG = os.environ.get('ALT_ALERT_MSG', '').strip()
 ALT_ALERT_TYPE = os.environ.get('ALT_ALERT_TYPE', 'info').strip()  # info, warning, danger
 
