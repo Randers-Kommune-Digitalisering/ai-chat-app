@@ -10,6 +10,11 @@ DEBUG = os.getenv('DEBUG', 'False') in ['True', 'true']
 PORT = os.getenv('PORT', '8080')
 POD_NAME = os.getenv('POD_NAME', 'pod_name_not_set')
 
+# Prometheus metric labels (used to distinguish deployments/instances)
+METRICS_APP = os.getenv('METRICS_APP', 'ai-chat-app').strip()
+METRICS_DEPLOYMENT = os.getenv('METRICS_DEPLOYMENT', os.getenv('DEPLOYMENT', 'unknown')).strip() or 'unknown'
+METRICS_INSTANCE = os.getenv('METRICS_INSTANCE', POD_NAME).strip() or POD_NAME
+
 AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '').strip()
 AZURE_CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET', '').strip()
 AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID', '').strip()
@@ -39,7 +44,10 @@ ASSISTANT_VECTOR_STORE_ID = os.environ.get('AZURE_VECTOR_STORE_ID', '').strip() 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
 ASSISTANT_DESCRIPTION = os.environ.get('ASSISTANT_DESCRIPTION', '').strip()
-ASSISTANT_SOURCES = [s for s in os.getenv("ASSISTANT_SOURCES", "").split(";") if s.strip()]
+
+ALT_TOGGLE_LABEL = os.environ.get('ALT_TOGGLE_LABEL', "Brug alternativ assistent").strip()
+ALT_ALERT_MSG = os.environ.get('ALT_ALERT_MSG', '').strip()
+ALT_ALERT_TYPE = os.environ.get('ALT_ALERT_TYPE', 'info').strip()  # info, warning, danger
 
 EMPHASIZE_RECENT_CONTENT = os.environ.get('EMPHASIZE_RECENT_CONTENT', 'True') in ['True', 'true']
 USE_GENERAL_KNOWLEDGE = os.environ.get('USE_GENERAL_KNOWLEDGE', 'True') in ['True', 'true']

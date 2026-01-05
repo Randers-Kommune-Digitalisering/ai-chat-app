@@ -31,6 +31,8 @@ import { use } from 'marked'
         const config = instance.appContext.config.globalProperties.$config
         isAgent.value = !!config?.isAgent
         showAssistantToggle.value = !!config?.showAssistantToggle
+        altAssistantAlertMsg.value = config?.altAlertMsg
+        altAssistantAlertType.value = config?.altAlertType
     })
     const threadId = ref(null)
     const userInput = ref(null)
@@ -40,6 +42,8 @@ import { use } from 'marked'
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
+    const altAssistantAlertType = ref('info')
+    const altAssistantAlertMsg = ref('')
 
     async function clearChat() {
         // Clear UI state
@@ -311,7 +315,7 @@ import { use } from 'marked'
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Almindelige personoplysninger kan blive følsomme eller fortrolige, hvis de sammenkobles. Det er ikke tilladt at behandle CPR-numre, følsomme / fortrolige personoplysninger eller foretage afgørelser med AI. <br />▪&nbsp;&nbsp;[Læs retningslinjerne for brugen af generativ AI her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/)"
+        message="**Bemærk**: Del ikke [personoplysninger](https://www.datatilsynet.dk/regler-og-vejledning/grundlaeggende-begreber/hvad-er-personoplysninger), følsomme personoplysninger og fortrolige oplysninger. Søgningen skal være saglig, arbejdsbetinget relevant samt have hjemmelgrundlag."
     />
     <Alert
         v-else
@@ -320,9 +324,9 @@ import { use } from 'marked'
     />
     
     <Alert
-        v-if="useAltAssistant"
-        type="warning"
-        message="**Bemærk**: Du har slået websøgning til. Du må derfor ikke længere dele forretningskritiske oplysninger."
+        v-if="useAltAssistant && altAssistantAlertMsg"
+        :type="altAssistantAlertType"
+        :message="altAssistantAlertMsg"
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">

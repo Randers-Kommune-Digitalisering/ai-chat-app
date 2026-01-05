@@ -1,11 +1,11 @@
 <script setup>
     import { nextTick, ref, computed } from 'vue'
     import { marked } from 'marked'
-    import { sendFeedback } from '../services/backend-service.js'
+    import { sendFeedback, sendLikeFeedback } from '../services/backend-service.js'
 
     // Configure marked to treat single line breaks as <br>
     // and links to open in new tabs by default
-    var renderer = new marked.Renderer();
+    var renderer = new marked.Renderer()
     renderer.link = function(href, title, text) {
         var link = marked.Renderer.prototype.link.call(this, href, title, text)
         return link.replace("<a","<a target='_blank' ")
@@ -84,6 +84,18 @@
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+
+    async function onThumbsUpClick() {
+        // Count only the first click; do not send again if toggled.
+        if (feedbackLiked.value) return
+        feedbackLiked.value = true
+        try {
+            await sendLikeFeedback(props.id)
+        } catch (err) {
+            // Best-effort: do not block UI if metrics call fails.
+            console.error('Error sending like feedback:', err)
+        }
+    }
 
     // Send feedback to backend
     async function submitFeedback() {
@@ -215,7 +227,7 @@
                     <i class="fa-regular fa-copy"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
-                <div :class="['option', { disabled: feedbackLiked }]" @click="feedbackLiked = !feedbackLiked">
+                <div :class="['option', { disabled: feedbackLiked }]" @click="onThumbsUpClick">
                     <i :class="[feedbackLiked ? 'fa-solid' : 'fa-regular', 'fa-thumbs-up']"></i>
                     <div class="tooltip">Synes godt om</div>
                 </div>

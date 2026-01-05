@@ -1,6 +1,5 @@
-# Vue-Python-Template
-Template for vue and python projects.
-NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal bruges en "rigtig" backend - deploy [vue](https://github.com/Randers-Kommune-Digitalisering/vue-js-template) og [flask](https://github.com/Randers-Kommune-Digitalisering/python-app-template) i hver sin pod.
+# ai-chat-app
+Dokumentation kommer snart.
 
 ## Kørsel af frontend + backend i docker
 * Kør ```docker-compose up``` i top dir
@@ -13,6 +12,23 @@ NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal brug
 
 ## Kørsel af Bakcenden(Python)
 * Start applikationen: ``` python flask/src/main.py ```
+
+## Prometheus metrics
+Backend eksponerer Prometheus metrics på `/metrics`.
+
+### Metrics
+* `chat_messages_total{app, deployment, instance, mode}`
+	* Tæller antal bruger-beskeder modtaget af backend.
+	* `mode` er `chat` eller `agent`.
+* `chat_feedback_total{app, deployment, instance, feedback_type}`
+	* Tæller feedback events.
+	* `feedback_type` er `like` (thumbs up) eller `custom` (tekstfeedback sendt).
+
+### Label env vars
+Disse labels gør det muligt at skelne mellem deployments (og pods/instances):
+* `METRICS_APP` (default: `ai-chat-app`)
+* `METRICS_DEPLOYMENT` (default: `DEPLOYMENT` eller `unknown`)
+* `METRICS_INSTANCE` (default: `POD_NAME`)
 
 ## Udviklings commands:
 * Bygge docker image: ```docker build -t vue-python-template .```

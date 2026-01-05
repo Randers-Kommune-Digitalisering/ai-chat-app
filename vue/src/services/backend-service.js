@@ -53,6 +53,18 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
     }
 }
 
+export async function sendLikeFeedback(responseIndex) {
+    try {
+        const result = await axios.post('/api/feedback/like', {
+            response_index: responseIndex
+        });
+        return result.data;
+    } catch (error) {
+        console.error("Error sending like feedback:", error);
+        throw error;
+    }
+}
+
 export async function getIllegalContents(message) {
     try {
         const result = await axios.post('/api/filter', { content: message });
