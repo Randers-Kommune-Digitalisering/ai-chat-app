@@ -315,12 +315,12 @@ import { use } from 'marked'
     <Alert
         v-if="chatMessages.length == 0"
         type="transparent"
-        message="**Bemærk**: Del ikke [personoplysninger](https://www.datatilsynet.dk/regler-og-vejledning/grundlaeggende-begreber/hvad-er-personoplysninger), følsomme personoplysninger og fortrolige oplysninger. Søgningen skal være saglig, arbejdsbetinget relevant samt have hjemmelgrundlag."
+        message="**Bemærk**: Det er ikke tilladt at behandle CPR-numre, følsomme / fortrolige [personoplysninger](https://www.datatilsynet.dk/regler-og-vejledning/grundlaeggende-begreber/hvad-er-personoplysninger) eller foretage afgørelser med AI. Almindelige personoplysninger kan blive følsomme eller fortrolige, hvis de sammenkobles."
     />
     <Alert
         v-else
         type="info"
-        message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger."
+        message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger. [Læs mere her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/#block-b93fc214-c5b4-4b34-9e85-7f7bdb36560e)."
     />
     
     <Alert
