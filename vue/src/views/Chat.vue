@@ -35,6 +35,7 @@ import { use } from 'marked'
         altAssistantAlertType.value = config?.altAlertType
     })
     const threadId = ref(null)
+    const activeConversationId = ref(null)
     const userInput = ref(null)
     const userFiles = ref([])
     const chatMessages = ref([])
@@ -67,8 +68,17 @@ import { use } from 'marked'
 
     defineExpose({
         clearChat,
+        loadConversation,
+        activeConversationId,
         chatMessages
     })
+
+    async function loadConversation(conversationId) {
+        // Placeholder: parent portal tells us which conversation to load.
+        // Later: fetch conversation messages + threadId from backend by conversationId.
+        activeConversationId.value = conversationId
+        await clearChat()
+    }
 
     // Handle user input
     async function onUserInput(message) {
