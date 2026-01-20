@@ -5,7 +5,8 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
-import { use } from 'marked'
+import { portalDebugLog } from '../utils/portalMessaging.js'
+
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -73,11 +74,22 @@ import { use } from 'marked'
         chatMessages
     })
 
-    async function loadConversation(conversationId) {
-        // Placeholder: parent portal tells us which conversation to load.
-        // Later: fetch conversation messages + threadId from backend by conversationId.
+    async function loadConversation(conversationId, userEmail) {
+        portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
         activeConversationId.value = conversationId
         await clearChat()
+
+        // Load conversation from backend
+        const response = await fetch(`/api/conversations/${conversationId}`, {
+            headers: { 'X-User-Email': userEmail }
+        })
+        if (!response.ok) {
+            console.error("Failed to load conversation:", response.statusText)
+            return
+        }
+        const data = await response.json()
+        // TODO: Process loaded conversation data and update UI accordingly
+        portalDebugLog('Loaded conversation data:', data)
     }
 
     // Handle user input

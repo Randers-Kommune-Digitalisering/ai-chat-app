@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+export async function loadConversation(conversationId, userEmail) {
+    try {
+        const result = await axios.get(`/api/conversations/${conversationId}?user_email=${encodeURIComponent(userEmail)}`);
+        return result.data.messages;
+    } catch (error) {
+        console.error("Error getting conversation messages:", error);
+        throw error;
+    }
+}
+
 export async function startThread() {
     try {
         const result = await axios.post('/api/threads');

@@ -42,23 +42,25 @@
         window.removeEventListener('message', onPortalMessage)
     })
 
+    // Handle messages from parent portal
     function onPortalMessage(event) {
-        // Log BEFORE filtering so we can distinguish “not received” vs “filtered out”.
-        portalDebugLog('Raw message event:', { origin: event.origin, data: event.data })
-
         if (!isAllowedPortalOrigin(event.origin)) return
 
         const msg = normalizePortalMessage(event.data)
         if (!msg) return
 
+        portalDebugLog('Portal message received:', msg)
+
         switch (msg.type) {
             case 'LOAD_CONVERSATION': {
-                const conversationId = msg.conversationId
+                const conversationId = msg.id
+                const userEmail = msg.userEmail
+
                 if (!conversationId) return
                 if (chat.value?.loadConversation) {
-                    chat.value.loadConversation(conversationId)
+                    chat.value.loadConversation(conversationId, userEmail)
                 } else {
-                    console.warn('Chat component does not expose loadConversation yet.')
+                    console.error('Chat component does not expose loadConversation.')
                 }
                 return
             }

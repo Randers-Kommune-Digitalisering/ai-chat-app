@@ -2,11 +2,13 @@ import logging
 from flask import Blueprint, jsonify, request
 import base64
 import io
+from models import Conversation
 from utils.azure_openai import get_chat_client
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
+from utils.db_controller import get_db_client, get_user_conversation
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -15,6 +17,7 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
+db_client = get_db_client()
 
 
 # Config endpoint for frontend
@@ -119,6 +122,21 @@ def create_chat_message():
         return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
     return jsonify({"success": True, "response": response, "references": refs})
+
+
+@api_endpoints.route('/conversations/<id>', methods=['GET'])
+def load_conversation(id):
+    try:
+        session = db_client.get_session()
+        user_email = request.headers.get("X-User-Email")
+        conversation = get_user_conversation(session, user_email, id)
+        if not conversation:
+            return jsonify({"success": False, "message": "Conversation not found"}), 404
+    except Exception as e:
+        logger.error(f"Error loading conversation {id}: {e}")
+        return jsonify({"success": False, "message": "Error loading conversation", "error": str(e)}), 500
+
+    return jsonify({"success": True, "conversation": conversation.to_dict(include_messages=True)})
 
 
 # Filter endpoint

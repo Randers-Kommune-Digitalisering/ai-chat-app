@@ -1,4 +1,6 @@
 // Lightweight portal <-> iframe messaging helpers
+const ALLOWED_ORIGINS = ['http://localhost:3000'];
+
 
 export function isPortalDebugEnabled() {
 	try {
@@ -19,7 +21,7 @@ export function portalDebugLog(...args) {
 }
 
 function getAllowedOrigins() {
-	const raw = import.meta.env.VITE_PORTAL_ORIGINS;
+	const raw = ALLOWED_ORIGINS; // import.meta.env.VITE_PORTAL_ORIGINS;
 	if (!raw) return [];
 	return String(raw)
 		.split(',')
@@ -28,10 +30,11 @@ function getAllowedOrigins() {
 }
 
 export function isAllowedPortalOrigin(origin) {
-    return true; // WHILE TESTING ONLY
 	const allowed = getAllowedOrigins();
+	portalDebugLog('Checking allowed origins:', allowed, 'against', origin);
 	if (allowed.length === 0) {
 		// Secure-by-default: if no allowlist is configured, only accept same-origin.
+		portalDebugLog('No allowed origins configured, enforcing same-origin policy. Checking origin ', window.location.origin, ' against ', origin, ' with result:', origin === window.location.origin);
 		return origin === window.location.origin;
 	}
 	return allowed.includes(origin);

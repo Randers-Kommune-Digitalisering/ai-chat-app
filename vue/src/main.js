@@ -9,13 +9,14 @@ try {
 		import.meta.env?.DEV ||
 		import.meta.env?.VITE_PORTAL_DEBUG === '1' ||
 		window?.localStorage?.getItem('portalDebug') === '1';
+
 	if (debugEnabled) {
-		console.log('[ai-chat iframe] bootstrap', {
+		console.log('[ai-chat iframe] Bootstrap', {
 			origin: window.location.origin,
 			href: window.location.href
 		});
 		window.addEventListener('message', (e) => {
-			console.log('[ai-chat iframe] raw message (pre-mount)', {
+			console.log('[ai-chat iframe] Raw message received', {
 				origin: e.origin,
 				data: e.data
 			});
