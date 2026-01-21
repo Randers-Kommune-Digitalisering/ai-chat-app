@@ -100,8 +100,9 @@
         }
         await clearChat()
         activeConversationId.value = conversationId
-        if (isAgent.value && data.conversation.threadId) {
-            threadId.value = data.conversation.threadId
+        const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
+        if (isAgent.value && loadedThreadId) {
+            threadId.value = loadedThreadId
             portalDebugLog("Set thread ID to:", threadId.value)
         }
         for (let msg of data.conversation.messages) {
@@ -199,9 +200,22 @@
         }
 
         // Send message to backend
-        const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, activeConversationId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
+        const result = isAgent.value ?
+            await sendThreadMessage(
+                threadId.value,
+                activeConversationId.value,
+                message,
+                chatMessage.files.map(({ name, content }) => ({ name, content })),
+                useAltAssistant.value,
+                currentUserEmail.value
+            ) :
             await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
+
+        const { response, references, conversation_id } = result
+
+        if (conversation_id) {
+            activeConversationId.value = conversation_id
+        }
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals

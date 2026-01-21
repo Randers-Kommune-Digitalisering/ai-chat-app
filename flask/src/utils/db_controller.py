@@ -43,7 +43,7 @@ def get_user_conversation(session, user_email, conversation_id):
         return None
 
 
-def create_conversation(session, user_email, title):
+def create_conversation(session, user_email, title, thread_id=None):
     try:
         now = datetime.utcnow()
         new_conversation = Conversation(
@@ -53,6 +53,7 @@ def create_conversation(session, user_email, title):
             gpt_id=(ASSISTANT_ID or AZURE_OPENAI_DEPLOYMENT_NAME or "unknown"),
             created_at=now,
             updated_at=now,
+            thread_id=thread_id,
         )
         session.add(new_conversation)
         session.commit()
@@ -106,3 +107,5 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
         logger.error(f"Error adding message to conversation {conversation_id}: {e}")
         session.rollback()
         return False
+
+

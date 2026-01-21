@@ -57,6 +57,7 @@ class Message(Base):
     conversation_id = Column(Integer, ForeignKey('conversations.id'), nullable=False)
     sender = Column(String, nullable=False)
     content = Column(String, nullable=False)
+    time_spent = Column(Integer, nullable=True)
     timestamp = Column(DateTime, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
@@ -68,4 +69,5 @@ class Message(Base):
             "sender": self.sender,
             "content": self.content,
             "timestamp": _to_iso(self.timestamp),
+            "time_spent": self.time_spent,
         }

@@ -27,12 +27,17 @@ export async function startThread() {
     }
 }
 
-export async function sendThreadMessage(threadId, conversationId, message, files, useAlt = false) {
+export async function sendThreadMessage(threadId, conversationId, message, files, useAlt = false, userEmail = null) {
     try {
-        const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files, use_alt: useAlt });
+        const result = await axios.post(
+            `/api/threads/${threadId}/messages`,
+            { message, files, use_alt: useAlt, conversation_id: conversationId },
+            { headers: userEmail ? { 'X-User-Email': userEmail } : undefined }
+        );
         return {
             response: result.data.response,
-            references: result.data.references
+            references: result.data.references,
+            conversation_id: result.data.conversation_id
         }
     } catch (error) {
         console.error("Error sending message:", error);
@@ -49,7 +54,8 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
         );
         return {
             response: result.data.response,
-            references: result.data.references
+            references: result.data.references,
+            conversation_id: result.data.conversation_id
         }
     } catch (error) {
         console.error("Error sending chat message:", error);

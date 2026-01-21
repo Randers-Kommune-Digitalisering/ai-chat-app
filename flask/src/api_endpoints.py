@@ -7,7 +7,12 @@ from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, S
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
-from utils.db_controller import get_db_client, get_user_conversation, create_conversation as create_db_conversation, add_message_to_conversation
+from utils.db_controller import (
+    get_db_client,
+    get_user_conversation,
+    create_conversation as create_db_conversation,
+    add_message_to_conversation,
+)
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -47,10 +52,21 @@ def create_thread_message(thread_id):
     message = request.json.get("message")
     files_data = request.json.get("files", [])
     use_alt = request.json.get("use_alt", False)
+    conversation_id = request.json.get("conversation_id")
+    user_email = request.headers.get("X-User-Email")
     if not thread_id:
         return jsonify({"success": False, "message": "thread_id is required"}), 400
     if not message:
         return jsonify({"success": False, "message": "Message is required"}), 400
+
+    # Normalize conversation_id (frontend may send it as a string)
+    if conversation_id in ("", None):
+        conversation_id = None
+    else:
+        try:
+            conversation_id = int(conversation_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "conversation_id must be an integer"}), 400
 
     chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
 
@@ -79,7 +95,51 @@ def create_thread_message(thread_id):
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
-    return jsonify({"success": True, "response": response, "references": refs})
+    # Update DB (same semantics as chat mode)
+    db_session = None
+    try:
+        db_session = db_client.get_session()
+
+        # Create conversation if missing and we have a user
+        if user_email and not conversation_id:
+            created = create_db_conversation(
+                db_session,
+                user_email,
+                title=f"Samtale {thread_id}",
+                thread_id=thread_id,
+            )
+            if created and getattr(created, "id", None) is not None:
+                conversation_id = int(created.id)
+            else:
+                return jsonify({"success": False, "message": "Failed to create conversation"}), 500
+
+        # Persist messages
+        if conversation_id:
+            updated = add_message_to_conversation(
+                db_session,
+                conversation_id,
+                message,
+                sender='user'
+            )
+            if not updated:
+                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+
+            updated = add_message_to_conversation(
+                db_session,
+                conversation_id,
+                response,
+                sender='assistant'
+            )
+            if not updated:
+                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+    finally:
+        try:
+            if db_session is not None:
+                db_session.close()
+        except Exception:
+            pass
+
+    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id})
 
 
 # Endpoint to handle chat messages (Chat mode)
@@ -199,7 +259,7 @@ def create_conversation_route():
         session = db_client.get_session()
         user_email = request.headers.get("X-User-Email")
         thread_id = request.json.get("thread_id")
-        conversation = create_db_conversation(session, user_email, title=f"Samtale {thread_id}")
+        conversation = create_db_conversation(session, user_email, title=f"Samtale {thread_id}", thread_id=thread_id)
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         return jsonify({"success": False, "message": "Error creating conversation", "error": str(e)}), 500
