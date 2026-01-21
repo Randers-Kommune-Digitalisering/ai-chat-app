@@ -1,20 +1,6 @@
 import axios from 'axios';
 
 
-    async function _createConversation(initialMessage, userEmail, threadId = null) {
-    try {
-        const result = await axios.post('/api/conversations', {
-            initial_message: initialMessage,
-            user_email: userEmail,
-            thread_id: threadId
-        });
-        return result.data.conversation_id;
-    } catch (error) {
-        console.error("Error creating conversation:", error);
-        throw error;
-    }
-}
-
 export async function fetchConversation(conversationId, userEmail) {
     try {
         const response = await axios.get(`/api/conversations/${conversationId}`, {
@@ -54,9 +40,13 @@ export async function sendThreadMessage(threadId, conversationId, message, files
     }
 }
 
-export async function sendChatMessage(conversationId, messages) {
+export async function sendChatMessage(conversationId, messages, userEmail = null) {
     try {
-        const result = await axios.post('/api/chat/messages', { messages, conversation_id: conversationId });
+        const result = await axios.post(
+            '/api/chat/messages',
+            { messages, conversation_id: conversationId },
+            { headers: userEmail ? { 'X-User-Email': userEmail } : undefined }
+        );
         return {
             response: result.data.response,
             references: result.data.references

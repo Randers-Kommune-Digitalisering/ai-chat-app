@@ -1,11 +1,15 @@
 <script setup>
-    import { ref, nextTick, getCurrentInstance, onMounted } from 'vue'
+    import { ref, nextTick, getCurrentInstance, onMounted, watch } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
     import { portalDebugLog } from '../utils/portalMessaging.js'
+
+    const props = defineProps({
+        userEmail: { type: String, default: null }
+    })
 
 
     class ChatMessage {
@@ -37,6 +41,7 @@
     })
     const threadId = ref(null)
     const activeConversationId = ref(null)
+    const currentUserEmail = ref(props.userEmail)
     const userInput = ref(null)
     const userFiles = ref([])
     const chatMessages = ref([])
@@ -46,6 +51,14 @@
     const useAltAssistant = ref(false)
     const altAssistantAlertType = ref('info')
     const altAssistantAlertMsg = ref('')
+
+    watch(
+        () => props.userEmail,
+        (next) => {
+            if (next) currentUserEmail.value = next
+        },
+        { immediate: true }
+    )
 
     async function clearChat() {
         // Clear UI state
@@ -76,6 +89,7 @@
 
     async function loadConversation(conversationId, userEmail) {
         portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
+        if (userEmail) currentUserEmail.value = userEmail
         const data = await fetchConversation(conversationId, userEmail)
 
         // Process loaded conversation data and update UI accordingly
@@ -186,7 +200,7 @@
         // Send message to backend
         const { response, references } = isAgent.value ?
             await sendThreadMessage(threadId.value, activeConversationId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
-            await sendChatMessage(activeConversationId.value, messages)
+            await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals

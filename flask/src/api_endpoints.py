@@ -87,8 +87,18 @@ def create_thread_message(thread_id):
 def create_chat_message():
     messages = request.json.get("messages", [])
     conversation_id = request.json.get("conversation_id")
+    user_email = request.headers.get("X-User-Email")
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
+
+    # Normalize conversation_id (frontend may send it as a string)
+    if conversation_id in ("", None):
+        conversation_id = None
+    else:
+        try:
+            conversation_id = int(conversation_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "conversation_id must be an integer"}), 400
 
     # Count as a single user message (frontend sends full history).
     chat_messages_counter.labels(**metrics_base_labels(), mode='chat').inc()
@@ -113,17 +123,6 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
-    # Add the latest user message to the conversation in DB
-    db_session = db_client.get_session()
-    updated = add_message_to_conversation(
-        db_session,
-        conversation_id,
-        messages[-1]["content"],
-        sender='user'
-    )
-    if not updated:
-        return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
-
     # Get response from Azure
     try:
         response, refs = azure_client.fetch_chat_response(messages)
@@ -133,16 +132,50 @@ def create_chat_message():
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
-    # Add assistant's response to the conversation in DB
-    updated = add_message_to_conversation(
-        db_session,
-        conversation_id,
-        response,
-        sender='assistant'
-    )
-    if not updated:
-        return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
-    return jsonify({"success": True, "response": response, "references": refs})
+    # Update DB
+    db_session = None
+    try:
+        db_session = db_client.get_session()
+
+        # Create conversation in DB if conversation id is not provided
+        if user_email and not conversation_id:
+            created = create_db_conversation(
+                db_session,
+                user_email,
+                title="Ny samtale"
+            )
+            if created and getattr(created, "id", None) is not None:
+                conversation_id = int(created.id)
+            else:
+                return jsonify({"success": False, "message": "Failed to create conversation"}), 500
+
+        # Add the latest user message + assistant response to the conversation in DB
+        if conversation_id:
+            updated = add_message_to_conversation(
+                db_session,
+                conversation_id,
+                messages[-1]["content"],
+                sender='user'
+            )
+            if not updated:
+                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+
+            updated = add_message_to_conversation(
+                db_session,
+                conversation_id,
+                response,
+                sender='assistant'
+            )
+            if not updated:
+                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+    finally:
+        try:
+            if db_session is not None:
+                db_session.close()
+        except Exception:
+            pass
+
+    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id})
 
 
 @api_endpoints.route('/conversations/<id>', methods=['GET'])

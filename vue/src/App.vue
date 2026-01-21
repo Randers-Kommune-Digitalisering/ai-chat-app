@@ -5,6 +5,7 @@
     import { isAllowedPortalOrigin, normalizePortalMessage, notifyParentReady, portalDebugLog } from './utils/portalMessaging.js'
 
     const chat = ref(null)
+    const userEmail = ref(null)
 
     const hasChatMessages = computed(() => {
         return chat.value && chat.value.chatMessages && chat.value.chatMessages.length > 0
@@ -52,13 +53,20 @@
         portalDebugLog('Portal message received:', msg)
 
         switch (msg.type) {
+            case 'PARENT_INIT': {
+                // Parent portal has acknowledged the READY message
+                // Response contains user email
+                userEmail.value = msg.userEmail || null
+                portalDebugLog('Parent portal acknowledged READY message. User email set:', userEmail.value)
+                return
+            }
             case 'LOAD_CONVERSATION': {
                 const conversationId = msg.id
-                const userEmail = msg.userEmail
+                const portalUserEmail = msg.userEmail ?? userEmail.value
 
                 if (!conversationId) return
                 if (chat.value?.loadConversation) {
-                    chat.value.loadConversation(conversationId, userEmail)
+                    chat.value.loadConversation(conversationId, portalUserEmail)
                 } else {
                     console.error('Chat component does not expose loadConversation.')
                 }
@@ -76,7 +84,7 @@
 
 <template>
     <Header @clear-chat="clearChat" :show-start-new-chat="hasChatMessages" />
-    <Chat ref="chat" />
+    <Chat ref="chat" :user-email="userEmail" />
 </template>
 
 <style scoped>

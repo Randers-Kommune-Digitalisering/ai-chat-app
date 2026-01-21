@@ -79,6 +79,12 @@ def deactivate_conversation(session, user_email, conversation_id):
 
 def add_message_to_conversation(session, conversation_id, message_content, sender, file_content=None):
     try:
+        try:
+            conversation_id = int(conversation_id)
+        except (TypeError, ValueError):
+            logger.error(f"Invalid conversation_id for add_message_to_conversation: {conversation_id!r}")
+            return False
+
         conversation = session.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.is_active
