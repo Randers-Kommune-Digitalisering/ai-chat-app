@@ -7,7 +7,7 @@ from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, S
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
-from utils.db_controller import get_db_client, get_user_conversation
+from utils.db_controller import get_db_client, get_user_conversation, create_conversation as create_db_conversation, add_message_to_conversation
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -86,6 +86,7 @@ def create_thread_message(thread_id):
 @api_endpoints.route('/chat/messages', methods=['POST'])
 def create_chat_message():
     messages = request.json.get("messages", [])
+    conversation_id = request.json.get("conversation_id")
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
 
@@ -112,6 +113,18 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
+    # Add the latest user message to the conversation in DB
+    db_session = db_client.get_session()
+    updated = add_message_to_conversation(
+        db_session,
+        conversation_id,
+        messages[-1]["content"],
+        sender='user'
+    )
+    if not updated:
+        return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+
+    # Get response from Azure
     try:
         response, refs = azure_client.fetch_chat_response(messages)
         if not response:
@@ -120,6 +133,15 @@ def create_chat_message():
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
 
+    # Add assistant's response to the conversation in DB
+    updated = add_message_to_conversation(
+        db_session,
+        conversation_id,
+        response,
+        sender='assistant'
+    )
+    if not updated:
+        return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
     return jsonify({"success": True, "response": response, "references": refs})
 
 
@@ -136,6 +158,20 @@ def load_conversation(id):
         return jsonify({"success": False, "message": "Error loading conversation", "error": str(e)}), 500
 
     return jsonify({"success": True, "conversation": conversation.to_dict(include_messages=True)})
+
+
+@api_endpoints.route('/conversations', methods=['POST'])
+def create_conversation_route():
+    try:
+        session = db_client.get_session()
+        user_email = request.headers.get("X-User-Email")
+        thread_id = request.json.get("thread_id")
+        conversation = create_db_conversation(session, user_email, title=f"Samtale {thread_id}")
+    except Exception as e:
+        logger.error(f"Error creating conversation: {e}")
+        return jsonify({"success": False, "message": "Error creating conversation", "error": str(e)}), 500
+
+    return jsonify({"success": True, "conversation": conversation.to_dict(include_messages=False)})
 
 
 # Filter endpoint

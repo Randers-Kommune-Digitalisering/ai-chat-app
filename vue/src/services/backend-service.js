@@ -1,9 +1,27 @@
 import axios from 'axios';
 
-export async function loadConversation(conversationId, userEmail) {
+
+    async function _createConversation(initialMessage, userEmail, threadId = null) {
     try {
-        const result = await axios.get(`/api/conversations/${conversationId}?user_email=${encodeURIComponent(userEmail)}`);
-        return result.data.messages;
+        const result = await axios.post('/api/conversations', {
+            initial_message: initialMessage,
+            user_email: userEmail,
+            thread_id: threadId
+        });
+        return result.data.conversation_id;
+    } catch (error) {
+        console.error("Error creating conversation:", error);
+        throw error;
+    }
+}
+
+export async function fetchConversation(conversationId, userEmail) {
+    try {
+        const response = await axios.get(`/api/conversations/${conversationId}`, {
+            headers: { 'X-User-Email': userEmail }
+        });
+        console.log("Fetched conversation data:", response.data);
+        return response.data;
     } catch (error) {
         console.error("Error getting conversation messages:", error);
         throw error;
@@ -23,7 +41,7 @@ export async function startThread() {
     }
 }
 
-export async function sendThreadMessage(threadId, message, files, useAlt = false) {
+export async function sendThreadMessage(threadId, conversationId, message, files, useAlt = false) {
     try {
         const result = await axios.post(`/api/threads/${threadId}/messages`, { message, files, use_alt: useAlt });
         return {
@@ -36,9 +54,9 @@ export async function sendThreadMessage(threadId, message, files, useAlt = false
     }
 }
 
-export async function sendChatMessage(messages) {
+export async function sendChatMessage(conversationId, messages) {
     try {
-        const result = await axios.post('/api/chat/messages', { messages });
+        const result = await axios.post('/api/chat/messages', { messages, conversation_id: conversationId });
         return {
             response: result.data.response,
             references: result.data.references

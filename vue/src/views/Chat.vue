@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
     import { portalDebugLog } from '../utils/portalMessaging.js'
 
 
@@ -76,16 +76,7 @@
 
     async function loadConversation(conversationId, userEmail) {
         portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
-
-        // Load conversation from backend
-        const response = await fetch(`/api/conversations/${conversationId}`, {
-            headers: { 'X-User-Email': userEmail }
-        })
-        if (!response.ok) {
-            console.error("Failed to load conversation:", response.statusText)
-            return
-        }
-        const data = await response.json()
+        const data = await fetchConversation(conversationId, userEmail)
 
         // Process loaded conversation data and update UI accordingly
         if (!data.conversation || !Array.isArray(data.conversation?.messages)) {
@@ -111,7 +102,7 @@
         }        
         nextTick(() => {
             updateInputPadding()
-            scrollToMessage(chatMessages.value.length - 1)
+            scrollToMessage(chatMessages.value.length - 1, false)
         })
         portalDebugLog('Loaded conversation data:', data)
     }
@@ -194,8 +185,8 @@
 
         // Send message to backend
         const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
-            await sendChatMessage(messages)
+            await sendThreadMessage(threadId.value, activeConversationId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
+            await sendChatMessage(activeConversationId.value, messages)
 
         // Response received from backend
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
@@ -285,7 +276,7 @@
     }
 
     // Scroll to specific message
-    function scrollToMessage(index) {
+    function scrollToMessage(index, smoothScroll = true) {
         const item = document.getElementById('msg_' + index)
         if (item) {
             let rect = item.getBoundingClientRect()
@@ -293,7 +284,7 @@
 
             window.scrollBy({
                 left: 0, top: calc,
-                behavior: "smooth"
+                behavior: smoothScroll ? "smooth" : "auto"
             })
         }
     }

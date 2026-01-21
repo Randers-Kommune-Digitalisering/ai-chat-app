@@ -17,7 +17,7 @@ def _to_iso(value):
 class Conversation(Base):
     __tablename__ = 'conversations'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     is_active = Column(Boolean, default=True)
 
     title = Column(String, nullable=False)
@@ -52,7 +52,7 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = 'messages'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
 
     conversation_id = Column(Integer, ForeignKey('conversations.id'), nullable=False)
     sender = Column(String, nullable=False)

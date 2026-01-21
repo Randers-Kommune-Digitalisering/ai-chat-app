@@ -1,6 +1,15 @@
-from utils.config import POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_DB
+from datetime import datetime
+
+from utils.config import (
+    POSTGRES_USER,
+    POSTGRES_PASS,
+    POSTGRES_HOST,
+    POSTGRES_DB,
+    ASSISTANT_ID,
+    AZURE_OPENAI_DEPLOYMENT_NAME,
+)
 from utils.database import DatabaseClient
-from models import Conversation
+from models import Conversation, Message
 import logging
 
 
@@ -36,10 +45,14 @@ def get_user_conversation(session, user_email, conversation_id):
 
 def create_conversation(session, user_email, title):
     try:
+        now = datetime.utcnow()
         new_conversation = Conversation(
             user_email=user_email,
             title=title,
-            is_active=True
+            is_active=True,
+            gpt_id=(ASSISTANT_ID or AZURE_OPENAI_DEPLOYMENT_NAME or "unknown"),
+            created_at=now,
+            updated_at=now,
         )
         session.add(new_conversation)
         session.commit()
@@ -71,10 +84,15 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
             Conversation.is_active
         ).first()
         if conversation:
-            conversation.messages.append({
-                'content': message_content,
-                'sender': sender
-            })
+            now = datetime.utcnow()
+            message = Message(
+                conversation_id=conversation.id,
+                sender=sender,
+                content=message_content,
+                timestamp=now,
+            )
+            conversation.updated_at = now
+            conversation.messages.append(message)
             session.commit()
             return True
         return False
