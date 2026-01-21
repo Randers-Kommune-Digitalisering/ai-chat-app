@@ -2,7 +2,6 @@ import logging
 from flask import Blueprint, jsonify, request
 import base64
 import io
-from models import Conversation
 from utils.azure_openai import get_chat_client
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
 from utils.mail_client import send_user_feedback

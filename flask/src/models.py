@@ -16,7 +16,7 @@ def _to_iso(value):
 
 class Conversation(Base):
     __tablename__ = 'conversations'
-    
+
     id = Column(Integer, primary_key=True)
     is_active = Column(Boolean, default=True)
 
@@ -28,7 +28,7 @@ class Conversation(Base):
 
     thread_id = Column(String, unique=True, nullable=True)
 
-    messages = relationship("Message", back_populates="conversation")
+    messages = relationship("Message", back_populates="conversation", order_by="Message.id")
 
     def to_dict(self, include_messages: bool = False) -> dict:
         data = {

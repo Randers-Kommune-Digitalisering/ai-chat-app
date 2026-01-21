@@ -5,7 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
-import { portalDebugLog } from '../utils/portalMessaging.js'
+    import { portalDebugLog } from '../utils/portalMessaging.js'
 
 
     class ChatMessage {
@@ -76,8 +76,6 @@ import { portalDebugLog } from '../utils/portalMessaging.js'
 
     async function loadConversation(conversationId, userEmail) {
         portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
-        activeConversationId.value = conversationId
-        await clearChat()
 
         // Load conversation from backend
         const response = await fetch(`/api/conversations/${conversationId}`, {
@@ -88,7 +86,33 @@ import { portalDebugLog } from '../utils/portalMessaging.js'
             return
         }
         const data = await response.json()
-        // TODO: Process loaded conversation data and update UI accordingly
+
+        // Process loaded conversation data and update UI accordingly
+        if (!data.conversation || !Array.isArray(data.conversation?.messages)) {
+            console.error("Invalid conversation data format.")
+            return
+        }
+        await clearChat()
+        activeConversationId.value = conversationId
+        if (isAgent.value && data.conversation.threadId) {
+            threadId.value = data.conversation.threadId
+            portalDebugLog("Set thread ID to:", threadId.value)
+        }
+        for (let msg of data.conversation.messages) {
+            const chatMsg = new ChatMessage(
+                msg.sender,
+                msg.content,
+                msg.illegalContents || [],
+                (msg.references || []).map(ref => new Reference(ref.title, ref.link)),
+                msg.files || [],
+                msg.timeSpent || 0
+            )
+            chatMessages.value.push(chatMsg)
+        }        
+        nextTick(() => {
+            updateInputPadding()
+            scrollToMessage(chatMessages.value.length - 1)
+        })
         portalDebugLog('Loaded conversation data:', data)
     }
 

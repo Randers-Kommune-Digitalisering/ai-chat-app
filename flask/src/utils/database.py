@@ -2,7 +2,7 @@ import sqlalchemy
 import logging
 import urllib.parse
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 
 class DatabaseClient:
