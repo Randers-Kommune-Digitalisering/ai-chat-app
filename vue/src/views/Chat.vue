@@ -66,6 +66,7 @@
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
+        activeConversationId.value = null
         useAltAssistant.value = false
         userInput.value.clearUserInput()
         clearAllFiles()
