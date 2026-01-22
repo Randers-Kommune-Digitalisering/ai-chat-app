@@ -43,7 +43,7 @@ export function isAllowedPortalOrigin(origin) {
 export function normalizePortalMessage(data) {
 	if (!data || typeof data !== 'object') return null;
 	if (typeof data.type !== 'string') return null;
-	portalDebugLog('Normalized message:', data);
+	// portalDebugLog('Normalized message:', data);
 	return data;
 }
 
@@ -68,5 +68,18 @@ export function notifyParentLoaded() {
 	portalDebugLog('Sending IFRAME_CONTENT_LOADED to:', targets);
 	for (const targetOrigin of targets) {
 		window.parent.postMessage({ type: 'IFRAME_CONTENT_LOADED', version: 1 }, targetOrigin);
+	}
+}
+
+
+export function notifyParentNewConversation(conversation) {
+	// Lets the parent know a new conversation has been created.
+	if (!window.parent || window.parent === window) return;
+
+	const allowed = getAllowedOrigins();
+	const targets = allowed.length > 0 ? allowed : [window.location.origin];
+	portalDebugLog('Sending NEW_CONVERSATION to:', targets, 'with conversation:', conversation);
+	for (const targetOrigin of targets) {
+		window.parent.postMessage({ type: 'NEW_CONVERSATION', version: 1, conversation }, targetOrigin);
 	}
 }

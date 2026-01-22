@@ -5,7 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
-    import { portalDebugLog, notifyParentLoaded } from '../utils/portalMessaging.js'
+    import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation } from '../utils/portalMessaging.js'
 
     const props = defineProps({
         userEmail: { type: String, default: null }
@@ -31,14 +31,6 @@
     }
 
     const isAgent = ref(false)
-    onMounted(() => {
-        const instance = getCurrentInstance()
-        const config = instance.appContext.config.globalProperties.$config
-        isAgent.value = !!config?.isAgent
-        showAssistantToggle.value = !!config?.showAssistantToggle
-        altAssistantAlertMsg.value = config?.altAlertMsg
-        altAssistantAlertType.value = config?.altAlertType
-    })
     const threadId = ref(null)
     const activeConversationId = ref(null)
     const currentUserEmail = ref(props.userEmail)
@@ -51,6 +43,17 @@
     const useAltAssistant = ref(false)
     const altAssistantAlertType = ref('info')
     const altAssistantAlertMsg = ref('')
+    const ASSISTANT_NAME_ID = ref('')
+
+    onMounted(() => {
+        const instance = getCurrentInstance()
+        const config = instance.appContext.config.globalProperties.$config
+        isAgent.value = !!config?.isAgent
+        showAssistantToggle.value = !!config?.showAssistantToggle
+        altAssistantAlertMsg.value = config?.altAlertMsg
+        altAssistantAlertType.value = config?.altAlertType
+        ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
+    })
 
     watch(
         () => props.userEmail,
@@ -59,6 +62,13 @@
         },
         { immediate: true }
     )
+
+    defineExpose({
+        clearChat,
+        loadConversation,
+        activeConversationId,
+        chatMessages
+    })
 
     async function clearChat() {
         // Clear UI state
@@ -80,13 +90,6 @@
         if (!threadId.value)
             console.error("Failed to start new thread.")
     }
-
-    defineExpose({
-        clearChat,
-        loadConversation,
-        activeConversationId,
-        chatMessages
-    })
 
     async function loadConversation(conversationId, userEmail) {
         portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
@@ -212,13 +215,18 @@
             ) :
             await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
+        // Response received from backend
         const { response, references, conversation_id } = result
 
-        if (conversation_id) {
-            activeConversationId.value = conversation_id
+        if (!conversation_id) {
+            console.error("No conversation ID returned from backend.")
+            return
         }
+        activeConversationId.value = conversation_id
 
-        // Response received from backend
+        if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
+            notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: 'Ny samtale' })
+
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
         if (!awaitingResponse.value) {
             console.warn("Response received but awaitingResponse is false. Ignoring response.")

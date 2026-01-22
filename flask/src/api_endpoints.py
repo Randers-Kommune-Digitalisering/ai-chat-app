@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
@@ -29,6 +29,7 @@ db_client = get_db_client()
 def get_config():
     config = {
         "assistantName": ASSISTANT_NAME,
+        "assistantNameId": ASSISTANT_NAME_ID,
         "isAgent": ASSISTANT_TYPE.lower() == "agent",
         "predefinedQuestions": PREDEFINED_QUESTIONS,
         "description": ASSISTANT_DESCRIPTION,
