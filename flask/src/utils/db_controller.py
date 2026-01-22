@@ -1,12 +1,11 @@
 from datetime import datetime
 
 from utils.config import (
+    ASSISTANT_NAME_ID,
     POSTGRES_USER,
     POSTGRES_PASS,
     POSTGRES_HOST,
     POSTGRES_DB,
-    ASSISTANT_ID,
-    AZURE_OPENAI_DEPLOYMENT_NAME,
 )
 from utils.database import DatabaseClient
 from models import Conversation, Message
@@ -50,7 +49,7 @@ def create_conversation(session, user_email, title, thread_id=None):
             user_email=user_email,
             title=title,
             is_active=True,
-            gpt_id=(ASSISTANT_ID or AZURE_OPENAI_DEPLOYMENT_NAME or "unknown"),
+            gpt_id=(ASSISTANT_NAME_ID),
             created_at=now,
             updated_at=now,
             thread_id=thread_id,

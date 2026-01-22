@@ -5,7 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
-    import { portalDebugLog } from '../utils/portalMessaging.js'
+    import { portalDebugLog, notifyParentLoaded } from '../utils/portalMessaging.js'
 
     const props = defineProps({
         userEmail: { type: String, default: null }
@@ -115,7 +115,8 @@
                 msg.timeSpent || 0
             )
             chatMessages.value.push(chatMsg)
-        }        
+        }
+        notifyParentLoaded()
         nextTick(() => {
             updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1, false)

@@ -1,8 +1,9 @@
 import sqlalchemy
 import logging
 import urllib.parse
-from sqlalchemy.orm import Session
+from contextlib import contextmanager
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 class DatabaseClient:
@@ -29,7 +30,16 @@ class DatabaseClient:
         connection_string = f'{driver}://{urllib.parse.quote_plus(username)}:{urllib.parse.quote_plus(password)}@{urllib.parse.quote_plus(host)}:{urllib.parse.quote_plus(port)}/{urllib.parse.quote_plus(database)}'
         self.logger.info(f"Connection string: {connection_string}")
 
-        self.engine = create_engine(connection_string)
+        # pool_pre_ping helps avoid handing out stale connections.
+        # pool_recycle mitigates long-lived connections being dropped by the server/network.
+        self.engine = create_engine(
+            connection_string,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+        )
+
+        # Prefer a dedicated session factory so callers can reliably close sessions.
+        self._SessionLocal = sessionmaker(bind=self.engine)
 
     def get_engine(self):
         return self.engine
@@ -45,10 +55,34 @@ class DatabaseClient:
     def get_session(self):
         try:
             if self.engine:
-                return Session(self.get_engine())
+                return self._SessionLocal()
             self.logger.error("DatabaseClient not initialized properly. Engine is None. Check error from init.")
         except Exception as e:
             self.logger.error(f"Error connecting to database: {e}")
+
+    @contextmanager
+    def session_scope(self):
+        """
+        Provide a transactional scope around a series of operations.
+
+        Always closes the session (returning the connection to the pool).
+        Rolls back on exception.
+        """
+        session = self.get_session()
+        try:
+            yield session
+        except Exception:
+            try:
+                if session is not None:
+                    session.rollback()
+            finally:
+                raise
+        finally:
+            try:
+                if session is not None:
+                    session.close()
+            except Exception:
+                pass
 
     def execute_sql(self, sql):
         try:

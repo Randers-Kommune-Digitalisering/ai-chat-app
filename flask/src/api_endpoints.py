@@ -241,30 +241,40 @@ def create_chat_message():
 @api_endpoints.route('/conversations/<id>', methods=['GET'])
 def load_conversation(id):
     try:
-        session = db_client.get_session()
         user_email = request.headers.get("X-User-Email")
-        conversation = get_user_conversation(session, user_email, id)
-        if not conversation:
-            return jsonify({"success": False, "message": "Conversation not found"}), 404
+        with db_client.session_scope() as session:
+            conversation = get_user_conversation(session, user_email, id)
+            if not conversation:
+                return jsonify({"success": False, "message": "Conversation not found"}), 404
+            payload = conversation.to_dict(include_messages=True)
     except Exception as e:
         logger.error(f"Error loading conversation {id}: {e}")
         return jsonify({"success": False, "message": "Error loading conversation", "error": str(e)}), 500
 
-    return jsonify({"success": True, "conversation": conversation.to_dict(include_messages=True)})
+    return jsonify({"success": True, "conversation": payload})
 
 
 @api_endpoints.route('/conversations', methods=['POST'])
 def create_conversation_route():
     try:
-        session = db_client.get_session()
         user_email = request.headers.get("X-User-Email")
         thread_id = request.json.get("thread_id")
-        conversation = create_db_conversation(session, user_email, title=f"Samtale {thread_id}", thread_id=thread_id)
+        with db_client.session_scope() as session:
+            conversation = create_db_conversation(
+                session,
+                user_email,
+                title=f"Samtale {thread_id}",
+                thread_id=thread_id,
+            )
+            payload = conversation.to_dict(include_messages=False) if conversation else None
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         return jsonify({"success": False, "message": "Error creating conversation", "error": str(e)}), 500
 
-    return jsonify({"success": True, "conversation": conversation.to_dict(include_messages=False)})
+    if not payload:
+        return jsonify({"success": False, "message": "Failed to create conversation"}), 500
+
+    return jsonify({"success": True, "conversation": payload})
 
 
 # Filter endpoint

@@ -58,3 +58,15 @@ export function notifyParentReady() {
 		window.parent.postMessage({ type: 'IFRAME_READY', version: 1 }, targetOrigin);
 	}
 }
+
+export function notifyParentLoaded() {
+	// Lets the parent know the requested conversation has loaded.
+	if (!window.parent || window.parent === window) return;
+
+	const allowed = getAllowedOrigins();
+	const targets = allowed.length > 0 ? allowed : [window.location.origin];
+	portalDebugLog('Sending IFRAME_CONTENT_LOADED to:', targets);
+	for (const targetOrigin of targets) {
+		window.parent.postMessage({ type: 'IFRAME_CONTENT_LOADED', version: 1 }, targetOrigin);
+	}
+}

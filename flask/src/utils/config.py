@@ -31,6 +31,7 @@ AZURE_API_VERSION_VECTORS = os.environ.get('AZURE_API_VERSION_VECTORS', '2025-03
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
 
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
+ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').strip()  # ID used in portal (i.e. randers-gpt)
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
 ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', None)  # Second assistant ID for assistant toggle
