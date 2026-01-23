@@ -117,18 +117,18 @@ def create_thread_message(thread_id):
         # Persist messages
         if conversation_id:
             updated = add_message_to_conversation(
-                db_session,
-                conversation_id,
-                message,
+                session=db_session,
+                conversation_id=conversation_id,
+                message_content=message,
                 sender='user'
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
 
             updated = add_message_to_conversation(
-                db_session,
-                conversation_id,
-                response,
+                session=db_session,
+                conversation_id=conversation_id,
+                message_content=response,
                 sender='assistant'
             )
             if not updated:
@@ -213,18 +213,18 @@ def create_chat_message():
         # Add the latest user message + assistant response to the conversation in DB
         if conversation_id:
             updated = add_message_to_conversation(
-                db_session,
-                conversation_id,
-                messages[-1]["content"],
+                session=db_session,
+                conversation_id=conversation_id,
+                message_content=messages[-1]["content"],
                 sender='user'
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
 
             updated = add_message_to_conversation(
-                db_session,
-                conversation_id,
-                response,
+                session=db_session,
+                conversation_id=conversation_id,
+                message_content=response,
                 sender='assistant'
             )
             if not updated:

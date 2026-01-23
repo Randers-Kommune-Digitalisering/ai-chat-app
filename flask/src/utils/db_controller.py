@@ -77,7 +77,7 @@ def deactivate_conversation(session, user_email, conversation_id):
         return False
 
 
-def add_message_to_conversation(session, conversation_id, message_content, sender, file_content=None):
+def add_message_to_conversation(session, conversation_id, message_content, sender, references=[], file_content=None):
     try:
         try:
             conversation_id = int(conversation_id)
@@ -95,7 +95,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
                 conversation_id=conversation.id,
                 sender=sender,
                 content=message_content,
-                timestamp=now,
+                timestamp=now
             )
             conversation.updated_at = now
             conversation.messages.append(message)
@@ -106,5 +106,3 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
         logger.error(f"Error adding message to conversation {conversation_id}: {e}")
         session.rollback()
         return False
-
-

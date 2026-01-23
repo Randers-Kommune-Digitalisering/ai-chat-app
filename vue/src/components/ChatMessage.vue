@@ -193,7 +193,7 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div class="references">
+            <div class="references" v-if="props.references.length > 0 || props.timeSpent">
                 <div
                     v-if="props.references.length > 0"
                     v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
@@ -216,11 +216,12 @@
                     </a>
                 </div>
 
-                <div class="timer">
+                <div class="timer" v-if="props.timeSpent">
                     <i class="fa-regular fa-clock"></i>
                     {{ props.timeSpent }} sekunder
                 </div>
             </div>
+            <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
             <div class="options">
                 <div class="option" @click="copyTextToClipboard(props.message)">
