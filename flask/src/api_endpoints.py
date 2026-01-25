@@ -12,8 +12,7 @@ from utils.db_controller import (
     get_db_client,
     get_user_conversation,
     create_conversation as create_db_conversation,
-    add_message_to_conversation,
-    update_conversation_title
+    add_message_to_conversation
 )
 
 # Suppress Azure SDK and HTTP logging
@@ -23,40 +22,34 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
-title_generator = get_title_generator()
 db_client = get_db_client()
 
 
-def _start_title_generation_thread(*, user_email: str, conversation_id: int, first_user_message: str) -> None:
-    """Generate and persist a conversation title without blocking the request."""
+def _start_title_generation_thread(*, first_user_message: str):
+    """Start generating a conversation title in the background.
+
+    Returns (thread, result_dict). Caller can join the thread later to wait
+    for the title before writing the conversation to the DB.
+    """
+
+    result = {"title": None}
 
     def _worker() -> None:
-        session = None
         try:
             generator = get_title_generator()
             if not generator:
                 return
-
             title = generator.generate_title([
                 {"role": "user", "content": first_user_message}
             ])
-            if not title:
-                return
-
-            session = db_client.get_session()
-            update_conversation_title(session, user_email, conversation_id, title)
+            if title:
+                result["title"] = title
         except Exception as e:
-            logger.warning(
-                f"Failed to generate/update title for conversation {conversation_id}: {e}"
-            )
-        finally:
-            try:
-                if session is not None:
-                    session.close()
-            except Exception:
-                pass
+            logger.warning(f"Failed to generate conversation title: {e}")
 
-    threading.Thread(target=_worker, daemon=True).start()
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    return thread, result
 
 
 # Config endpoint for frontend
@@ -109,6 +102,13 @@ def create_thread_message(thread_id):
     # Redact sensitive content in user messages
     message = redact_content(message)
 
+    title_thread = None
+    title_result = None
+    conversation_title = None
+    if user_email and not conversation_id and message:
+        # Generate title while we await the chat response.
+        title_thread, title_result = _start_title_generation_thread(first_user_message=message)
+
     # Parse files from JSON: each file is { name, content (base64) }
     files = []
     for file_info in files_data:
@@ -138,21 +138,19 @@ def create_thread_message(thread_id):
 
         # Create conversation if missing and we have a user
         if user_email and not conversation_id:
+            if title_thread is not None:
+                title_thread.join()
+            generated_title = (title_result or {}).get("title") or f"Samtale {thread_id}"
+            conversation_title = generated_title
+
             created = create_db_conversation(
                 db_session,
                 user_email,
-                title=f"Samtale {thread_id}",
+                title=generated_title,
                 thread_id=thread_id,
             )
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
-                # Generate a title based on the first user message asynchronously
-                if message:
-                    _start_title_generation_thread(
-                        user_email=user_email,
-                        conversation_id=conversation_id,
-                        first_user_message=message,
-                    )
             else:
                 return jsonify({"success": False, "message": "Failed to create conversation"}), 500
 
@@ -182,7 +180,7 @@ def create_thread_message(thread_id):
         except Exception:
             pass
 
-    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id})
+    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
 
 # Endpoint to handle chat messages (Chat mode)
@@ -226,6 +224,18 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
+    title_thread = None
+    title_result = None
+    conversation_title = None
+    if user_email and not conversation_id and messages:
+        first_user_message = next(
+            (m.get("content", "") for m in messages if m.get("role") == "user"),
+            ""
+        )
+        if first_user_message:
+            # Generate title while we await the chat response.
+            title_thread, title_result = _start_title_generation_thread(first_user_message=first_user_message)
+
     # Get response from Azure
     try:
         response, refs = azure_client.fetch_chat_response(messages)
@@ -242,25 +252,18 @@ def create_chat_message():
 
         # Create conversation in DB if conversation id is not provided
         if user_email and not conversation_id:
+            if title_thread is not None:
+                title_thread.join()
+            generated_title = (title_result or {}).get("title") or "Ny samtale"
+            conversation_title = generated_title
+
             created = create_db_conversation(
                 db_session,
                 user_email,
-                title="Ny samtale"
+                title=generated_title
             )
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
-                # Generate a title based on the first user message asynchronously
-                if messages:
-                    first_user_message = next(
-                        (m.get("content", "") for m in messages if m.get("role") == "user"),
-                        ""
-                    )
-                    if first_user_message:
-                        _start_title_generation_thread(
-                            user_email=user_email,
-                            conversation_id=conversation_id,
-                            first_user_message=first_user_message,
-                        )
             else:
                 return jsonify({"success": False, "message": "Failed to create conversation"}), 500
 
@@ -290,7 +293,7 @@ def create_chat_message():
         except Exception:
             pass
 
-    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id})
+    return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
 
 @api_endpoints.route('/conversations/<id>', methods=['GET'])

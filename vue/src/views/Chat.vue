@@ -216,7 +216,7 @@
             await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
-        const { response, references, conversation_id } = result
+        const { response, references, conversation_id, title } = result
 
         if (!conversation_id) {
             console.error("No conversation ID returned from backend.")
@@ -225,7 +225,7 @@
         activeConversationId.value = conversation_id
 
         if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
-            notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: 'Ny samtale' })
+            notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
 
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
         if (!awaitingResponse.value) {

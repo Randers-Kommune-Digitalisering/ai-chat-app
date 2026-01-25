@@ -37,7 +37,8 @@ export async function sendThreadMessage(threadId, conversationId, message, files
         return {
             response: result.data.response,
             references: result.data.references,
-            conversation_id: result.data.conversation_id
+            conversation_id: result.data.conversation_id,
+            title: result.data.title
         }
     } catch (error) {
         console.error("Error sending message:", error);
@@ -55,7 +56,8 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
         return {
             response: result.data.response,
             references: result.data.references,
-            conversation_id: result.data.conversation_id
+            conversation_id: result.data.conversation_id,
+            title: result.data.title
         }
     } catch (error) {
         console.error("Error sending chat message:", error);
