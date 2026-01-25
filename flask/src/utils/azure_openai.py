@@ -12,6 +12,7 @@ from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
     AZURE_AISEARCH_INDEX_NAME,
     AZURE_OPENAI_DEPLOYMENT_NAME,
+    AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION,
     AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_KEY,
     AZURE_API_VERSION_OPENAI,
@@ -332,7 +333,7 @@ class AzureOpenAITitleGenerator():
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             api_key=AZURE_OPENAI_KEY,
         )
-        self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME
+        self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION
 
     def generate_title(self, conversation_messages):
         system_prompt = {
