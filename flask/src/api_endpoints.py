@@ -1,8 +1,9 @@
 import logging
+import threading
 from flask import Blueprint, jsonify, request
 import base64
 import io
-from utils.azure_openai import get_chat_client
+from utils.azure_openai import get_chat_client, get_title_generator
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
@@ -12,6 +13,7 @@ from utils.db_controller import (
     get_user_conversation,
     create_conversation as create_db_conversation,
     add_message_to_conversation,
+    update_conversation_title
 )
 
 # Suppress Azure SDK and HTTP logging
@@ -21,7 +23,40 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
+title_generator = get_title_generator()
 db_client = get_db_client()
+
+
+def _start_title_generation_thread(*, user_email: str, conversation_id: int, first_user_message: str) -> None:
+    """Generate and persist a conversation title without blocking the request."""
+
+    def _worker() -> None:
+        session = None
+        try:
+            generator = get_title_generator()
+            if not generator:
+                return
+
+            title = generator.generate_title([
+                {"role": "user", "content": first_user_message}
+            ])
+            if not title:
+                return
+
+            session = db_client.get_session()
+            update_conversation_title(session, user_email, conversation_id, title)
+        except Exception as e:
+            logger.warning(
+                f"Failed to generate/update title for conversation {conversation_id}: {e}"
+            )
+        finally:
+            try:
+                if session is not None:
+                    session.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 # Config endpoint for frontend
@@ -111,6 +146,13 @@ def create_thread_message(thread_id):
             )
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
+                # Generate a title based on the first user message asynchronously
+                if message:
+                    _start_title_generation_thread(
+                        user_email=user_email,
+                        conversation_id=conversation_id,
+                        first_user_message=message,
+                    )
             else:
                 return jsonify({"success": False, "message": "Failed to create conversation"}), 500
 
@@ -207,6 +249,18 @@ def create_chat_message():
             )
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
+                # Generate a title based on the first user message asynchronously
+                if messages:
+                    first_user_message = next(
+                        (m.get("content", "") for m in messages if m.get("role") == "user"),
+                        ""
+                    )
+                    if first_user_message:
+                        _start_title_generation_thread(
+                            user_email=user_email,
+                            conversation_id=conversation_id,
+                            first_user_message=first_user_message,
+                        )
             else:
                 return jsonify({"success": False, "message": "Failed to create conversation"}), 500
 
@@ -251,29 +305,6 @@ def load_conversation(id):
     except Exception as e:
         logger.error(f"Error loading conversation {id}: {e}")
         return jsonify({"success": False, "message": "Error loading conversation", "error": str(e)}), 500
-
-    return jsonify({"success": True, "conversation": payload})
-
-
-@api_endpoints.route('/conversations', methods=['POST'])
-def create_conversation_route():
-    try:
-        user_email = request.headers.get("X-User-Email")
-        thread_id = request.json.get("thread_id")
-        with db_client.session_scope() as session:
-            conversation = create_db_conversation(
-                session,
-                user_email,
-                title=f"Samtale {thread_id}",
-                thread_id=thread_id,
-            )
-            payload = conversation.to_dict(include_messages=False) if conversation else None
-    except Exception as e:
-        logger.error(f"Error creating conversation: {e}")
-        return jsonify({"success": False, "message": "Error creating conversation", "error": str(e)}), 500
-
-    if not payload:
-        return jsonify({"success": False, "message": "Failed to create conversation"}), 500
 
     return jsonify({"success": True, "conversation": payload})
 

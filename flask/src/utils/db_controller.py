@@ -106,3 +106,18 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
         logger.error(f"Error adding message to conversation {conversation_id}: {e}")
         session.rollback()
         return False
+
+
+def update_conversation_title(session, user_email, conversation_id, new_title):
+    try:
+        conversation = get_user_conversation(session, user_email, conversation_id)
+        if conversation:
+            conversation.title = new_title
+            conversation.updated_at = datetime.utcnow()
+            session.commit()
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error updating title for conversation {conversation_id} for user {user_email}: {e}")
+        session.rollback()
+        return False
