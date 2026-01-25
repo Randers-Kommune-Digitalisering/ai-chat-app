@@ -83,3 +83,16 @@ export function notifyParentNewConversation(conversation) {
 		window.parent.postMessage({ type: 'NEW_CONVERSATION', version: 1, conversation }, targetOrigin);
 	}
 }
+
+
+export function notifyParentChatCleared(payload = {}) {
+	// Lets the parent know the chat has been cleared/reset.
+	if (!window.parent || window.parent === window) return;
+
+	const allowed = getAllowedOrigins();
+	const targets = allowed.length > 0 ? allowed : [window.location.origin];
+	portalDebugLog('Sending CHAT_CLEARED to:', targets, 'with payload:', payload);
+	for (const targetOrigin of targets) {
+		window.parent.postMessage({ type: 'CHAT_CLEARED', version: 1, ...payload }, targetOrigin);
+	}
+}

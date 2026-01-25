@@ -5,7 +5,7 @@
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
     import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
-    import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation } from '../utils/portalMessaging.js'
+    import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
         userEmail: { type: String, default: null }
@@ -70,7 +70,9 @@
         chatMessages
     })
 
-    async function clearChat() {
+    async function clearChat(options = {}) {
+        const { notifyParent = true } = options
+        const previousConversationId = activeConversationId.value
         // Clear UI state
         chatMessages.value = []
         awaitingResponse.value = false
@@ -81,6 +83,9 @@
         userInput.value.clearUserInput()
         clearAllFiles()
         stopTimer()
+        if (notifyParent) {
+            notifyParentChatCleared(previousConversationId ? { conversationId: previousConversationId } : {})
+        }
 
         if (!isAgent.value)
                 return
@@ -101,7 +106,7 @@
             console.error("Invalid conversation data format.")
             return
         }
-        await clearChat()
+        await clearChat({ notifyParent: false })
         activeConversationId.value = conversationId
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
