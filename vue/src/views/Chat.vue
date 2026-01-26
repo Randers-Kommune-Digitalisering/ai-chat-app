@@ -113,13 +113,45 @@
             threadId.value = loadedThreadId
             portalDebugLog("Set thread ID to:", threadId.value)
         }
+
+        function mapFiles(msg) {
+            const rawFiles = Array.isArray(msg?.files) ? msg.files : []
+            const rawAttachments = Array.isArray(msg?.attachments) ? msg.attachments : []
+
+            if (rawFiles.length > 0) return rawFiles
+
+            return rawAttachments.map(att => ({
+                name: att.file_name ?? att.name ?? 'unknown',
+                size: att.file_size ?? att.size ?? 0,
+                type: att.file_type ?? att.type ?? 'application/octet-stream',
+                // Needed in chat mode so a loaded conversation can be continued
+                // with the same document context.
+                content: att.file_content
+            }))
+        }
+        function mapReferences(msg) {
+            // DB-backed references are shaped like {reference_type, reference_content}.
+            // reference_content is JSON stored by backend (see db_controller normalization).
+            const raw = Array.isArray(msg?.references) ? msg.references : []
+            return raw.map(ref => {
+                    const content = ref?.reference_content
+                    if (typeof content !== 'string') return null
+                    try {
+                        const parsed = JSON.parse(content)
+                        return new Reference(parsed.title ?? 'Reference', parsed.url ?? '')
+                    } catch (_) {
+                        return null
+                    }
+                })
+                .filter(Boolean)
+        }
         for (let msg of data.conversation.messages) {
             const chatMsg = new ChatMessage(
                 msg.sender,
                 msg.content,
                 msg.illegalContents || [],
-                (msg.references || []).map(ref => new Reference(ref.title, ref.link)),
-                msg.files || [],
+                mapReferences(msg),
+                mapFiles(msg),
                 msg.timeSpent || 0
             )
             chatMessages.value.push(chatMsg)

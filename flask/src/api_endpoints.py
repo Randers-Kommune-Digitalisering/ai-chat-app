@@ -123,6 +123,8 @@ def create_thread_message(thread_id):
             files.append(file_obj)
         except Exception as e:
             logger.warning(f"Failed to decode file {name}: {e}")
+
+    # Get response from Azure
     try:
         response, refs = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
         if not response:
@@ -160,7 +162,8 @@ def create_thread_message(thread_id):
                 session=db_session,
                 conversation_id=conversation_id,
                 message_content=message,
-                sender='user'
+                sender='user',
+                file_content=files
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
@@ -169,7 +172,8 @@ def create_thread_message(thread_id):
                 session=db_session,
                 conversation_id=conversation_id,
                 message_content=response,
-                sender='assistant'
+                sender='assistant',
+                references=refs
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
@@ -273,7 +277,8 @@ def create_chat_message():
                 session=db_session,
                 conversation_id=conversation_id,
                 message_content=messages[-1]["content"],
-                sender='user'
+                sender='user',
+                file_content=messages[-1].get("files")
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
@@ -282,7 +287,8 @@ def create_chat_message():
                 session=db_session,
                 conversation_id=conversation_id,
                 message_content=response,
-                sender='assistant'
+                sender='assistant',
+                references=refs
             )
             if not updated:
                 return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500

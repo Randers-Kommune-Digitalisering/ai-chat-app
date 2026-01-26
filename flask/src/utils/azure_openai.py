@@ -338,7 +338,7 @@ class AzureOpenAITitleGenerator():
     def generate_title(self, conversation_messages):
         system_prompt = {
             "role": "system",
-            "content": "Du er en hjælpsom assistent, der genererer korte og præcise titler (maksimalt 3 ord) til samtaler baseret på brugerens første besked. Titlen skal være på dansk og opsummere samtalens emne uden at inkludere citater eller referencer."
+            "content": "Du er en hjælpsom assistent, der genererer korte og præcise titler (maksimalt 24 tegn) til samtaler baseret på brugerens første besked. Titlen skal være på dansk og opsummere samtalens emne uden at inkludere citater eller referencer."
         }
         user_prompt = {
             "role": "user",

@@ -60,6 +60,8 @@ class Message(Base):
     timestamp = Column(DateTime, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
+    attachments = relationship("Attachment", back_populates="message", order_by="Attachment.id")
+    references = relationship("Reference", back_populates="message", order_by="Reference.id")
 
     def to_dict(self) -> dict:
         return {
@@ -67,5 +69,51 @@ class Message(Base):
             "conversation_id": self.conversation_id,
             "sender": self.sender,
             "content": self.content,
-            "timestamp": _to_iso(self.timestamp)
+            "timestamp": _to_iso(self.timestamp),
+            "attachments": [att.to_dict() for att in getattr(self, 'attachments', [])],
+            "references": [ref.to_dict() for ref in getattr(self, 'references', [])]
+        }
+
+
+class Attachment(Base):
+    __tablename__ = 'attachments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    message_id = Column(Integer, ForeignKey('messages.id'), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    file_content = Column(String, nullable=False)  # Base64 encoded content
+
+    message = relationship("Message", back_populates="attachments")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "message_id": self.message_id,
+            "file_name": self.file_name,
+            "file_type": self.file_type,
+            "file_size": self.file_size,
+            "file_content": self.file_content,
+        }
+
+
+class Reference(Base):
+    __tablename__ = 'references'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    message_id = Column(Integer, ForeignKey('messages.id'), nullable=False)
+    reference_type = Column(String, nullable=False)
+    reference_content = Column(String, nullable=False)
+
+    message = relationship("Message", back_populates="references")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "message_id": self.message_id,
+            "reference_type": self.reference_type,
+            "reference_content": self.reference_content
         }
