@@ -322,7 +322,11 @@ import { use } from 'marked'
         type="info"
         message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger. [Læs mere her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/#block-b93fc214-c5b4-4b34-9e85-7f7bdb36560e)."
     />
-    
+    <Alert
+        type="warning"
+        message="**Bemærk**: Der er i øjeblikket problemer med vores AI-assistenter. Vi arbejder på at løse problemet. Hvis du oplever fejl eller manglende svar, så prøv venligst igen senere."
+    />
+
     <Alert
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
