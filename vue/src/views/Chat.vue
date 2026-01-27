@@ -324,7 +324,7 @@ import { use } from 'marked'
     />
     <Alert
         type="warning"
-        message="**Bemærk**: Der er i øjeblikket problemer med vores AI-assistenter. Vi arbejder på at løse problemet. Hvis du oplever fejl eller manglende svar, så prøv venligst igen senere."
+        message="**Driftsmeddelelse:** Microsoft har i øjeblikket driftsforstyrrelser, som påvirker vores AI-assistenter. Du kan derfor opleve, at du ikke får svar på dine forespørgsler. Der arbejdes på at løse problemet. Vi beklager ulejligheden."
     />
 
     <Alert
