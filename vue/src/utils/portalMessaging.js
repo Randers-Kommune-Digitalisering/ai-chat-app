@@ -1,5 +1,9 @@
 // Lightweight portal <-> iframe messaging helpers
-const ALLOWED_ORIGINS = ['http://localhost:3000'];
+const ALLOWED_ORIGINS = [
+	'http://localhost:3000',
+	'https://chat.data.randers.dk',
+	'https://ai.data.randers.dk'
+];
 
 
 export function isPortalDebugEnabled() {
