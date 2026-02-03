@@ -101,6 +101,11 @@
         if (userEmail) currentUserEmail.value = userEmail
         const data = await fetchConversation(conversationId, userEmail)
 
+        if (data?.success === false) {
+            console.error("Failed to load conversation:", data?.message)
+            return
+        }
+
         // Process loaded conversation data and update UI accordingly
         if (!data.conversation || !Array.isArray(data.conversation?.messages)) {
             console.error("Invalid conversation data format.")
@@ -253,10 +258,59 @@
             await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
-        const { response, references, conversation_id, title } = result
+        const { success, message: backendMessage, response, references, conversation_id, title } = result
+
+        if (success === false) {
+            console.error("Backend returned success=false:", backendMessage)
+            // Re-add user files to state
+            for (let file of chatMessage.files) {
+                addFile(file)
+            }
+            const elapsedMs = stopTimer()
+            const timeSpent = Number((elapsedMs / 1000).toFixed(2))
+            awaitingResponse.value = false
+            const assistantMessage = new ChatMessage(
+                'assistant',
+                backendMessage || 'Beklager, der opstod en fejl. Prøv venligst igen.',
+                [],
+                [],
+                [],
+                timeSpent
+            )
+            chatMessages.value.push(assistantMessage)
+            nextTick(() => {
+                updateInputPadding()
+                const input = document.querySelector('.user-input')
+                if (input) input.focus()
+                scrollToMessage(chatMessages.value.length - 1)
+            })
+            return
+        }
 
         if (!conversation_id) {
             console.error("No conversation ID returned from backend.")
+            // Re-add user files to state
+            for (let file of chatMessage.files) {
+                addFile(file)
+            }
+            const elapsedMs = stopTimer()
+            const timeSpent = Number((elapsedMs / 1000).toFixed(2))
+            awaitingResponse.value = false
+            const assistantMessage = new ChatMessage(
+                'assistant',
+                'Beklager, der opstod en fejl (mangler samtale-id). Prøv venligst igen.',
+                [],
+                [],
+                [],
+                timeSpent
+            )
+            chatMessages.value.push(assistantMessage)
+            nextTick(() => {
+                updateInputPadding()
+                const input = document.querySelector('.user-input')
+                if (input) input.focus()
+                scrollToMessage(chatMessages.value.length - 1)
+            })
             return
         }
         activeConversationId.value = conversation_id
@@ -274,7 +328,7 @@
             'assistant',
             unfilterResponseContent(response),
             [],
-            references.map(ref => new Reference(ref.title, ref.url)),
+            (references || []).map(ref => new Reference(ref.title, ref.url)),
             [],
             timeSpent
         )

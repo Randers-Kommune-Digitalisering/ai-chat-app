@@ -82,7 +82,7 @@ def create_thread_message(thread_id):
     files_data = request.json.get("files", [])
     use_alt = request.json.get("use_alt", False)
     conversation_id = request.json.get("conversation_id")
-    user_email = request.headers.get("X-User-Email")
+    user_email = request.headers.get("X-User-Email") or "guest"
     if not thread_id:
         return jsonify({"success": False, "message": "thread_id is required"}), 400
     if not message:
@@ -192,7 +192,7 @@ def create_thread_message(thread_id):
 def create_chat_message():
     messages = request.json.get("messages", [])
     conversation_id = request.json.get("conversation_id")
-    user_email = request.headers.get("X-User-Email")
+    user_email = request.headers.get("X-User-Email") or "guest"
     if not messages:
         return jsonify({"success": False, "message": "Messages are required"}), 400
 
@@ -305,7 +305,7 @@ def create_chat_message():
 @api_endpoints.route('/conversations/<id>', methods=['GET'])
 def load_conversation(id):
     try:
-        user_email = request.headers.get("X-User-Email")
+        user_email = request.headers.get("X-User-Email") or "guest"
         with db_client.session_scope() as session:
             conversation = get_user_conversation(session, user_email, id)
             if not conversation:

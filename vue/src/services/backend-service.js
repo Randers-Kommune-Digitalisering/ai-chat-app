@@ -3,9 +3,10 @@ import axios from 'axios';
 
 export async function fetchConversation(conversationId, userEmail) {
     try {
-        const response = await axios.get(`/api/conversations/${conversationId}`, {
-            headers: { 'X-User-Email': userEmail }
-        });
+        const response = await axios.get(
+            `/api/conversations/${conversationId}`,
+            userEmail ? { headers: { 'X-User-Email': userEmail } } : undefined
+        );
         console.log("Fetched conversation data:", response.data);
         return response.data;
     } catch (error) {
@@ -35,6 +36,8 @@ export async function sendThreadMessage(threadId, conversationId, message, files
             { headers: userEmail ? { 'X-User-Email': userEmail } : undefined }
         );
         return {
+            success: result.data.success,
+            message: result.data.message,
             response: result.data.response,
             references: result.data.references,
             conversation_id: result.data.conversation_id,
@@ -54,6 +57,8 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
             { headers: userEmail ? { 'X-User-Email': userEmail } : undefined }
         );
         return {
+            success: result.data.success,
+            message: result.data.message,
             response: result.data.response,
             references: result.data.references,
             conversation_id: result.data.conversation_id,
