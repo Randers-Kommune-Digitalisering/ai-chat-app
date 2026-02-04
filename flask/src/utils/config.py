@@ -79,7 +79,7 @@ FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
 ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
 
 POSTGRES_USER = os.environ.get('POSTGRES_USER', 'postgres').strip()
-POSTGRES_PASS = os.environ.get('POSTGRES_PASS', 'mysecretpassword').strip()
+POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', 'mysecretpassword').strip()
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost').strip()
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
 POSTGRES_DB = os.environ.get('POSTGRES_DB', 'ai_chat_db').strip()
