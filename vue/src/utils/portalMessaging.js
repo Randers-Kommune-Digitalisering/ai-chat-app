@@ -1,10 +1,24 @@
 // Lightweight portal <-> iframe messaging helpers
+let hostname = ""
+if (typeof window !== 'undefined') {
+	hostname = window.location.hostname
+}
+function deriveDomainFromHostname(currentHostname) {
+	const host = (currentHostname ?? '').trim().toLowerCase()
+	if (!host) return ''
+
+	// If the hostname has multiple subdomains (e.g. chat.data.randers.dk),
+	// drop the left-most label to get the base domain (data.randers.dk).
+	const parts = host.split('.').filter(Boolean)
+	if (parts.length >= 3) return parts.slice(1).join('.')
+	return host
+}
+const domain = deriveDomainFromHostname(hostname)
 const ALLOWED_ORIGINS = [
 	'http://localhost:3000',
-	'https://chat.data.randers.dk',
-	'https://ai.data.randers.dk'
+	`https://chat.${domain}`,
+	`https://ai.${domain}`
 ];
-
 
 export function isPortalDebugEnabled() {
 	try {
@@ -75,7 +89,6 @@ export function notifyParentLoaded() {
 	}
 }
 
-
 export function notifyParentNewConversation(conversation) {
 	// Lets the parent know a new conversation has been created.
 	if (!window.parent || window.parent === window) return;
@@ -87,7 +100,6 @@ export function notifyParentNewConversation(conversation) {
 		window.parent.postMessage({ type: 'NEW_CONVERSATION', version: 1, conversation }, targetOrigin);
 	}
 }
-
 
 export function notifyParentChatCleared(payload = {}) {
 	// Lets the parent know the chat has been cleared/reset.
