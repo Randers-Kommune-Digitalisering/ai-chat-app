@@ -2,7 +2,7 @@
     import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
     import Header from './components/Header.vue'
     import Chat from './views/Chat.vue'
-    import { isAllowedPortalOrigin, normalizePortalMessage, notifyParentReady, portalDebugLog } from './utils/portalMessaging.js'
+    import { isAllowedPortalMessageEvent, normalizePortalMessage, notifyParentReady, portalDebugLog } from './utils/portalMessaging.js'
 
     const chat = ref(null)
     const userEmail = ref(null)
@@ -45,7 +45,7 @@
 
     // Handle messages from parent portal
     function onPortalMessage(event) {
-        if (!isAllowedPortalOrigin(event.origin)) return
+        if (!isAllowedPortalMessageEvent(event)) return
 
         const msg = normalizePortalMessage(event.data)
         if (!msg) return

@@ -1,24 +1,9 @@
 // Lightweight portal <-> iframe messaging helpers
-let hostname = ""
-if (typeof window !== 'undefined') {
-	hostname = window.location.hostname
-}
-function deriveDomainFromHostname(currentHostname) {
-	const host = (currentHostname ?? '').trim().toLowerCase()
-	if (!host) return ''
+// Policy: the only allowed origin is the iframe's *direct parent* origin.
+// We lock the parent origin using browser hints (referrer/ancestorOrigins) or the first
+// validated message event that comes from `window.parent`.
 
-	// If the hostname has multiple subdomains (e.g. chat.data.randers.dk),
-	// drop the left-most label to get the base domain (data.randers.dk).
-	const parts = host.split('.').filter(Boolean)
-	if (parts.length >= 3) return parts.slice(1).join('.')
-	return host
-}
-const domain = deriveDomainFromHostname(hostname)
-const ALLOWED_ORIGINS = [
-	'http://localhost:3000',
-	`https://chat.${domain}`,
-	`https://ai.${domain}`
-];
+let rememberedParentOrigin = '';
 
 export function isPortalDebugEnabled() {
 	try {
@@ -38,24 +23,83 @@ export function portalDebugLog(...args) {
 	console.log('[ai-chat iframe]', ...args);
 }
 
-function getAllowedOrigins() {
-	const raw = ALLOWED_ORIGINS; // import.meta.env.VITE_PORTAL_ORIGINS;
-	if (!raw) return [];
-	return String(raw)
-		.split(',')
-		.map(s => s.trim())
-		.filter(Boolean);
+function tryDeriveOriginFromReferrer() {
+	try {
+		const ref = window?.document?.referrer;
+		if (!ref) return '';
+		const origin = new URL(ref).origin;
+		return origin;
+	} catch {
+		return '';
+	}
 }
 
-export function isAllowedPortalOrigin(origin) {
-	const allowed = getAllowedOrigins();
-	portalDebugLog('Checking allowed origins:', allowed, 'against', origin);
-	if (allowed.length === 0) {
-		// Secure-by-default: if no allowlist is configured, only accept same-origin.
-		portalDebugLog('No allowed origins configured, enforcing same-origin policy. Checking origin ', window.location.origin, ' against ', origin, ' with result:', origin === window.location.origin);
-		return origin === window.location.origin;
+function tryDeriveOriginFromAncestorOrigins() {
+	try {
+		const ancestor = window?.location?.ancestorOrigins?.[0];
+		if (typeof ancestor === 'string' && ancestor) return ancestor;
+		return '';
+	} catch {
+		return '';
 	}
-	return allowed.includes(origin);
+}
+
+function resolveParentOriginFromHints() {
+	if (rememberedParentOrigin) return rememberedParentOrigin;
+
+	const candidates = [tryDeriveOriginFromReferrer(), tryDeriveOriginFromAncestorOrigins()]
+		.map(s => (s ?? '').trim())
+		.filter(Boolean);
+
+	const origin = candidates[0] ?? '';
+	if (!origin) return '';
+
+	rememberedParentOrigin = origin;
+	portalDebugLog('Resolved parent origin from browser hints:', rememberedParentOrigin);
+	return rememberedParentOrigin;
+}
+
+export function getPortalParentOrigin() {
+	return rememberedParentOrigin || resolveParentOriginFromHints() || '';
+}
+
+export function isAllowedPortalMessageEvent(event) {
+	try {
+		if (!event) return false;
+		if (!window?.parent || window.parent === window) return false;
+		// Only accept messages from the *direct* parent window.
+		if (event.source !== window.parent) return false;
+
+		const origin = String(event.origin ?? '').trim();
+		if (!origin) return false;
+
+		const locked = getPortalParentOrigin();
+		if (!locked) {
+			rememberedParentOrigin = origin;
+			portalDebugLog('Locked parent origin from first parent message:', rememberedParentOrigin);
+			return true;
+		}
+
+		return origin === locked;
+	} catch {
+		return false;
+	}
+}
+
+function postToParent(payload) {
+	if (!window.parent || window.parent === window) return;
+
+	const targetOrigin = getPortalParentOrigin();
+	if (!targetOrigin) {
+		portalDebugLog('No parent origin known yet; skipping postMessage:', payload?.type);
+		return;
+	}
+
+	try {
+		window.parent.postMessage(payload, targetOrigin);
+	} catch (err) {
+		portalDebugLog('postMessage failed for targetOrigin:', targetOrigin, err);
+	}
 }
 
 export function normalizePortalMessage(data) {
@@ -67,48 +111,22 @@ export function normalizePortalMessage(data) {
 
 export function notifyParentReady() {
 	// Optional handshake: lets the parent know the iframe is ready to receive messages.
-	if (!window.parent || window.parent === window) return;
-
-	const allowed = getAllowedOrigins();
-	const targets = allowed.length > 0 ? allowed : [window.location.origin];
-	portalDebugLog('Sending IFRAME_READY to:', targets);
-	for (const targetOrigin of targets) {
-		window.parent.postMessage({ type: 'IFRAME_READY', version: 1 }, targetOrigin);
-	}
+	postToParent({ type: 'IFRAME_READY', version: 1 });
 }
 
 export function notifyParentLoaded() {
 	// Lets the parent know the requested conversation has loaded.
-	if (!window.parent || window.parent === window) return;
-
-	const allowed = getAllowedOrigins();
-	const targets = allowed.length > 0 ? allowed : [window.location.origin];
-	portalDebugLog('Sending IFRAME_CONTENT_LOADED to:', targets);
-	for (const targetOrigin of targets) {
-		window.parent.postMessage({ type: 'IFRAME_CONTENT_LOADED', version: 1 }, targetOrigin);
-	}
+	postToParent({ type: 'IFRAME_CONTENT_LOADED', version: 1 });
 }
 
 export function notifyParentNewConversation(conversation) {
 	// Lets the parent know a new conversation has been created.
-	if (!window.parent || window.parent === window) return;
-
-	const allowed = getAllowedOrigins();
-	const targets = allowed.length > 0 ? allowed : [window.location.origin];
-	portalDebugLog('Sending NEW_CONVERSATION to:', targets, 'with conversation:', conversation);
-	for (const targetOrigin of targets) {
-		window.parent.postMessage({ type: 'NEW_CONVERSATION', version: 1, conversation }, targetOrigin);
-	}
+	portalDebugLog('Sending NEW_CONVERSATION with conversation:', conversation);
+	postToParent({ type: 'NEW_CONVERSATION', version: 1, conversation });
 }
 
 export function notifyParentChatCleared(payload = {}) {
 	// Lets the parent know the chat has been cleared/reset.
-	if (!window.parent || window.parent === window) return;
-
-	const allowed = getAllowedOrigins();
-	const targets = allowed.length > 0 ? allowed : [window.location.origin];
-	portalDebugLog('Sending CHAT_CLEARED to:', targets, 'with payload:', payload);
-	for (const targetOrigin of targets) {
-		window.parent.postMessage({ type: 'CHAT_CLEARED', version: 1, ...payload }, targetOrigin);
-	}
+	portalDebugLog('Sending CHAT_CLEARED with payload:', payload);
+	postToParent({ type: 'CHAT_CLEARED', version: 1, ...payload });
 }
