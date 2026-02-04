@@ -16,8 +16,8 @@ from utils.db_controller import (
 )
 
 # Suppress Azure SDK and HTTP logging
-# logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-# logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
