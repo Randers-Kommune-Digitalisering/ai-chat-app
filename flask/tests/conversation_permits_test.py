@@ -134,7 +134,7 @@ def test_verify_conversation_load_permit_enforces_kid_allowlist(monkeypatch):
         "conversation_id": 123,
         "user_email": "user@example.com",
     }
-    token = _sign_permit(private_pem=private_pem, payload=payload, kid="v1")
+    token = _sign_permit(private_pem=private_pem, payload=payload, kid="v2")
 
     with pytest.raises(ConversationLoadPermitError):
         verify_conversation_load_permit(token)
