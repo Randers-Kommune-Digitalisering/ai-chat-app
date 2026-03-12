@@ -1,16 +1,20 @@
 import axios from 'axios';
 
 
-export async function fetchConversation(conversationId, userEmail) {
+export async function fetchConversationByPermit(permit) {
     try {
-        const response = await axios.get(
-            `/api/conversations/${conversationId}`,
-            userEmail ? { headers: { 'X-User-Email': userEmail } } : undefined
+        if (!permit || typeof permit !== 'string') {
+            throw new Error('permit is required');
+        }
+
+        const response = await axios.post(
+            '/api/conversations/load',
+            {},
+            { headers: { Authorization: `Bearer ${permit}` } }
         );
-        console.log("Fetched conversation data:", response.data);
         return response.data;
     } catch (error) {
-        console.error("Error getting conversation messages:", error);
+        console.error('Error loading conversation by permit:', error);
         throw error;
     }
 }

@@ -83,3 +83,19 @@ POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', 'mysecretpassword').strip()
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost').strip()
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
 POSTGRES_DB = os.environ.get('POSTGRES_DB', 'ai_chat_db').strip()
+
+# Permit-based conversation loading (portal -> iframe chat-app)
+# The portal issues a short-lived RS256-signed JWT/JWS permit.
+CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM = os.environ.get('CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM', '').strip()
+CONVERSATION_LOAD_PERMIT_ISSUER = os.environ.get('CONVERSATION_LOAD_PERMIT_ISSUER', 'gpt-dashboard-portal').strip()
+CONVERSATION_LOAD_PERMIT_AUDIENCE = os.environ.get('CONVERSATION_LOAD_PERMIT_AUDIENCE', 'chat-app').strip()
+
+# Optional: comma-separated list of allowed JWT header kid values.
+CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS = [
+    s.strip() for s in os.environ.get('CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS', '').split(',') if s.strip()
+]
+
+# Optional: restrict who can embed this app.
+# If the value does not include the directive name, it will be prefixed with `frame-ancestors `.
+# Example: "'self' https://chat.data.randers.dk https://ai.data.randers.dk"
+CSP_FRAME_ANCESTORS = os.environ.get('CSP_FRAME_ANCESTORS', '').strip()

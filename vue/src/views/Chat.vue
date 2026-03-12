@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -96,10 +96,9 @@
             console.error("Failed to start new thread.")
     }
 
-    async function loadConversation(conversationId, userEmail) {
-        portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
-        if (userEmail) currentUserEmail.value = userEmail
-        const data = await fetchConversation(conversationId, userEmail)
+    async function loadConversation(permit) {
+        portalDebugLog('Loading conversation by permit')
+        const data = await fetchConversationByPermit(permit)
 
         if (data?.success === false) {
             console.error("Failed to load conversation:", data?.message)
@@ -112,7 +111,11 @@
             return
         }
         await clearChat({ notifyParent: false })
-        activeConversationId.value = conversationId
+        const loadedConversationId = data?.conversation?.id
+        if (loadedConversationId) activeConversationId.value = loadedConversationId
+
+        const loadedUserEmail = data?.conversation?.user_email
+        if (loadedUserEmail) currentUserEmail.value = loadedUserEmail
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
             threadId.value = loadedThreadId

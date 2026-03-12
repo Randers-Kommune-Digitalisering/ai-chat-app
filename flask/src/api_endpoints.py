@@ -14,6 +14,11 @@ from utils.db_controller import (
     create_conversation as create_db_conversation,
     add_message_to_conversation
 )
+from utils.conversation_permits import (
+    ConversationLoadPermitError,
+    extract_bearer_token,
+    verify_conversation_load_permit,
+)
 
 # Suppress Azure SDK and HTTP logging
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
@@ -304,18 +309,51 @@ def create_chat_message():
 
 @api_endpoints.route('/conversations/<id>', methods=['GET'])
 def load_conversation(id):
+    # Legacy endpoint disabled: the portal must send a short-lived signed permit instead.
+    # Do not accept guessed conversation IDs or X-User-Email headers for loading.
+    return (
+        jsonify({
+            "success": False,
+            "message": "Legacy endpoint disabled. Use POST /api/conversations/load with a permit.",
+        }),
+        410,
+    )
+
+
+@api_endpoints.route('/conversations/load', methods=['POST'])
+def load_conversation_by_permit():
+    """Load a conversation using a portal-issued RS256 load permit.
+
+    Accepts the permit via:
+    - Authorization: Bearer <permit>
+    - (Optional for local debug) JSON body {"permit": "..."}
+
+    Ignores X-User-Email entirely.
+    """
+
     try:
-        user_email = request.headers.get("X-User-Email") or "guest"
+        token = extract_bearer_token(request.headers.get('Authorization'))
+        if not token:
+            data = request.get_json(silent=True) or {}
+            token = (data.get('permit') or '').strip() if isinstance(data, dict) else ''
+
+        permit = verify_conversation_load_permit(token)
+
         with db_client.session_scope() as session:
-            conversation = get_user_conversation(session, user_email, id)
+            conversation = get_user_conversation(session, permit.user_email, permit.conversation_id)
             if not conversation:
                 return jsonify({"success": False, "message": "Conversation not found"}), 404
             payload = conversation.to_dict(include_messages=True)
-    except Exception as e:
-        logger.error(f"Error loading conversation {id}: {e}")
-        return jsonify({"success": False, "message": "Error loading conversation", "error": str(e)}), 500
 
-    return jsonify({"success": True, "conversation": payload})
+        return jsonify({"success": True, "conversation": payload})
+
+    except ConversationLoadPermitError as e:
+        # Intentionally keep the response non-specific.
+        logger.warning(f"Invalid conversation load permit: {e}")
+        return jsonify({"success": False, "message": "Invalid permit"}), 401
+    except Exception as e:
+        logger.error(f"Error loading conversation by permit: {e}")
+        return jsonify({"success": False, "message": "Error loading conversation"}), 500
 
 
 # Filter endpoint
