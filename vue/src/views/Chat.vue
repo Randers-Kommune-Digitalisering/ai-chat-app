@@ -44,6 +44,8 @@
     const altAssistantAlertType = ref('info')
     const altAssistantAlertMsg = ref('')
     const ASSISTANT_NAME_ID = ref('')
+    const assistantName = ref('')
+    const assistantDescription = ref('')
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -53,6 +55,8 @@
         altAssistantAlertMsg.value = config?.altAlertMsg
         altAssistantAlertType.value = config?.altAlertType
         ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
+        assistantName.value = config?.assistantName || ''
+        assistantDescription.value = config?.description || ''
     })
 
     watch(
@@ -499,7 +503,11 @@
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
+        <!-- <div class="assistant-name">
+            {{ assistantName }}
+        </div> -->
         Hej, hvad kan jeg hjælpe med?
+        <div class="assistant-description" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
     </div>
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
@@ -574,7 +582,6 @@
         max-width: 90%;
         transform: translate(-50%, -5rem);
         z-index: 3;
-        pointer-events: none;
     }
         .welcome-header .title {
             font-size: 1.5rem;
@@ -608,7 +615,13 @@
                 cursor: default;
                 color: var(--color-text-primary);
             }
-            .welcome-header .title .icons i {
+        .welcome-header .assistant-description {
+            margin-top: 1rem;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+            color: var(--color-text-faded);
+        }
+            /* .welcome-header .title .icons i {
                 margin-right: 0.3rem;
             }
             .icons .tooltip {
@@ -623,7 +636,7 @@
                 margin: 0.2rem 0 0 1.2rem;
                 padding-left: 0;
                 list-style-type: disc;
-            }
+            } */
     .loading-indicator
     {
         font-style: italic;

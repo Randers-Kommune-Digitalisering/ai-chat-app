@@ -156,11 +156,15 @@ main, #app {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  position: relative;
 }
 @media screen and (min-width: 875px) {
   main, #app {
       max-width: 56rem;
   }
+}
+#app > * {
+  width: 100%;
 }
 
 
