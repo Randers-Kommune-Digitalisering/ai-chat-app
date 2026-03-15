@@ -61,12 +61,14 @@
                 return
             }
             case 'LOAD_CONVERSATION': {
-                const conversationId = msg.id
-                const portalUserEmail = msg.userEmail ?? userEmail.value
+                // Permit-only secure load flow
+                if (msg.version !== 2) return
+                const permit = msg.permit
+                if (!permit || typeof permit !== 'string') return
 
-                if (!conversationId) return
                 if (chat.value?.loadConversation) {
-                    chat.value.loadConversation(conversationId, portalUserEmail)
+                    // Do not trust or forward any userEmail / id from postMessage.
+                    chat.value.loadConversation(permit)
                 } else {
                     console.error('Chat component does not expose loadConversation.')
                 }

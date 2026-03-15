@@ -4,6 +4,33 @@
 // validated message event that comes from `window.parent`.
 
 let rememberedParentOrigin = '';
+let rememberedAllowedOrigins = null;
+
+function normalizeOrigin(origin) {
+	return String(origin ?? '')
+		.trim()
+		.replace(/\/$/, '')
+		.toLowerCase();
+}
+
+function getAllowedPortalOrigins() {
+	if (rememberedAllowedOrigins !== null) return rememberedAllowedOrigins;
+	try {
+		const raw = (import.meta.env?.VITE_PORTAL_ORIGINS ?? '').trim();
+		if (!raw) {
+			rememberedAllowedOrigins = [];
+			return rememberedAllowedOrigins;
+		}
+		rememberedAllowedOrigins = raw
+			.split(',')
+			.map(s => normalizeOrigin(s))
+			.filter(Boolean);
+		return rememberedAllowedOrigins;
+	} catch {
+		rememberedAllowedOrigins = [];
+		return rememberedAllowedOrigins;
+	}
+}
 
 export function isPortalDebugEnabled() {
 	try {
@@ -48,11 +75,17 @@ function resolveParentOriginFromHints() {
 	if (rememberedParentOrigin) return rememberedParentOrigin;
 
 	const candidates = [tryDeriveOriginFromReferrer(), tryDeriveOriginFromAncestorOrigins()]
-		.map(s => (s ?? '').trim())
+		.map(s => normalizeOrigin(s))
 		.filter(Boolean);
 
 	const origin = candidates[0] ?? '';
 	if (!origin) return '';
+
+	const allowed = getAllowedPortalOrigins();
+	if (allowed.length > 0 && !allowed.includes(origin)) {
+		// If an allowlist is configured, refuse to lock to an untrusted hint.
+		return '';
+	}
 
 	rememberedParentOrigin = origin;
 	portalDebugLog('Resolved parent origin from browser hints:', rememberedParentOrigin);
@@ -70,8 +103,11 @@ export function isAllowedPortalMessageEvent(event) {
 		// Only accept messages from the *direct* parent window.
 		if (event.source !== window.parent) return false;
 
-		const origin = String(event.origin ?? '').trim();
+		const origin = normalizeOrigin(event.origin);
 		if (!origin) return false;
+
+		const allowed = getAllowedPortalOrigins();
+		if (allowed.length > 0 && !allowed.includes(origin)) return false;
 
 		const locked = getPortalParentOrigin();
 		if (!locked) {
@@ -80,7 +116,7 @@ export function isAllowedPortalMessageEvent(event) {
 			return true;
 		}
 
-		return origin === locked;
+		return origin === normalizeOrigin(locked);
 	} catch {
 		return false;
 	}

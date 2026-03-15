@@ -1,10 +1,10 @@
 <script setup>
-    import { ref, nextTick, getCurrentInstance, onMounted, watch } from 'vue'
+    import { ref, nextTick, getCurrentInstance, onMounted, onUnmounted, watch } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversation } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -44,6 +44,10 @@
     const altAssistantAlertType = ref('info')
     const altAssistantAlertMsg = ref('')
     const ASSISTANT_NAME_ID = ref('')
+    const assistantName = ref('')
+    const assistantDescription = ref('')
+    const errorMessage = ref('')
+    const errorTimeoutId = ref(null)
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -53,6 +57,8 @@
         altAssistantAlertMsg.value = config?.altAlertMsg
         altAssistantAlertType.value = config?.altAlertType
         ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
+        assistantName.value = config?.assistantName || ''
+        assistantDescription.value = config?.description || ''
     })
 
     watch(
@@ -62,6 +68,28 @@
         },
         { immediate: true }
     )
+
+    watch(errorMessage, (val) => {
+        // Clear any existing timeout before starting a new one
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
+        }
+
+        if (val) {
+            errorTimeoutId.value = setTimeout(() => {
+                errorMessage.value = ''
+                errorTimeoutId.value = null
+            }, 10000)
+        }
+    })
+
+    onUnmounted(() => {
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
+        }
+    })
 
     defineExpose({
         clearChat,
@@ -96,10 +124,9 @@
             console.error("Failed to start new thread.")
     }
 
-    async function loadConversation(conversationId, userEmail) {
-        portalDebugLog('Loading conversation ID:', conversationId, 'for user:', userEmail)
-        if (userEmail) currentUserEmail.value = userEmail
-        const data = await fetchConversation(conversationId, userEmail)
+    async function loadConversation(permit) {
+        portalDebugLog('Loading conversation by permit')
+        const data = await fetchConversationByPermit(permit)
 
         if (data?.success === false) {
             console.error("Failed to load conversation:", data?.message)
@@ -112,7 +139,11 @@
             return
         }
         await clearChat({ notifyParent: false })
-        activeConversationId.value = conversationId
+        const loadedConversationId = data?.conversation?.id
+        if (loadedConversationId) activeConversationId.value = loadedConversationId
+
+        const loadedUserEmail = data?.conversation?.user_email
+        if (loadedUserEmail) currentUserEmail.value = loadedUserEmail
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
             threadId.value = loadedThreadId
@@ -262,22 +293,10 @@
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
-            // Re-add user files to state
-            for (let file of chatMessage.files) {
-                addFile(file)
-            }
-            const elapsedMs = stopTimer()
-            const timeSpent = Number((elapsedMs / 1000).toFixed(2))
+            stopTimer()
             awaitingResponse.value = false
-            const assistantMessage = new ChatMessage(
-                'assistant',
-                backendMessage || 'Beklager, der opstod en fejl. Prøv venligst igen.',
-                [],
-                [],
-                [],
-                timeSpent
-            )
-            chatMessages.value.push(assistantMessage)
+            undoAndEditMessage(chatMessage)
+            errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
             nextTick(() => {
                 updateInputPadding()
                 const input = document.querySelector('.user-input')
@@ -287,32 +306,6 @@
             return
         }
 
-        if (!conversation_id) {
-            console.error("No conversation ID returned from backend.")
-            // Re-add user files to state
-            for (let file of chatMessage.files) {
-                addFile(file)
-            }
-            const elapsedMs = stopTimer()
-            const timeSpent = Number((elapsedMs / 1000).toFixed(2))
-            awaitingResponse.value = false
-            const assistantMessage = new ChatMessage(
-                'assistant',
-                'Beklager, der opstod en fejl (mangler samtale-id). Prøv venligst igen.',
-                [],
-                [],
-                [],
-                timeSpent
-            )
-            chatMessages.value.push(assistantMessage)
-            nextTick(() => {
-                updateInputPadding()
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
-            })
-            return
-        }
         activeConversationId.value = conversation_id
 
         if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
@@ -337,7 +330,7 @@
             for (let file of chatMessage.files) {
                 addFile(file)
             }
-            assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
+            assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
         }
         chatMessages.value.push(assistantMessage)
 
@@ -462,12 +455,12 @@
             } else {
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
-                inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
+                inputContainer.style.bottom = `calc(35% - ${heightPx}px - 3rem + 57px)`
                 if (app) app.style.paddingBottom = '1rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
-            inputContainer.style.bottom = `calc(40% - 3rem)`
+            inputContainer.style.bottom = `calc(35% - 3rem)`
             if (app) app.style.paddingBottom = '1rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
@@ -488,15 +481,20 @@
         type="info"
         message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger. [Læs mere her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/#block-b93fc214-c5b4-4b34-9e85-7f7bdb36560e)."
     />
-    
     <Alert
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
         :message="altAssistantAlertMsg"
     />
-    
+    <Alert
+        v-if="errorMessage"
+        type="error"
+        :message="errorMessage"
+    />
+
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?
+        <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
@@ -566,7 +564,7 @@
         font-size: 1.6rem;
         text-align: center;
         left: 50%;
-        bottom: 40%;
+        bottom: 35%;
         width: max-content;
         max-width: 90%;
         transform: translate(-50%, -5rem);
@@ -605,22 +603,12 @@
                 cursor: default;
                 color: var(--color-text-primary);
             }
-            .welcome-header .title .icons i {
-                margin-right: 0.3rem;
-            }
-            .icons .tooltip {
-                font-size: 0.9rem;
-                top: 5rem;
-                left: 50%;
-                transform: translateX(-50%);
-                text-align: left;
-                max-width: calc(100dvw - 1.6rem) !important;
-            }
-            .tooltip ul {
-                margin: 0.2rem 0 0 1.2rem;
-                padding-left: 0;
-                list-style-type: disc;
-            }
+        .welcome-header .assistant-description {
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: var(--color-text-faded);
+        }
     .loading-indicator
     {
         font-style: italic;
@@ -652,7 +640,7 @@
         background-color: var(--color-background-primary);
     }
         .user-input-container.landing-page {
-            bottom: calc(40% - 3rem); /* Overwritten by UserInput.vue when not fixed */
+            bottom: calc(35% - 3rem); /* Overwritten by UserInput.vue when not fixed */
         }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .user-input-container.landing-page  {

@@ -1,17 +1,26 @@
 import axios from 'axios';
 
 
-export async function fetchConversation(conversationId, userEmail) {
+export async function fetchConversationByPermit(permit) {
     try {
-        const response = await axios.get(
-            `/api/conversations/${conversationId}`,
-            userEmail ? { headers: { 'X-User-Email': userEmail } } : undefined
+        if (!permit || typeof permit !== 'string') {
+            throw new Error('permit is required');
+        }
+
+        const trimmedPermit = permit.trim();
+        if (!trimmedPermit) {
+            throw new Error('permit is required');
+        }
+
+        const response = await axios.post(
+            '/api/conversations/load',
+            {},
+            { headers: { Authorization: `Bearer ${trimmedPermit}` } }
         );
-        console.log("Fetched conversation data:", response.data);
         return response.data;
     } catch (error) {
-        console.error("Error getting conversation messages:", error);
-        throw error;
+        console.error('Error loading conversation by permit:', error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Kunne ikke indlæse samtalen. Prøv igen senere.' };
     }
 }
 
@@ -23,8 +32,8 @@ export async function startThread() {
         }
         return result.data.thread_id;
     } catch (error) {
-        console.error("Error starting thread:", error);
-        throw error;
+        console.error("Error starting thread:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -44,8 +53,8 @@ export async function sendThreadMessage(threadId, conversationId, message, files
             title: result.data.title
         }
     } catch (error) {
-        console.error("Error sending message:", error);
-        throw error;
+        console.error("Error sending message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -65,8 +74,8 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
             title: result.data.title
         }
     } catch (error) {
-        console.error("Error sending chat message:", error);
-        throw error;
+        console.error("Error sending chat message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -79,8 +88,8 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
         });
         return result.data;
     } catch (error) {
-        console.error("Error sending feedback:", error);
-        throw error;
+        console.error("Error sending feedback:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke sendt. Prøv igen senere.' };
     }
 }
 
@@ -91,8 +100,8 @@ export async function sendLikeFeedback(responseIndex) {
         });
         return result.data;
     } catch (error) {
-        console.error("Error sending like feedback:", error);
-        throw error;
+        console.error("Error sending like feedback:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke registreret. Prøv igen senere.' };
     }
 }
 
@@ -101,7 +110,7 @@ export async function getIllegalContents(message) {
         const result = await axios.post('/api/filter', { content: message });
         return result.data.filtered_content || [];
     } catch (error) {
-        console.error("Error filtering message:", error);
-        throw error;
+        console.error("Error filtering message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl under filtrering af beskeden. Prøv igen senere.' };
     }
 }
