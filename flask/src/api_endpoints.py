@@ -136,7 +136,7 @@ def create_thread_message(thread_id):
             return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere.", "error": str(e)}), 500
 
     # Update DB (same semantics as chat mode)
     db_session = None
@@ -207,7 +207,7 @@ def create_chat_message():
     conversation_id = request.json.get("conversation_id")
     user_email = request.headers.get("X-User-Email") or "guest"
     if not messages:
-        return jsonify({"success": False, "message": "Messages are required"}), 400
+        return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden."}), 400
 
     # Normalize conversation_id (frontend may send it as a string)
     if conversation_id in ("", None):
@@ -216,7 +216,7 @@ def create_chat_message():
         try:
             conversation_id = int(conversation_id)
         except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "conversation_id must be an integer"}), 400
+            return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden."}), 400
 
     # Count as a single user message (frontend sends full history).
     chat_messages_counter.labels(**metrics_base_labels(), mode='chat').inc()
@@ -257,10 +257,10 @@ def create_chat_message():
     try:
         response, refs = azure_client.fetch_chat_response(messages)
         if not response:
-            return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+            return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Error fetching chat response", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere.", "error": str(e)}), 500
 
     # Update DB
     db_session = None
@@ -282,7 +282,8 @@ def create_chat_message():
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
             else:
-                return jsonify({"success": False, "message": "Failed to create conversation"}), 500
+                logger.error("Failed to create conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
         # Add the latest user message + assistant response to the conversation in DB
         if conversation_id:
@@ -294,7 +295,8 @@ def create_chat_message():
                 file_content=messages[-1].get("files")
             )
             if not updated:
-                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+                logger.error("Failed to add user message to conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
             updated = add_message_to_conversation(
                 session=db_session,
@@ -304,7 +306,8 @@ def create_chat_message():
                 references=refs
             )
             if not updated:
-                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+                logger.error("Failed to add assistant message to conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
     finally:
         try:
             if db_session is not None:
@@ -350,7 +353,7 @@ def load_conversation_by_permit():
         with db_client.session_scope() as session:
             conversation = get_user_conversation(session, permit.user_email, permit.conversation_id)
             if not conversation:
-                return jsonify({"success": False, "message": "Conversation not found"}), 404
+                return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 404
             payload = conversation.to_dict(include_messages=True)
 
         return jsonify({"success": True, "conversation": payload})
@@ -358,10 +361,10 @@ def load_conversation_by_permit():
     except ConversationLoadPermitError as e:
         # Intentionally keep the response non-specific.
         logger.warning(f"Invalid conversation load permit: {e}")
-        return jsonify({"success": False, "message": "Invalid permit"}), 401
+        return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 401
     except Exception as e:
         logger.error(f"Error loading conversation by permit: {e}")
-        return jsonify({"success": False, "message": "Error loading conversation"}), 500
+        return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 500
 
 
 # Filter endpoint
@@ -369,12 +372,12 @@ def load_conversation_by_permit():
 def filter_content():
     content = request.json.get("content")
     if not content:
-        return jsonify({"success": False, "message": "Content is required"}), 400
+        return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden."}), 400
     try:
         filtered_content = get_filter_content(content)
     except Exception as e:
         logger.error(f"Error filtering content: {e}")
-        return jsonify({"success": False, "message": "Error filtering content", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden.", "error": str(e)}), 500
     return jsonify({"success": True, "filtered_content": filtered_content})
 
 
@@ -386,12 +389,12 @@ def send_feedback():
     response_index = data.get('response_index')
     chat_history = data.get('chat_history')
     if feedback is None or response_index is None or chat_history is None:
-        return jsonify({"success": False, "message": "Missing feedback, response_index, or chat_history"}), 400
+        return jsonify({"success": False, "message": "Der opstod en fejl, og din feedback blev ikke sendt. Prøv igen senere."}), 400
 
     chat_feedback_counter.labels(**metrics_base_labels(), feedback_type='custom').inc()
     result = send_user_feedback(feedback, response_index, chat_history)
     if result is None:
-        return jsonify({"success": False, "message": "Failed to send feedback"}), 500
+        return jsonify({"success": False, "message": "Der opstod en fejl, og din feedback blev ikke sendt. Prøv igen senere."}), 500
     return jsonify({"success": True, "data": result})
 
 
