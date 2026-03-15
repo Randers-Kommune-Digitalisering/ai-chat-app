@@ -569,6 +569,7 @@
         max-width: 90%;
         transform: translate(-50%, -5rem);
         z-index: 3;
+        pointer-events: none;
     }
         .welcome-header .title {
             font-size: 1.5rem;
