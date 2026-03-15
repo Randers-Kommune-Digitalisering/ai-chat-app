@@ -1,5 +1,5 @@
 <script setup>
-    import { ref, nextTick, getCurrentInstance, onMounted, watch } from 'vue'
+    import { ref, nextTick, getCurrentInstance, onMounted, onUnmounted, watch } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
@@ -47,6 +47,7 @@
     const assistantName = ref('')
     const assistantDescription = ref('')
     const errorMessage = ref('')
+    const errorTimeoutId = ref(null)
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -69,10 +70,24 @@
     )
 
     watch(errorMessage, (val) => {
+        // Clear any existing timeout before starting a new one
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
+        }
+
         if (val) {
-            setTimeout(() => {
+            errorTimeoutId.value = setTimeout(() => {
                 errorMessage.value = ''
+                errorTimeoutId.value = null
             }, 10000)
+        }
+    })
+
+    onUnmounted(() => {
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
         }
     })
 
