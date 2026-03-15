@@ -503,9 +503,6 @@
     />
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
-        <!-- <div class="assistant-name">
-            {{ assistantName }}
-        </div> -->
         Hej, hvad kan jeg hjælpe med?
         <div class="assistant-description" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
     </div>
