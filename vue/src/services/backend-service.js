@@ -19,8 +19,8 @@ export async function fetchConversationByPermit(permit) {
         );
         return response.data;
     } catch (error) {
-        console.error('Error loading conversation by permit:', error);
-        throw error;
+        console.error('Error loading conversation by permit:', error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Kunne ikke indlæse samtalen. Prøv igen senere.' };
     }
 }
 
@@ -32,8 +32,8 @@ export async function startThread() {
         }
         return result.data.thread_id;
     } catch (error) {
-        console.error("Error starting thread:", error);
-        throw error;
+        console.error("Error starting thread:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -53,8 +53,8 @@ export async function sendThreadMessage(threadId, conversationId, message, files
             title: result.data.title
         }
     } catch (error) {
-        console.error("Error sending message:", error);
-        throw error;
+        console.error("Error sending message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -74,8 +74,8 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
             title: result.data.title
         }
     } catch (error) {
-        console.error("Error sending chat message:", error);
-        throw error;
+        console.error("Error sending chat message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
     }
 }
 
@@ -88,8 +88,8 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
         });
         return result.data;
     } catch (error) {
-        console.error("Error sending feedback:", error);
-        throw error;
+        console.error("Error sending feedback:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke sendt. Prøv igen senere.' };
     }
 }
 
@@ -100,8 +100,8 @@ export async function sendLikeFeedback(responseIndex) {
         });
         return result.data;
     } catch (error) {
-        console.error("Error sending like feedback:", error);
-        throw error;
+        console.error("Error sending like feedback:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke registreret. Prøv igen senere.' };
     }
 }
 
@@ -110,7 +110,7 @@ export async function getIllegalContents(message) {
         const result = await axios.post('/api/filter', { content: message });
         return result.data.filtered_content || [];
     } catch (error) {
-        console.error("Error filtering message:", error);
-        throw error;
+        console.error("Error filtering message:", error?.response?.data || error);
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl under filtrering af beskeden. Prøv igen senere.' };
     }
 }
