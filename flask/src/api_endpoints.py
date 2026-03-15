@@ -136,7 +136,7 @@ def create_thread_message(thread_id):
             return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere.", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
 
     # Update DB (same semantics as chat mode)
     db_session = None
@@ -260,7 +260,7 @@ def create_chat_message():
             return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere.", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
 
     # Update DB
     db_session = None
@@ -377,7 +377,7 @@ def filter_content():
         filtered_content = get_filter_content(content)
     except Exception as e:
         logger.error(f"Error filtering content: {e}")
-        return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden.", "error": str(e)}), 500
+        return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden."}), 500
     return jsonify({"success": True, "filtered_content": filtered_content})
 
 
