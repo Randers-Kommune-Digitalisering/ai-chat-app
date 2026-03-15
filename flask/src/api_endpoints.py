@@ -159,7 +159,8 @@ def create_thread_message(thread_id):
             if created and getattr(created, "id", None) is not None:
                 conversation_id = int(created.id)
             else:
-                return jsonify({"success": False, "message": "Failed to create conversation"}), 500
+                logger.error("Failed to create conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title}), 200
 
         # Persist messages
         if conversation_id:
@@ -171,7 +172,8 @@ def create_thread_message(thread_id):
                 file_content=files
             )
             if not updated:
-                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+                logger.error("Failed to add user message to conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title}), 200
 
             updated = add_message_to_conversation(
                 session=db_session,
@@ -181,7 +183,13 @@ def create_thread_message(thread_id):
                 references=refs
             )
             if not updated:
-                return jsonify({"success": False, "message": "Failed to add message to conversation"}), 500
+                logger.error("Failed to add assistant message to conversation in DB")
+                return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title}), 200
+
+    except Exception as e:
+        logger.error(f"Error updating conversation in DB: {e}")
+        pass
+
     finally:
         try:
             if db_session is not None:

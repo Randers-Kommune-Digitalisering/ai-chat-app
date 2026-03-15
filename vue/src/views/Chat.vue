@@ -294,32 +294,6 @@
             return
         }
 
-        if (!conversation_id) {
-            console.error("No conversation ID returned from backend.")
-            // Re-add user files to state
-            for (let file of chatMessage.files) {
-                addFile(file)
-            }
-            const elapsedMs = stopTimer()
-            const timeSpent = Number((elapsedMs / 1000).toFixed(2))
-            awaitingResponse.value = false
-            const assistantMessage = new ChatMessage(
-                'assistant',
-                'Beklager, der opstod en fejl (mangler samtale-id). Prøv venligst igen.',
-                [],
-                [],
-                [],
-                timeSpent
-            )
-            chatMessages.value.push(assistantMessage)
-            nextTick(() => {
-                updateInputPadding()
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
-            })
-            return
-        }
         activeConversationId.value = conversation_id
 
         if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
@@ -344,7 +318,7 @@
             for (let file of chatMessage.files) {
                 addFile(file)
             }
-            assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
+            assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
         }
         chatMessages.value.push(assistantMessage)
 
@@ -469,12 +443,12 @@
             } else {
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
-                inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
+                inputContainer.style.bottom = `calc(25% - ${heightPx}px - 3rem + 57px)`
                 if (app) app.style.paddingBottom = '1rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
-            inputContainer.style.bottom = `calc(40% - 3rem)`
+            inputContainer.style.bottom = `calc(25% - 3rem)`
             if (app) app.style.paddingBottom = '1rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
@@ -577,7 +551,7 @@
         font-size: 1.6rem;
         text-align: center;
         left: 50%;
-        bottom: 40%;
+        bottom: 25%;
         width: max-content;
         max-width: 90%;
         transform: translate(-50%, -5rem);
@@ -668,7 +642,7 @@
         background-color: var(--color-background-primary);
     }
         .user-input-container.landing-page {
-            bottom: calc(40% - 3rem); /* Overwritten by UserInput.vue when not fixed */
+            bottom: calc(25% - 3rem); /* Overwritten by UserInput.vue when not fixed */
         }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .user-input-container.landing-page  {
