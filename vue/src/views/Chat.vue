@@ -504,7 +504,7 @@
     
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?
-        <div class="assistant-description" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
+        <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->

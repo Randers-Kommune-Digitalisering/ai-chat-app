@@ -7,10 +7,15 @@ export async function fetchConversationByPermit(permit) {
             throw new Error('permit is required');
         }
 
+        const trimmedPermit = permit.trim();
+        if (!trimmedPermit) {
+            throw new Error('permit is required');
+        }
+
         const response = await axios.post(
             '/api/conversations/load',
             {},
-            { headers: { Authorization: `Bearer ${permit}` } }
+            { headers: { Authorization: `Bearer ${trimmedPermit}` } }
         );
         return response.data;
     } catch (error) {
