@@ -114,14 +114,6 @@
         if (notifyParent) {
             notifyParentChatCleared(previousConversationId ? { conversationId: previousConversationId } : {})
         }
-
-        if (!isAgent.value)
-                return
-
-        // Start new thread if Agent mode
-        threadId.value = await startThread()
-        if (!threadId.value)
-            console.error("Failed to start new thread.")
     }
 
     async function loadConversation(permit) {
@@ -269,7 +261,7 @@
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
             threadId.value = await startThread()
-            console.log("Started new thread with ID:", threadId.value)
+            console.log("Started new thread successfully")
             if (!threadId.value) {
                 console.error("Failed to start new thread.")
                 return
