@@ -1,21 +1,9 @@
 import logging
 import sys
-import os
-
 from unittest.mock import patch, Mock
 from werkzeug import serving
 
 from utils.logging import disable_endpoint_logs, set_logging_configuration
-
-# Set all required environment variables to dummy values for tests
-os.environ['AZURE_OPENAI_KEY'] = 'dummy-key'
-os.environ['AZURE_OPENAI_ENDPOINT'] = 'dummy-endpoint'
-os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'] = 'dummy-deployment'
-os.environ['ASSISTANT_ID'] = 'dummy-assistant-id'
-os.environ['FEEDBACK_MAIL_API_URL'] = 'dummy-feedback-url'
-os.environ['FEEDBACK_MAIL_API_RECIPIENT'] = 'dummy-recipient@example.com'
-os.environ['FEEDBACK_MAIL_API_SENDER'] = 'dummy-sender@example.com'
-
 
 def test_disable_endpoint_logs():
     original_log_request = Mock()
