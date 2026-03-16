@@ -28,7 +28,10 @@ class DatabaseClient:
             raise ValueError(f"Invalid database type {self.db_type}")
 
         connection_string = f'{driver}://{urllib.parse.quote_plus(username)}:{urllib.parse.quote_plus(password)}@{urllib.parse.quote_plus(host)}:{urllib.parse.quote_plus(port)}/{urllib.parse.quote_plus(database)}'
-        self.logger.info(f"Connection string: {connection_string}")
+        self.logger.info(
+             "Database connection configured (credentials redacted): "
+             f"driver={driver}, host={host}, port={port}, database={database}"
+         )
 
         # pool_pre_ping helps avoid handing out stale connections.
         # pool_recycle mitigates long-lived connections being dropped by the server/network.
