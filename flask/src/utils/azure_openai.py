@@ -12,6 +12,7 @@ from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
     AZURE_AISEARCH_INDEX_NAME,
     AZURE_OPENAI_DEPLOYMENT_NAME,
+    AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION,
     AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_KEY,
     AZURE_API_VERSION_OPENAI,
@@ -37,6 +38,10 @@ def get_chat_client():
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
     return Chat()
+
+
+def get_title_generator():
+    return AzureOpenAITitleGenerator()
 
 
 def desanitize_metadata_value(value):
@@ -319,3 +324,38 @@ class Agent(Chat):
     def create_thread(self):
         thread = self.project.agents.threads.create()
         return thread.id
+
+
+class AzureOpenAITitleGenerator():
+    def __init__(self):
+        self.client = AzureOpenAI(
+            api_version=AZURE_API_VERSION_OPENAI,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            api_key=AZURE_OPENAI_KEY,
+        )
+        self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION
+
+    def generate_title(self, conversation_messages):
+        system_prompt = {
+            "role": "system",
+            "content": "Du er en hjælpsom assistent, der genererer korte og præcise titler (maksimalt 24 tegn) til samtaler baseret på brugerens første besked. Titlen skal være på dansk og opsummere samtalens emne uden at inkludere citater eller referencer."
+        }
+        user_prompt = {
+            "role": "user",
+            "content": f"Generer en kort titel for følgende besked: '{conversation_messages[0]['content']}'"
+        }
+
+        response = self.client.chat.completions.create(
+            messages=[system_prompt, user_prompt],
+            temperature=0.5,
+            top_p=0.9,
+            model=self.deployment_name
+        )
+
+        if response and hasattr(response, "choices") and len(response.choices) > 0:
+            choice = response.choices[0]
+            if hasattr(choice, "message") and hasattr(choice.message, "content"):
+                title = choice.message.content.strip().strip('"').strip("'")
+                return title
+
+        return "Ny samtale"  # Fallback title

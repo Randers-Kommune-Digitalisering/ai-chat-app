@@ -1,11 +1,16 @@
 <script setup>
-    import { ref, nextTick, getCurrentInstance, onMounted } from 'vue'
+    import { ref, nextTick, getCurrentInstance, onMounted, onUnmounted, watch } from 'vue'
     import UserInput from '../components/UserInput.vue'
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents } from '../services/backend-service.js'
-import { use } from 'marked'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
+
+    const props = defineProps({
+        userEmail: { type: String, default: null }
+    })
+
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
@@ -26,15 +31,9 @@ import { use } from 'marked'
     }
 
     const isAgent = ref(false)
-    onMounted(() => {
-        const instance = getCurrentInstance()
-        const config = instance.appContext.config.globalProperties.$config
-        isAgent.value = !!config?.isAgent
-        showAssistantToggle.value = !!config?.showAssistantToggle
-        altAssistantAlertMsg.value = config?.altAlertMsg
-        altAssistantAlertType.value = config?.altAlertType
-    })
     const threadId = ref(null)
+    const activeConversationId = ref(null)
+    const currentUserEmail = ref(props.userEmail)
     const userInput = ref(null)
     const userFiles = ref([])
     const chatMessages = ref([])
@@ -44,31 +43,154 @@ import { use } from 'marked'
     const useAltAssistant = ref(false)
     const altAssistantAlertType = ref('info')
     const altAssistantAlertMsg = ref('')
+    const ASSISTANT_NAME_ID = ref('')
+    const assistantName = ref('')
+    const assistantDescription = ref('')
+    const errorMessage = ref('')
+    const errorTimeoutId = ref(null)
 
-    async function clearChat() {
+    onMounted(() => {
+        const instance = getCurrentInstance()
+        const config = instance.appContext.config.globalProperties.$config
+        isAgent.value = !!config?.isAgent
+        showAssistantToggle.value = !!config?.showAssistantToggle
+        altAssistantAlertMsg.value = config?.altAlertMsg
+        altAssistantAlertType.value = config?.altAlertType
+        ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
+        assistantName.value = config?.assistantName || ''
+        assistantDescription.value = config?.description || ''
+    })
+
+    watch(
+        () => props.userEmail,
+        (next) => {
+            if (next) currentUserEmail.value = next
+        },
+        { immediate: true }
+    )
+
+    watch(errorMessage, (val) => {
+        // Clear any existing timeout before starting a new one
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
+        }
+
+        if (val) {
+            errorTimeoutId.value = setTimeout(() => {
+                errorMessage.value = ''
+                errorTimeoutId.value = null
+            }, 10000)
+        }
+    })
+
+    onUnmounted(() => {
+        if (errorTimeoutId.value !== null) {
+            clearTimeout(errorTimeoutId.value)
+            errorTimeoutId.value = null
+        }
+    })
+
+    defineExpose({
+        clearChat,
+        loadConversation,
+        activeConversationId,
+        chatMessages
+    })
+
+    async function clearChat(options = {}) {
+        const { notifyParent = true } = options
+        const previousConversationId = activeConversationId.value
         // Clear UI state
         chatMessages.value = []
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
+        activeConversationId.value = null
         useAltAssistant.value = false
         userInput.value.clearUserInput()
         clearAllFiles()
         stopTimer()
-
-        if (!isAgent.value)
-                return
-
-        // Start new thread if Agent mode
-        threadId.value = await startThread()
-        if (!threadId.value)
-            console.error("Failed to start new thread.")
+        if (notifyParent) {
+            notifyParentChatCleared(previousConversationId ? { conversationId: previousConversationId } : {})
+        }
     }
 
-    defineExpose({
-        clearChat,
-        chatMessages
-    })
+    async function loadConversation(permit) {
+        portalDebugLog('Loading conversation by permit')
+        const data = await fetchConversationByPermit(permit)
+
+        if (data?.success === false) {
+            console.error("Failed to load conversation:", data?.message)
+            return
+        }
+
+        // Process loaded conversation data and update UI accordingly
+        if (!data.conversation || !Array.isArray(data.conversation?.messages)) {
+            console.error("Invalid conversation data format.")
+            return
+        }
+        await clearChat({ notifyParent: false })
+        const loadedConversationId = data?.conversation?.id
+        if (loadedConversationId) activeConversationId.value = loadedConversationId
+
+        const loadedUserEmail = data?.conversation?.user_email
+        if (loadedUserEmail) currentUserEmail.value = loadedUserEmail
+        const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
+        if (isAgent.value && loadedThreadId) {
+            threadId.value = loadedThreadId
+            portalDebugLog("Set thread ID successfully from loaded conversation")
+        }
+
+        function mapFiles(msg) {
+            const rawFiles = Array.isArray(msg?.files) ? msg.files : []
+            const rawAttachments = Array.isArray(msg?.attachments) ? msg.attachments : []
+
+            if (rawFiles.length > 0) return rawFiles
+
+            return rawAttachments.map(att => ({
+                name: att.file_name ?? att.name ?? 'unknown',
+                size: att.file_size ?? att.size ?? 0,
+                type: att.file_type ?? att.type ?? 'application/octet-stream',
+                // Needed in chat mode so a loaded conversation can be continued
+                // with the same document context.
+                content: att.file_content
+            }))
+        }
+        function mapReferences(msg) {
+            // DB-backed references are shaped like {reference_type, reference_content}.
+            // reference_content is JSON stored by backend (see db_controller normalization).
+            const raw = Array.isArray(msg?.references) ? msg.references : []
+            return raw.map(ref => {
+                    const content = ref?.reference_content
+                    if (typeof content !== 'string') return null
+                    try {
+                        const parsed = JSON.parse(content)
+                        return new Reference(parsed.title ?? 'Reference', parsed.url ?? '')
+                    } catch (_) {
+                        return null
+                    }
+                })
+                .filter(Boolean)
+        }
+        for (let msg of data.conversation.messages) {
+            const chatMsg = new ChatMessage(
+                msg.sender,
+                msg.content,
+                msg.illegalContents || [],
+                mapReferences(msg),
+                mapFiles(msg),
+                msg.timeSpent || 0
+            )
+            chatMessages.value.push(chatMsg)
+        }
+        notifyParentLoaded()
+        nextTick(() => {
+            updateInputPadding()
+            scrollToMessage(chatMessages.value.length - 1, false)
+        })
+        portalDebugLog('Loaded conversation messages successfully')
+    }
 
     // Handle user input
     async function onUserInput(message) {
@@ -139,7 +261,7 @@ import { use } from 'marked'
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
             threadId.value = await startThread()
-            console.log("Started new thread with ID:", threadId.value)
+            console.log("Started new thread successfully")
             if (!threadId.value) {
                 console.error("Failed to start new thread.")
                 return
@@ -147,11 +269,40 @@ import { use } from 'marked'
         }
 
         // Send message to backend
-        const { response, references } = isAgent.value ?
-            await sendThreadMessage(threadId.value, message, chatMessage.files.map(({ name, content }) => ({ name, content })), useAltAssistant.value) :
-            await sendChatMessage(messages)
+        const result = isAgent.value ?
+            await sendThreadMessage(
+                threadId.value,
+                activeConversationId.value,
+                message,
+                chatMessage.files.map(({ name, content }) => ({ name, content })),
+                useAltAssistant.value,
+                currentUserEmail.value
+            ) :
+            await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
+        const { success, message: backendMessage, response, references, conversation_id, title } = result
+
+        if (success === false) {
+            console.error("Backend returned success=false:", backendMessage)
+            stopTimer()
+            awaitingResponse.value = false
+            undoAndEditMessage(chatMessage)
+            errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+            nextTick(() => {
+                updateInputPadding()
+                const input = document.querySelector('.user-input')
+                if (input) input.focus()
+                scrollToMessage(chatMessages.value.length - 1)
+            })
+            return
+        }
+
+        activeConversationId.value = conversation_id
+
+        if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
+            notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
+
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
         if (!awaitingResponse.value) {
             console.warn("Response received but awaitingResponse is false. Ignoring response.")
@@ -162,7 +313,7 @@ import { use } from 'marked'
             'assistant',
             unfilterResponseContent(response),
             [],
-            references.map(ref => new Reference(ref.title, ref.url)),
+            (references || []).map(ref => new Reference(ref.title, ref.url)),
             [],
             timeSpent
         )
@@ -171,7 +322,7 @@ import { use } from 'marked'
             for (let file of chatMessage.files) {
                 addFile(file)
             }
-            assistantMessage.content = "Beklager, der opstod en fejl. Prøv venligst igen."
+            assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
         }
         chatMessages.value.push(assistantMessage)
 
@@ -239,7 +390,7 @@ import { use } from 'marked'
     }
 
     // Scroll to specific message
-    function scrollToMessage(index) {
+    function scrollToMessage(index, smoothScroll = true) {
         const item = document.getElementById('msg_' + index)
         if (item) {
             let rect = item.getBoundingClientRect()
@@ -247,7 +398,7 @@ import { use } from 'marked'
 
             window.scrollBy({
                 left: 0, top: calc,
-                behavior: "smooth"
+                behavior: smoothScroll ? "smooth" : "auto"
             })
         }
     }
@@ -296,12 +447,12 @@ import { use } from 'marked'
             } else {
                 // Landing page: position container vertically and offset by textarea height
                 const heightPx = payload.height || 0
-                inputContainer.style.bottom = `calc(40% - ${heightPx}px - 3rem + 57px)`
+                inputContainer.style.bottom = `calc(35% - ${heightPx}px - 3rem + 57px)`
                 if (app) app.style.paddingBottom = '1rem'
             }
         } else if (payload.type === 'reset') {
             // Reset to landing page position
-            inputContainer.style.bottom = `calc(40% - 3rem)`
+            inputContainer.style.bottom = `calc(35% - 3rem)`
             if (app) app.style.paddingBottom = '1rem'
         } else if (payload.type === 'submit') {
             // After submit, move to bottom
@@ -322,15 +473,20 @@ import { use } from 'marked'
         type="info"
         message="**Bemærk:** Svarene er AI-genererede og kan indeholde forkerte oplysninger. [Læs mere her](https://broen.randers.dk/digitalisering/ai-univers/retningslinjer-for-generativ-ai/#block-b93fc214-c5b4-4b34-9e85-7f7bdb36560e)."
     />
-    
     <Alert
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
         :message="altAssistantAlertMsg"
     />
-    
+    <Alert
+        v-if="errorMessage"
+        type="error"
+        :message="errorMessage"
+    />
+
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?
+        <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
@@ -400,7 +556,7 @@ import { use } from 'marked'
         font-size: 1.6rem;
         text-align: center;
         left: 50%;
-        bottom: 40%;
+        bottom: 35%;
         width: max-content;
         max-width: 90%;
         transform: translate(-50%, -5rem);
@@ -439,22 +595,12 @@ import { use } from 'marked'
                 cursor: default;
                 color: var(--color-text-primary);
             }
-            .welcome-header .title .icons i {
-                margin-right: 0.3rem;
-            }
-            .icons .tooltip {
-                font-size: 0.9rem;
-                top: 5rem;
-                left: 50%;
-                transform: translateX(-50%);
-                text-align: left;
-                max-width: calc(100dvw - 1.6rem) !important;
-            }
-            .tooltip ul {
-                margin: 0.2rem 0 0 1.2rem;
-                padding-left: 0;
-                list-style-type: disc;
-            }
+        .welcome-header .assistant-description {
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: var(--color-text-faded);
+        }
     .loading-indicator
     {
         font-style: italic;
@@ -486,7 +632,7 @@ import { use } from 'marked'
         background-color: var(--color-background-primary);
     }
         .user-input-container.landing-page {
-            bottom: calc(40% - 3rem); /* Overwritten by UserInput.vue when not fixed */
+            bottom: calc(35% - 3rem); /* Overwritten by UserInput.vue when not fixed */
         }
         @media screen and (max-width: 360px) { /* Adjust position for very small screens */
             .user-input-container.landing-page  {

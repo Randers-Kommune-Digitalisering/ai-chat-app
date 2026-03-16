@@ -1,9 +1,11 @@
 <script setup>
-    import { ref, onMounted, computed } from 'vue'
+    import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
     import Header from './components/Header.vue'
     import Chat from './views/Chat.vue'
+    import { isAllowedPortalMessageEvent, normalizePortalMessage, notifyParentReady, portalDebugLog } from './utils/portalMessaging.js'
 
     const chat = ref(null)
+    const userEmail = ref(null)
 
     const hasChatMessages = computed(() => {
         return chat.value && chat.value.chatMessages && chat.value.chatMessages.length > 0
@@ -26,14 +28,65 @@
     }
 
     onMounted(() => {
+        portalDebugLog('Mounted. origin=', window.location.origin, 'href=', window.location.href)
+
         const input = document.querySelector('.user-input')
-        if (input) input.focus()
+        if (input)
+            input.focus()
+
+        notifyParentReady()
+        portalDebugLog('Attaching window message listener')
+        window.addEventListener('message', onPortalMessage)
     })
+
+    onBeforeUnmount(() => {
+        window.removeEventListener('message', onPortalMessage)
+    })
+
+    // Handle messages from parent portal
+    function onPortalMessage(event) {
+        if (!isAllowedPortalMessageEvent(event)) return
+
+        const msg = normalizePortalMessage(event.data)
+        if (!msg) return
+
+        // portalDebugLog('Portal message received:', msg) // Uncomment for verbose logging of all messages
+
+        switch (msg.type) {
+            case 'PARENT_INIT': {
+                // Parent portal has acknowledged the READY message
+                // Response contains user email
+                userEmail.value = msg.userEmail || null
+                portalDebugLog('Parent portal acknowledged READY message. User email set:', userEmail.value)
+                return
+            }
+            case 'LOAD_CONVERSATION': {
+                // Permit-only secure load flow
+                if (msg.version !== 2) return
+                const permit = msg.permit
+                if (!permit || typeof permit !== 'string') return
+
+                if (chat.value?.loadConversation) {
+                    // Do not trust or forward any userEmail / id from postMessage.
+                    chat.value.loadConversation(permit)
+                } else {
+                    console.error('Chat component does not expose loadConversation.')
+                }
+                return
+            }
+            case 'CLEAR_CONVERSATION': {
+                if (chat.value?.clearChat) chat.value.clearChat()
+                return
+            }
+            default:
+                return
+        }
+    }
 </script>
 
 <template>
     <Header @clear-chat="clearChat" :show-start-new-chat="hasChatMessages" />
-    <Chat ref="chat" />
+    <Chat ref="chat" :user-email="userEmail" />
 </template>
 
 <style scoped>

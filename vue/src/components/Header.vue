@@ -2,7 +2,6 @@
 import { ref, getCurrentInstance, onMounted } from 'vue'
 
 const ASSISTANT_NAME = getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent'
-const assistantDescription = getCurrentInstance().appContext.config.globalProperties.$config.description || ''
 
 const props = defineProps({
     showStartNewChat: {
@@ -40,10 +39,6 @@ function clearChat() {
     <div class="header">
         <div class="header-title">
             {{ ASSISTANT_NAME }}
-            <span class="header-description" v-if="assistantDescription">
-                <i class="fa-solid fa-question"></i>
-                <div class="tooltip" v-html="assistantDescription.replaceAll('\\n', '<br />')"></div>
-            </span>
         </div>
         <div
             :class="['header-action', { 'hidden': !showStartNewChat }]"

@@ -1,24 +1,15 @@
 import pytest
-import os
-from main import create_app
-
-# Set all required environment variables to dummy values for tests
-os.environ['AZURE_OPENAI_KEY'] = 'test-key'
-os.environ['AZURE_OPENAI_ENDPOINT'] = 'test-endpoint'
-os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'] = 'test-deployment'
-os.environ['ASSISTANT_ID'] = 'test-assistant-id'
-os.environ['FEEDBACK_MAIL_API_URL'] = 'test-feedback-url'
-os.environ['FEEDBACK_MAIL_API_RECIPIENT'] = 'test-recipient@example.com'
-os.environ['FEEDBACK_MAIL_API_SENDER'] = 'test-sender@example.com'
 
 
 @pytest.fixture()
 def app():
+    # Import inside fixture so pytest-env has applied `pytest.ini` env vars first.
+    from main import create_app
+
     app = create_app()
     app.config.update({
         "TESTING": True,
     })
-
     yield app
 
 

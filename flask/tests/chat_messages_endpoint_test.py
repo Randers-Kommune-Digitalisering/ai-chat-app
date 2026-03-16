@@ -1,0 +1,183 @@
+from unittest.mock import MagicMock, patch
+import pytest
+
+
+@pytest.fixture()
+def app():
+    from main import create_app
+
+    app = create_app()
+    app.config.update({
+        "TESTING": True,
+    })
+    yield app
+
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+
+
+class _DummyThread:
+    def __init__(self):
+        self.join_called = 0
+
+    def join(self, timeout=None):
+        self.join_called += 1
+
+
+def _post_chat_message(client, *, messages, conversation_id=None, user_email="user@example.com"):
+    payload = {"messages": messages}
+    if conversation_id is not None:
+        payload["conversation_id"] = conversation_id
+    return client.post(
+        "/api/chat/messages",
+        json=payload,
+        headers={"X-User-Email": user_email} if user_email else {},
+    )
+
+
+def test_chat_messages_db_unavailable_still_returns_success(client):
+    dummy_thread = _DummyThread()
+    title_result = {"title": "Generated title"}
+
+    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(dummy_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [{"url": "https://example.com"}]),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        side_effect=Exception("db down"),
+    ):
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body["response"] == "assistant reply"
+    assert body["references"] == [{"url": "https://example.com"}]
+
+    # DB failure happens before conversation creation/title persistence.
+    assert body.get("conversation_id") is None
+    assert body.get("title") is None
+
+    # Title thread is started, but join only happens during DB create path.
+    assert dummy_thread.join_called == 0
+
+
+def test_chat_messages_creates_conversation_persists_messages_and_returns_title_and_id(client):
+    dummy_thread = _DummyThread()
+    title_result = {"title": "Generated title"}
+
+    db_session = MagicMock()
+    created_conversation = MagicMock()
+    created_conversation.id = 123
+
+    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(dummy_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", []),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.create_db_conversation",
+        return_value=created_conversation,
+    ) as mock_create_conv, patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ) as mock_add_msg:
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body["response"] == "assistant reply"
+    assert body.get("conversation_id") == 123
+    assert body.get("title") == "Generated title"
+
+    assert dummy_thread.join_called == 1
+    assert mock_create_conv.call_count == 1
+    assert mock_add_msg.call_count == 2
+
+    # Session should be closed in finally
+    db_session.close.assert_called_once()
+
+
+def test_chat_messages_create_conversation_fails_still_returns_success_with_title(client):
+    dummy_thread = _DummyThread()
+    title_result = {"title": "Generated title"}
+
+    db_session = MagicMock()
+
+    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(dummy_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", []),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.create_db_conversation",
+        return_value=None,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+    ) as mock_add_msg:
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body["response"] == "assistant reply"
+
+    assert body.get("conversation_id") is None
+    assert body.get("title") == "Generated title"
+
+    assert dummy_thread.join_called == 1
+    mock_add_msg.assert_not_called()
+    db_session.close.assert_called_once()
+
+
+def test_chat_messages_partial_write_user_message_insert_fails_still_returns_success(client):
+    dummy_thread = _DummyThread()
+    title_result = {"title": "Generated title"}
+
+    db_session = MagicMock()
+    created_conversation = MagicMock()
+    created_conversation.id = 123
+
+    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(dummy_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", []),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.create_db_conversation",
+        return_value=created_conversation,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[False],
+    ) as mock_add_msg:
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body["response"] == "assistant reply"
+
+    assert body.get("conversation_id") == 123
+    assert body.get("title") == "Generated title"
+
+    assert dummy_thread.join_called == 1
+    assert mock_add_msg.call_count == 1
+    db_session.close.assert_called_once()

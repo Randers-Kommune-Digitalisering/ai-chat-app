@@ -5,24 +5,28 @@ export async function startThread() {
     }
 }
 
-export async function sendThreadMessage(threadId, message, files, useAlt = false) {
+export async function sendThreadMessage(threadId, conversationId, message, files, useAlt = false, userEmail = null) {
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000)); // Wait for 1-3 seconds
     return {
         response: "This is a demo response to your message: " + message,
         references: [
             { title: "Eksempel Reference", url: "https://example.com" }
-        ]
+        ],
+        conversation_id: conversationId || 1,
+        user_email: userEmail
     }
 }
 
-export async function sendChatMessage(messages) {
+export async function sendChatMessage(conversationId, messages, userEmail = null) {
     console.log("Sending chat message with messages:", messages);
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000)); // Wait for 1-3 seconds
     return {
         response: "This is a demo chat response based on your messages.",
         references: [
             { title: "Demo Chat Reference", url: "https://example.com/chat" }
-        ]
+        ],
+        conversation_id: conversationId || 1,
+        user_email: userEmail
     }
 }
 

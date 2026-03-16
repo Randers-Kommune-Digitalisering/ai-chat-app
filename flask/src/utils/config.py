@@ -22,6 +22,9 @@ AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID', '').strip()
 AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY').strip()
 AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT').strip()
 AZURE_OPENAI_DEPLOYMENT_NAME = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME').strip()
+AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION', '').strip()
+if not AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION:
+    AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION = AZURE_OPENAI_DEPLOYMENT_NAME
 AZURE_AISEARCH_ENDPOINT = os.environ.get('AZURE_AISEARCH_ENDPOINT', '').strip()
 AZURE_AISEARCH_INDEX_NAME = os.environ.get('AZURE_AISEARCH_INDEX_NAME', '').strip()
 AZURE_AISEARCH_SEMANTIC_CONFIG = os.environ.get('AZURE_AISEARCH_SEMANTIC_CONFIG', 'default-semantic-config').strip()
@@ -31,6 +34,7 @@ AZURE_API_VERSION_VECTORS = os.environ.get('AZURE_API_VERSION_VECTORS', '2025-03
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
 
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
+ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').strip()  # ID used in portal (i.e. randers-gpt)
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
 ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', None)  # Second assistant ID for assistant toggle
@@ -73,3 +77,25 @@ FEEDBACK_MAIL_API_RECIPIENT = os.environ.get('FEEDBACK_MAIL_API_RECIPIENT').stri
 FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
 
 ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
+
+POSTGRES_USER = os.environ.get('POSTGRES_USER', 'postgres').strip()
+POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', 'mysecretpassword').strip()
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'localhost').strip()
+POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
+POSTGRES_DB = os.environ.get('POSTGRES_DB', 'ai_chat_db').strip()
+
+# Permit-based conversation loading (portal -> iframe chat-app)
+# The portal issues a short-lived RS256-signed JWT/JWS permit.
+CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM = os.environ.get('CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM', '').strip()
+CONVERSATION_LOAD_PERMIT_ISSUER = os.environ.get('CONVERSATION_LOAD_PERMIT_ISSUER', 'gpt-dashboard-portal').strip()
+CONVERSATION_LOAD_PERMIT_AUDIENCE = os.environ.get('CONVERSATION_LOAD_PERMIT_AUDIENCE', 'chat-app').strip()
+
+# Optional: comma-separated list of allowed JWT header kid values.
+CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS = [
+    s.strip() for s in os.environ.get('CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS', '').split(',') if s.strip()
+]
+
+# Optional: restrict who can embed this app.
+# If the value does not include the directive name, it will be prefixed with `frame-ancestors `.
+# Example: "'self' https://chat.data.randers.dk https://ai.data.randers.dk"
+CSP_FRAME_ANCESTORS = os.environ.get('CSP_FRAME_ANCESTORS', '').strip()
