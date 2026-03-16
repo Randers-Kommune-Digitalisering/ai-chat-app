@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from utils.api_requests import APIClient
 
+
 def test_init():
     api_client = APIClient('http://testurl.com')
 
