@@ -50,7 +50,7 @@
         const msg = normalizePortalMessage(event.data)
         if (!msg) return
 
-        portalDebugLog('Portal message received:', msg)
+        // portalDebugLog('Portal message received:', msg) // Uncomment for verbose logging of all messages
 
         switch (msg.type) {
             case 'PARENT_INIT': {

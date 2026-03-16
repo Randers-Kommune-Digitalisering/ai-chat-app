@@ -147,7 +147,7 @@
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
             threadId.value = loadedThreadId
-            portalDebugLog("Set thread ID to:", threadId.value)
+            portalDebugLog("Set thread ID successfully from loaded conversation")
         }
 
         function mapFiles(msg) {
@@ -197,7 +197,7 @@
             updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1, false)
         })
-        portalDebugLog('Loaded conversation data:', data)
+        portalDebugLog('Loaded conversation messages successfully')
     }
 
     // Handle user input

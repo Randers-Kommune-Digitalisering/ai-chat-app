@@ -47,7 +47,7 @@ export function isPortalDebugEnabled() {
 export function portalDebugLog(...args) {
 	if (!isPortalDebugEnabled()) return;
 	// Prefix helps distinguish iframe logs from parent logs
-	console.log('[ai-chat iframe]', ...args);
+	console.log('[ai-chat app]', ...args);
 }
 
 function tryDeriveOriginFromReferrer() {
@@ -157,12 +157,10 @@ export function notifyParentLoaded() {
 
 export function notifyParentNewConversation(conversation) {
 	// Lets the parent know a new conversation has been created.
-	portalDebugLog('Sending NEW_CONVERSATION with conversation:', conversation);
 	postToParent({ type: 'NEW_CONVERSATION', version: 1, conversation });
 }
 
 export function notifyParentChatCleared(payload = {}) {
 	// Lets the parent know the chat has been cleared/reset.
-	portalDebugLog('Sending CHAT_CLEARED with payload:', payload);
 	postToParent({ type: 'CHAT_CLEARED', version: 1, ...payload });
 }
