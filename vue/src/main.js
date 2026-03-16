@@ -11,12 +11,12 @@ try {
 		window?.localStorage?.getItem('portalDebug') === '1';
 
 	if (debugEnabled) {
-		console.log('[ai-chat iframe] Bootstrap', {
+		console.log('[ai-chat iframe] DEBUG: Bootstrap', {
 			origin: window.location.origin,
 			href: window.location.href
 		});
 		window.addEventListener('message', (e) => {
-			console.log('[ai-chat iframe] Raw message received', {
+			console.log('[ai-chat chat] DEBUG: Raw message received', {
 				origin: e.origin,
 				data: e.data
 			});
