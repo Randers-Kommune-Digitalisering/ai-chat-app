@@ -9,6 +9,7 @@ from utils.config import (
     POSTGRES_PASS,
     POSTGRES_HOST,
     POSTGRES_DB,
+    POSTGRES_PORT,
 )
 from utils.database import DatabaseClient
 from models import Conversation, Message, Attachment, Reference
@@ -25,7 +26,7 @@ def get_db_client():
         username=POSTGRES_USER,
         password=POSTGRES_PASS,
         host=POSTGRES_HOST,
-        port='5432'
+        port=POSTGRES_PORT
     )
 
 

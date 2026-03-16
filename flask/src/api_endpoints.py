@@ -308,6 +308,11 @@ def create_chat_message():
             if not updated:
                 logger.error("Failed to add assistant message to conversation in DB")
                 return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
+
+    except Exception as e:
+        logger.error(f"Error updating conversation in DB: {e}")
+        pass
+
     finally:
         try:
             if db_session is not None:
