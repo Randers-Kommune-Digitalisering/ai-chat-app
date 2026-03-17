@@ -44,7 +44,7 @@
     <div class="alert-wrapper">
         <div :class="['alert', 'fade-in', typeClass, { 'alert--inline': props.inline }]">
             <i :class="`fa-solid fa-${icon}`"></i>
-            <span class="alert__message" v-html="formattedMessage"></span>
+            <span class="alert-message" v-html="formattedMessage"></span>
             <slot />
         </div>
     </div>
@@ -63,15 +63,11 @@
         border-radius: 0.25rem;
         margin: 0.5em 0;
         transform: translateY(-0.7rem);
-        font-size: 1rem;
+        font-size: 0.9rem;
     }
     .alert i {
         margin-right: 0.8rem;
         font-size: 0.9em;
-    }
-    .alert__icon {
-        margin-right: 0.5em;
-        font-size: 1.2em;
     }
     .alert--transparent {
         background: transparent;

@@ -210,8 +210,6 @@
         position: relative;
         display: flex;
         align-items: center;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
     }
     .user-input {
         width: 100%;
@@ -262,7 +260,7 @@
     button[type="submit"] {
         position: absolute;
         right: 0;
-        transform: translateX(-1.4rem);
+        transform: translateX(-0.6rem);
         width: 2.3rem;
         height: 2.3rem;
         border-radius: 100%;

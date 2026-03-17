@@ -152,6 +152,7 @@ main, #app {
   margin: 0 auto;
   padding: 1rem;
   padding-top: 4.5rem;
+  padding-bottom: 0;
 
   display: flex;
   flex-direction: column;
@@ -184,11 +185,6 @@ main, #app {
 }
 
 
-/* Specific positioning for file uploads within FileUpload component on landing page */
-.user-input-container.landing-page .fileUploads {
-  top: 100%;
-  transform: translateY(-0.5rem);
-}
 
 /* Tooltip */
 

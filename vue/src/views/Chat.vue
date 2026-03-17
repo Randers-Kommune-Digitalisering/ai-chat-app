@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-demo.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -49,6 +49,9 @@
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
 
+    const chatMessagesEl = ref(null)
+    const fileUploadRootEl = ref(null)
+
     onMounted(() => {
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
@@ -59,7 +62,34 @@
         ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
         assistantName.value = config?.assistantName || ''
         assistantDescription.value = config?.description || ''
+
+        adjustChatMessagesPaddingBottom()
     })
+
+    function adjustChatMessagesPaddingBottom() {
+        nextTick(() => {
+            const chatEl = chatMessagesEl.value
+            if (!chatEl) return
+
+            /* Don't change on landing page */
+            if (chatMessages.value.length == 0) {
+                chatEl.style.paddingBottom = '1.5rem'
+                return
+            }
+
+            const uploadsEl = fileUploadRootEl.value?.querySelector?.('.fileUploads')
+            const uploadsHeight = userFiles.value.length > 0 && uploadsEl
+                ? uploadsEl.getBoundingClientRect().height
+                : 0
+
+            if (uploadsHeight > 0) {
+                const px = Math.round(uploadsHeight)
+                chatEl.style.paddingBottom = `calc(1.5rem + ${px}px)`
+            } else {
+                chatEl.style.paddingBottom = '1.5rem'
+            }
+        })
+    }
 
     watch(
         () => props.userEmail,
@@ -186,7 +216,6 @@
         }
         notifyParentLoaded()
         nextTick(() => {
-            updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1, false)
         })
         portalDebugLog('Loaded conversation messages successfully')
@@ -212,7 +241,6 @@
         clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         nextTick(() => {
-            updateInputPadding()
             scrollToMessage(chatMessages.value.length - 1)
         })
 
@@ -232,7 +260,6 @@
         // Remove last user message
         chatMessages.value.pop()
         nextTick(() => {
-            updateInputPadding()
             const input = document.querySelector('.user-input')
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
@@ -290,7 +317,6 @@
             undoAndEditMessage(chatMessage)
             errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
             nextTick(() => {
-                updateInputPadding()
                 const input = document.querySelector('.user-input')
                 if (input) input.focus()
                 scrollToMessage(chatMessages.value.length - 1)
@@ -328,7 +354,6 @@
 
         // Update UI
         nextTick(() => {
-            updateInputPadding()
             const input = document.querySelector('.user-input')
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
@@ -365,28 +390,21 @@
         } else {
             console.warn("File to remove not found in userFiles.")
         }
-        nextTick(() => {
-            updateInputPadding()
-        })
+        adjustChatMessagesPaddingBottom()
     }
     function onClearFiles() {
         userFiles.value = []
-    }
-    function updateInputPadding() {
-        // Always get the latest textarea height from UserInput
-        const height = userInput.value?.getTextareaHeight?.() || 0
-        onAdjustCss({ type: 'resize', height, fixed: chatMessages.value.length > 0 })
+        adjustChatMessagesPaddingBottom()
     }
     function clearAllFiles() {
         let removedFiles = [...userFiles.value]
         userFiles.value = []
+        adjustChatMessagesPaddingBottom()
         return removedFiles
     }
     function addFile(fileObj) {
         userFiles.value.push(fileObj)
-        nextTick(() => {
-            updateInputPadding()
-        })
+        adjustChatMessagesPaddingBottom()
     }
 
     // Scroll to specific message
@@ -422,44 +440,6 @@
         timeSpent.value = 0
         return elapsed
     }
-
-    // Handle CSS adjustments
-    // Sets the app padding based on UserInput height and mode (fixed or landing)
-    // Sets the position of the user input container
-    const userInputContainer = ref(null)
-    function onAdjustCss(payload) {
-        // payload: { type, height (of userInputContainer), fixed }
-        if (!userInputContainer.value) return
-        const inputContainer = userInputContainer.value
-        const app = document.getElementById('app')
-        if (payload.type === 'resize') {
-            // Adjust textarea container position and app padding
-            if (payload.fixed) {
-                // Fixed mode: adjust app padding
-                if (app) {
-                    // Add height of  file uploader if visible
-                    const fileContainer = document.getElementById('file-uploads')
-                    let fileUploaderHeight = fileContainer ? fileContainer.offsetHeight : 0
-                    const padding = Math.max(payload.height / 16 + 3, 6) + fileUploaderHeight / 16 + 0.5
-                    app.style.paddingBottom = padding + 'rem'
-                }
-                inputContainer.style.bottom = '0rem'
-            } else {
-                // Landing page: position container vertically and offset by textarea height
-                const heightPx = payload.height || 0
-                inputContainer.style.bottom = `calc(35% - ${heightPx}px - 3rem + 57px)`
-                if (app) app.style.paddingBottom = '1rem'
-            }
-        } else if (payload.type === 'reset') {
-            // Reset to landing page position
-            inputContainer.style.bottom = `calc(35% - 3rem)`
-            if (app) app.style.paddingBottom = '1rem'
-        } else if (payload.type === 'submit') {
-            // After submit, move to bottom
-            inputContainer.style.bottom = '0rem'
-            if (app) app.style.paddingBottom = '6rem'
-        }
-    }
 </script>
 
 <template>
@@ -484,14 +464,14 @@
         :message="errorMessage"
     />
 
+    <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
+
     <div class="welcome-header" v-if="chatMessages.length == 0">
         Hej, hvad kan jeg hjælpe med?
         <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
-    <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
-
-    <div id="chat-messages">
+    <div id="chat-messages" ref="chatMessagesEl">
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
@@ -537,29 +517,25 @@
             :hasFiles="userFiles.length > 0"
             :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
-            @adjust-css="onAdjustCss"
         />
 
-        <FileUpload
-            ref="fileUploader"
-            :files="userFiles"
-            :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
-            @add-file="addFile"
-            @remove-file="onFileRemoved"
-            @clear-files="onClearFiles" />
+        <div ref="fileUploadRootEl">
+            <FileUpload
+                ref="fileUploader"
+                :files="userFiles"
+                :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
+                @add-file="addFile"
+                @remove-file="onFileRemoved"
+                @clear-files="onClearFiles" />
+        </div>
     </div>
 </template>
 
 <style scoped>
     .welcome-header {
-        position: absolute;
         font-size: 1.6rem;
         text-align: center;
-        left: 50%;
-        bottom: 35%;
         width: max-content;
-        max-width: 90%;
-        transform: translate(-50%, -5rem);
         z-index: 3;
         pointer-events: none;
     }
@@ -621,36 +597,37 @@
             .timer .fa-clock {
                 font-size: 0.8em;
             }
-    .user-input-container {
-        position: fixed;
-        bottom: 0rem;
-        padding-bottom: 2rem;
-        padding-top: 1rem;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        background-color: var(--color-background-primary);
-    }
-        .user-input-container.landing-page {
-            bottom: calc(35% - 3rem); /* Overwritten by UserInput.vue when not fixed */
-        }
-        @media screen and (max-width: 360px) { /* Adjust position for very small screens */
-            .user-input-container.landing-page  {
-                bottom: 0rem !important; /* Overwritten by UserInput.vue when not fixed */
-            }
-        }
-    @media screen and (min-width: 875px) {
-        .user-input-container  {
-            max-width: 56rem;
-        }
-    }
-
     .rotate {
         animation: l24 1.5s infinite linear;
     }
     @keyframes l24 {
         100% {transform: rotate(1turn)}
     }
+
+
+    #chat-messages {
+        padding-bottom: 1.5rem;
+    }
+
+    .user-input-container {
+        z-index: 4;
+        position: relative;
+        position: sticky;
+        bottom: 0rem;
+        padding-bottom: 2rem;
+        width: 100%;
+        background-color: var(--color-background-primary);
+    }
+    @media screen and (min-width: 875px) {
+        .user-input-container  {
+            max-width: 56rem;
+        }
+    }
+    .user-input-container.landing-page {
+        margin-bottom: auto;
+    }
+
+
 
     .alert-content-filter {
         position: relative;

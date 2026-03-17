@@ -12,7 +12,7 @@
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
         'application/vnd.ms-excel' // .xls + .xlsm + .xlt + .xltm
     ]
-    const emit = defineEmits(['remove-file', 'file-upload-adjust-css', 'add-file', 'clear-files'])
+    const emit = defineEmits(['remove-file', 'add-file', 'clear-files'])
 
     const props = defineProps({
         files: {
@@ -281,9 +281,9 @@
 <style scoped>
     .fileSelectButton {
         position: absolute;
-        top: 1rem;
-        bottom: 2rem;
-        left: 0.8rem;
+        top: 0rem;
+        bottom: 2rem; /* Match with user-input-container padding-bottom to avoid overlap */
+        left: 0rem;
         right: 0.8rem;
         width: 2.5rem;
         padding-left: 1rem;
@@ -321,17 +321,17 @@
     .dropZone {
         position: absolute;
         top: 0rem;
-        bottom: 1rem;
-        left: 0.8rem;
-        right: 0.8rem;
+        bottom: 2rem; /* Match with user-input-container padding-bottom to avoid overlap */
+        left: 0rem;
+        right: 0rem;
         z-index: 10;
     }
     .dropOverlay {
         position: absolute;
-        top: 1rem;
-        bottom: 2rem;
-        left: 0.8rem;
-        right: 0.8rem;
+        top: 0rem;
+        bottom: 2rem; /* Match with user-input-container padding-bottom to avoid overlap */
+        left: 0rem;
+        right: 0rem;
         opacity: 0;
         border-radius: 2rem;
         transition: opacity 0.3s;
@@ -389,18 +389,24 @@
 
     .fileUploads {
         position: absolute;
-        top: 0;
         left: 0;
         right: 0;
+        top: 0;
         transform: translateY(-100%);
-        padding-left: 1rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         background-color: var(--color-background-primary);
-        padding-top: 0.5rem;
+        padding-bottom: 1rem;
 
         display: flex;
         flex-direction: row;
         flex-wrap: wrap-reverse;
         gap: 0.8rem;
+    }
+    .user-input-container.landing-page .fileUploads {
+        top: 100%;
+        margin-top: 1rem;
+        padding-bottom: 0;
     }
     .fileUploads.with-assistant-toggle-padding {
         right: 13.5rem;
