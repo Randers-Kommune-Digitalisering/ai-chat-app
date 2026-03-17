@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-demo.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -604,7 +604,6 @@
         100% {transform: rotate(1turn)}
     }
 
-
     #chat-messages {
         padding-bottom: 1.5rem;
     }
@@ -627,18 +626,17 @@
         margin-bottom: auto;
     }
 
-
-
     .alert-content-filter {
         position: relative;
         z-index: 11 !important;
         transform: translateY(1rem);
     }
-
     .alert--buttons {
         margin-left: auto;
         width: max-content;
         display: flex;
+        flex-direction: column-reverse;
+        gap: 0.3rem;
     }
         .alert--buttons button {
             margin-left: 0.5rem;
@@ -658,4 +656,10 @@
             background-color: #8a8a8a27;
             color: white;
         }
+    @media screen and (min-width: 560px) {
+        .alert--buttons {
+            flex-direction: row;
+            gap: 0;
+        }
+    }
 </style>

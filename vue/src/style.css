@@ -150,7 +150,8 @@ main, #app {
   width: 100%;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 1rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
   padding-top: 4.5rem;
   padding-bottom: 0;
 

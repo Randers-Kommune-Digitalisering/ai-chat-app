@@ -85,6 +85,12 @@
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
 
+    function onFeedbackClick() {
+        if (feedbackSent.value) return
+        feedbackDialogOpen.value = !feedbackDialogOpen.value
+        scrollToFeedbackDialog()
+    }
+
     async function onThumbsUpClick() {
         // Count only the first click; do not send again if toggled.
         if (feedbackLiked.value) return
@@ -145,31 +151,47 @@
     }
 
     const resizeTextareaToFitContent = () => {
+        if (!feedbackTextareaRef.value) return
         let maxHeight = 218 // pixels = 10 lines
         feedbackTextareaRef.value.style.height = 'auto'
         let height = Math.min(maxHeight, feedbackTextareaRef.value.scrollHeight + 2) + 'px'
         feedbackTextareaRef.value.style.height = height
     }
-    function scrollToFeedbackDialog() {
-        if (feedbackDialogOpen.value == false) return
+    async function scrollToFeedbackDialog() {
+        if (!feedbackDialogOpen.value) return
 
-        nextTick(() => {
-            const item = document.getElementById('feedback_' + props.id)
-            if (item) {
-                let rect = item.getBoundingClientRect()
-                let margin = 128 // fixed margin from bottom = height of input box
-                let scrollAmount = 0
-                if (rect.bottom > window.innerHeight - margin) {
-                    scrollAmount = rect.bottom - (window.innerHeight - margin)
-                }
-                window.scrollBy({
-                    left: 0, top: scrollAmount,
-                    behavior: "smooth"
-                })
-            }
-            const textarea = document.getElementById('feedback_textarea_' + props.id)
-            if (textarea) textarea.focus()
-        })
+        console.log('Scrolling to feedback dialog for message id:', props.id)
+        await nextTick()
+        // Wait an extra frame so layout/positions are accurate.
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+
+        const item = document.getElementById('feedback_' + props.id)
+        if (!item) return
+
+        // The bottom of the viewport is partially covered by the sticky input.
+        // Use its actual height instead of a fixed pixel guess.
+        const stickyEl = document.querySelector('.user-input-container')
+        const stickyHeight = stickyEl ? stickyEl.getBoundingClientRect().height : 0
+        const bottomMargin = Math.max(128, Math.ceil(stickyHeight) + 16)
+        const topMargin = 56 + 8 // header height + small padding
+
+        const rect = item.getBoundingClientRect()
+        const bottomLimit = window.innerHeight - bottomMargin
+
+        let scrollAmount = 0
+        if (rect.bottom > bottomLimit) {
+            scrollAmount = rect.bottom - bottomLimit
+        } else if (rect.top < topMargin) {
+            scrollAmount = rect.top - topMargin
+        }
+
+        if (scrollAmount !== 0) {
+            window.scrollBy({ left: 0, top: scrollAmount, behavior: 'smooth' })
+        }
+
+        // Focus without triggering the browser's own scroll-jump.
+        const textarea = document.getElementById('feedback_textarea_' + props.id)
+        if (textarea?.focus) textarea.focus({ preventScroll: true })
     }
 
 </script>
@@ -232,7 +254,7 @@
                     <i :class="[feedbackLiked ? 'fa-solid' : 'fa-regular', 'fa-thumbs-up']"></i>
                     <div class="tooltip">Synes godt om</div>
                 </div>
-                <div :class="['option', { disabled: feedbackSent }]" @click="feedbackDialogOpen = !feedbackDialogOpen; scrollToFeedbackDialog()">
+                <div :class="['option', { disabled: feedbackSent }]" @click="onFeedbackClick">
                     <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
                 </div>
