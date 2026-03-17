@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-demo.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
