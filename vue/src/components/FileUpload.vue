@@ -398,6 +398,7 @@
         padding-right: 0.5rem;
         background-color: var(--color-background-primary);
         padding-bottom: 1rem;
+        padding-top: 0.5rem;
 
         display: flex;
         flex-direction: row;
@@ -405,6 +406,7 @@
         gap: 0.8rem;
     }
     .user-input-container.landing-page .fileUploads {
+        padding-top: 0;
         top: auto;
         bottom: 0;
         transform: translateY(100%);
@@ -412,7 +414,7 @@
         flex-wrap: wrap;
     }
     .fileUploads.with-assistant-toggle-padding {
-        right: 12rem;
+        padding-right: 13rem;
         width: auto;
     }
     .fileUploads div {
