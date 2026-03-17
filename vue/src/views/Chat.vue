@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-demo.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -64,6 +64,7 @@
         assistantDescription.value = config?.description || ''
 
         adjustChatMessagesPaddingBottom()
+        window.addEventListener('resize', onResize)
     })
 
     function adjustChatMessagesPaddingBottom() {
@@ -91,6 +92,33 @@
         })
     }
 
+    function adjustAltTogglePosition() {
+        nextTick(() => {
+            const altToggle = userInput.value?.altToggleEl
+            const toggleEl = altToggle?.value ?? altToggle
+            if (!toggleEl) return
+
+            /* Don't change unless on landing page */
+            if (chatMessages.value.length != 0) {
+                toggleEl.style.transform = 'translate(0, 0)'
+                return
+            }
+
+            const uploadsEl = fileUploadRootEl.value?.querySelector?.('.fileUploads')
+            const uploadsHeight = userFiles.value.length > 0 && uploadsEl
+                ? uploadsEl.getBoundingClientRect().height
+                : 0
+
+            if (uploadsHeight > 0) {
+                const px = Math.round(uploadsHeight)
+                toggleEl.style.transform = `translate(-50%, calc(${px}px))`
+            }
+            else {
+                toggleEl.style.transform = 'translate(-50%, 0)'
+            }
+        })
+    }
+
     watch(
         () => props.userEmail,
         (next) => {
@@ -114,7 +142,24 @@
         }
     })
 
+    let resizeTimeoutId = null
+
+    function onResize() {
+        if (resizeTimeoutId !== null) {
+            clearTimeout(resizeTimeoutId)
+        }
+        resizeTimeoutId = setTimeout(() => {
+            adjustChatMessagesPaddingBottom()
+            resizeTimeoutId = null
+        }, 200)
+    }
+    
     onUnmounted(() => {
+        window.removeEventListener('resize', onResize)
+        if (resizeTimeoutId !== null) {
+            clearTimeout(resizeTimeoutId)
+            resizeTimeoutId = null
+        }
         if (errorTimeoutId.value !== null) {
             clearTimeout(errorTimeoutId.value)
             errorTimeoutId.value = null
@@ -391,20 +436,24 @@
             console.warn("File to remove not found in userFiles.")
         }
         adjustChatMessagesPaddingBottom()
+        adjustAltTogglePosition()
     }
     function onClearFiles() {
         userFiles.value = []
         adjustChatMessagesPaddingBottom()
+        adjustAltTogglePosition()
     }
     function clearAllFiles() {
         let removedFiles = [...userFiles.value]
         userFiles.value = []
         adjustChatMessagesPaddingBottom()
+        adjustAltTogglePosition()
         return removedFiles
     }
     function addFile(fileObj) {
         userFiles.value.push(fileObj)
         adjustChatMessagesPaddingBottom()
+        adjustAltTogglePosition()
     }
 
     // Scroll to specific message
@@ -514,7 +563,6 @@
             @send="onUserInput"
             @toggle-alt-assistant="val => useAltAssistant = val"
             :showAssistantToggle="showAssistantToggle && (chatMessages.length == 0 || chatMessages[chatMessages.length - 1].illegalContents.length == 0)"
-            :hasFiles="userFiles.length > 0"
             :disabled="awaitingResponse || awaitingUserInput"
             :fixed="chatMessages.length > 0"
         />
@@ -609,7 +657,7 @@
     }
 
     .user-input-container {
-        z-index: 4;
+        z-index: 10;
         position: relative;
         position: sticky;
         bottom: 0rem;

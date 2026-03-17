@@ -201,7 +201,7 @@ main, #app {
   font-size: 0.75rem;
   transition: opacity 0.3s;
   position: absolute;
-  z-index: 9;
+  z-index: 12;
   user-select: none;
 }
 

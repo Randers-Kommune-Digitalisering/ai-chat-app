@@ -54,7 +54,7 @@
     .alert-wrapper {
         background-color: var(--color-background-primary);
         position: relative;
-        z-index: 11;
+        z-index: 9;
     }
     .alert {
         display: flex;

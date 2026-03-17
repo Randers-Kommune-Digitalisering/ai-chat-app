@@ -324,7 +324,7 @@
         bottom: 2rem; /* Match with user-input-container padding-bottom to avoid overlap */
         left: 0rem;
         right: 0rem;
-        z-index: 10;
+        z-index: 11;
     }
     .dropOverlay {
         position: absolute;
@@ -391,6 +391,7 @@
         position: absolute;
         left: 0;
         right: 0;
+        width: 100%;
         top: 0;
         transform: translateY(-100%);
         padding-left: 0.5rem;
@@ -404,12 +405,15 @@
         gap: 0.8rem;
     }
     .user-input-container.landing-page .fileUploads {
-        top: 100%;
-        margin-top: 1rem;
+        top: auto;
+        bottom: 0;
+        transform: translateY(100%);
         padding-bottom: 0;
+        flex-wrap: wrap;
     }
     .fileUploads.with-assistant-toggle-padding {
-        right: 13.5rem;
+        right: 12rem;
+        width: auto;
     }
     .fileUploads div {
         background-color: var(--color-options-background-hover);

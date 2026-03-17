@@ -5,6 +5,7 @@
     const textarea = ref(null)
     const maxHeight = 258 // 190 for 7 lines
     const altToggleLabel = ref('')
+    const altToggleEl = ref(null)
 
     const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({
@@ -19,11 +20,6 @@
             default: false
         },
         showAssistantToggle: {
-            type: Boolean,
-            required: false,
-            default: false
-        },
-        hasFiles: {
             type: Boolean,
             required: false,
             default: false
@@ -62,7 +58,8 @@
     defineExpose({
         setUserInput,
         clearUserInput,
-        getTextareaHeight
+        getTextareaHeight,
+        altToggleEl
     })
 
     function onSubmit() {
@@ -193,8 +190,8 @@
             <i class="fa-solid fa-paper-plane"></i>
         </button>
             
-        <div v-if="props.showAssistantToggle"
-            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed, 'has-files': props.hasFiles }]">
+        <div v-if="props.showAssistantToggle" ref="altToggleEl"
+            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed }]">
             <label class="switch" for="checkbox">
                 <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
                 <div class="slider round"></div>
@@ -301,20 +298,16 @@
         bottom: -5rem;
         left: 50%;
         transform: translateX(-50%);
+        padding-bottom: 0.5rem;
     }
-    @media screen and (max-width: 360px) { /* Adjust position for very small screens */
-        .alt-assistant-toggle.landing-page {
-            top: -15rem;
-            bottom: auto;
-        }
-    }
-    .alt-assistant-toggle.landing-page.has-files {
+
+    /* .alt-assistant-toggle.landing-page.has-files {
         transform: translate(-50%, 2rem);
-    }
+    } */
     .alt-assistant-toggle:not(.landing-page) {
         top: -3.5rem;
         bottom: auto;
-        right: 1rem;
+        right: 0rem;
     }
 
     .switch {
