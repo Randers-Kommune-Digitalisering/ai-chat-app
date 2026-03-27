@@ -15,10 +15,6 @@ METRICS_APP = os.getenv('METRICS_APP', 'ai-chat-app').strip()
 METRICS_DEPLOYMENT = os.getenv('METRICS_DEPLOYMENT', os.getenv('DEPLOYMENT', 'unknown')).strip() or 'unknown'
 METRICS_INSTANCE = os.getenv('METRICS_INSTANCE', POD_NAME).strip() or POD_NAME
 
-AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '').strip()
-AZURE_CLIENT_SECRET = os.environ.get('AZURE_CLIENT_SECRET', '').strip()
-AZURE_TENANT_ID = os.environ.get('AZURE_TENANT_ID', '').strip()
-
 AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY').strip()
 AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT').strip()
 AZURE_OPENAI_DEPLOYMENT_NAME = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME').strip()
@@ -30,20 +26,18 @@ AZURE_AISEARCH_INDEX_NAME = os.environ.get('AZURE_AISEARCH_INDEX_NAME', '').stri
 AZURE_AISEARCH_SEMANTIC_CONFIG = os.environ.get('AZURE_AISEARCH_SEMANTIC_CONFIG', 'default-semantic-config').strip()
 AZURE_AIFOUNDRY_PROJECT_NAME = os.environ.get('AZURE_AIFOUNDRY_PROJECT_NAME', '').strip()  # Used for Agents only
 AZURE_API_VERSION_OPENAI = os.environ.get('AZURE_API_VERSION_OPENAI', '2024-12-01-preview').strip()
-AZURE_API_VERSION_VECTORS = os.environ.get('AZURE_API_VERSION_VECTORS', '2025-03-01-preview').strip()
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
 
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
 ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').strip()  # ID used in portal (i.e. randers-gpt)
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
-ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Assistant or Agent, this must be set
+ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Agent, this must be set
 ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', None)  # Second assistant ID for assistant toggle
 if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
     ASSISTANT_ID = ASSISTANT_ID.strip()
     if ASSISTANT_ALT_ID is not None:
         ASSISTANT_ALT_ID = ASSISTANT_ALT_ID.strip()
 SHOW_ASSISTANT_TOGGLE = bool(ASSISTANT_ALT_ID)
-ASSISTANT_VECTOR_STORE_ID = os.environ.get('AZURE_VECTOR_STORE_ID', '').strip()  # Used for assistants with vector stores only
 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
