@@ -18,7 +18,7 @@ Samtaler og beskeder persistéres i Postgres (Conversation/Message/Attachment/Re
 Samtaler kan kun indlæses via en kortlivet, signeret “load permit” (RS256) gennem `POST /api/conversations/load` (legacy `GET /api/conversations/<id>` er deaktiveret).
 
 #### - Sikker tovejskommunikation med [ai-chat-portal](https://github.com/Randers-Kommune-Digitalisering/ai-chat-portal) (til samtalehistorik)
- Portalen kan indlæse samtaler ved at udstede et permit, som app’en validerer, og frontend kan sende/rydde samtaler samt synkronisere state via portal messaging. Læs mere om [sikret indlæsning af samtaler her](https://github.com/Randers-Kommune-Digitalisering/ai-chat-portal/blob/development/README.md#sikret-indl%C3%A6sning-af-samtaler-portal--indlejret-chat-app).
+Portalen kan indlæse samtaler ved at udstede et permit, som app’en validerer, og frontend kan sende/rydde samtaler samt synkronisere state via portal messaging. Læs mere om [sikret indlæsning af samtaler her](https://github.com/Randers-Kommune-Digitalisering/ai-chat-portal/blob/development/README.md#sikret-indl%C3%A6sning-af-samtaler-portal--indlejret-chat-app).
 
 #### - Generering af samtaletitler
 Samtaler der lagres i Postgres-database bliver automatisk tildelt en beskrivende titel, genereret af separat AI-model.
@@ -248,6 +248,7 @@ Brugsstatistik trackes og udstilles med følgende Prometheus-metrikker på `/met
 * `chat_messages_total{app, deployment, instance, mode}`
 	* Tæller antal bruger-beskeder modtaget af backend.
 	* `mode` er `chat` eller `agent`.
+
 * `chat_feedback_total{app, deployment, instance, feedback_type}`
 	* Tæller feedback events.
 	* `feedback_type` er `like` (thumbs up) eller `custom` (tekstfeedback sendt).
