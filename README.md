@@ -118,7 +118,7 @@ Skal sættes når `ASSISTANT_TYPE` er `Agent`.
 
 * **`AZURE_AIFOUNDRY_PROJECT_NAME`**
 
-	Project-navn til Azure AI Foundry (bruges til Agents).
+	Project-navn til Azure AI Foundry.
 
 ### Valgfrie miljøvariabler
 
@@ -257,7 +257,7 @@ Metrikkerne er afhængige af følgende miljøvariabler:
 
 * `METRICS_APP` (default: `ai-chat-app`)
 * `METRICS_DEPLOYMENT` (alias: `DEPLOYMENT`, default: `unknown`)
-* `METRICS_INSTANCE` (default: `POD_NAME`)
+* `METRICS_INSTANCE` (alias: `POD_NAME`)
 
 ## Udvikling
 
