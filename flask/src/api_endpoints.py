@@ -7,7 +7,7 @@ from utils.azure_openai import get_chat_client, get_title_generator
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
-from utils.logging import chat_messages_counter, chat_feedback_counter, metrics_base_labels
+from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, metrics_base_labels
 from utils.db_controller import (
     get_db_client,
     get_user_conversation,
@@ -157,6 +157,7 @@ def create_thread_message(thread_id):
                 thread_id=thread_id,
             )
             if created and getattr(created, "id", None) is not None:
+                chat_conversations_counter.labels(**metrics_base_labels(), mode='agent').inc()
                 conversation_id = int(created.id)
             else:
                 logger.error("Failed to create conversation in DB")
@@ -280,6 +281,7 @@ def create_chat_message():
                 title=generated_title
             )
             if created and getattr(created, "id", None) is not None:
+                chat_conversations_counter.labels(**metrics_base_labels(), mode='chat').inc()
                 conversation_id = int(created.id)
             else:
                 logger.error("Failed to create conversation in DB")

@@ -39,6 +39,13 @@ chat_feedback_counter = Counter(
 )
 
 
+chat_conversations_counter = Counter(
+    'chat_conversations_total',
+    'Number of conversations started (created) in the backend',
+    labelnames=['app', 'deployment', 'instance', 'mode'],
+)
+
+
 # Logging configuration
 def set_logging_configuration():
     log_level = logging.DEBUG if DEBUG else logging.INFO

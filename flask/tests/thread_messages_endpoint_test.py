@@ -99,6 +99,8 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
         "api_endpoints.db_client.get_session",
         return_value=db_session,
     ), patch(
+        "api_endpoints.chat_conversations_counter",
+    ) as mock_conv_counter, patch(
         "api_endpoints.create_db_conversation",
         return_value=created_conversation,
     ) as mock_create_conv, patch(
@@ -121,6 +123,10 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
     assert kwargs.get("thread_id") == "thr_2"
 
     assert mock_add_msg.call_count == 2
+
+    mock_conv_counter.labels.assert_called_once()
+    assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "agent"
+    mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
 
 
@@ -140,6 +146,8 @@ def test_thread_messages_create_conversation_fails_still_returns_success_with_ti
         "api_endpoints.db_client.get_session",
         return_value=db_session,
     ), patch(
+        "api_endpoints.chat_conversations_counter",
+    ) as mock_conv_counter, patch(
         "api_endpoints.create_db_conversation",
         return_value=None,
     ), patch(
@@ -157,6 +165,7 @@ def test_thread_messages_create_conversation_fails_still_returns_success_with_ti
 
     assert dummy_thread.join_called == 1
     mock_add_msg.assert_not_called()
+    mock_conv_counter.labels.assert_not_called()
     db_session.close.assert_called_once()
 
 
@@ -178,6 +187,8 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
         "api_endpoints.db_client.get_session",
         return_value=db_session,
     ), patch(
+        "api_endpoints.chat_conversations_counter",
+    ) as mock_conv_counter, patch(
         "api_endpoints.create_db_conversation",
         return_value=created_conversation,
     ), patch(
@@ -196,4 +207,8 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
 
     assert dummy_thread.join_called == 1
     assert mock_add_msg.call_count == 1
+
+    mock_conv_counter.labels.assert_called_once()
+    assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "agent"
+    mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
