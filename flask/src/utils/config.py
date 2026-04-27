@@ -74,11 +74,11 @@ ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'tr
 
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
-    REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 50))
+    REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 100))
 except ValueError:
     REQUESTS_POOL_CONNECTIONS = 100
 try:
-    REQUESTS_POOL_MAXSIZE = int(os.environ.get('REQUESTS_POOL_MAXSIZE', 50))
+    REQUESTS_POOL_MAXSIZE = int(os.environ.get('REQUESTS_POOL_MAXSIZE', 100))
 except ValueError:
     REQUESTS_POOL_MAXSIZE = 100
 # If True, requests will block when the pool is exhausted instead of opening/discarding extra connections.
@@ -88,7 +88,7 @@ POSTGRES_USER = os.environ.get('POSTGRES_USER', '').strip()
 POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', '').strip()
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '').strip()
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '').strip()
-POSTGRES_DB = os.environ.get('POSTGRES_DB', '').strip()
+POSTGRES_DB = os.environ.get('POSTGRES_DB', '5432').strip()
 
 # Permit-based conversation loading (portal -> iframe chat-app)
 # The portal issues a short-lived RS256-signed JWT/JWS permit.
