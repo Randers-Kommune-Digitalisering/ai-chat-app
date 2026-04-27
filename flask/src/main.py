@@ -1,23 +1,29 @@
 import os
+import logging
 from flask import Flask, Response, send_from_directory
 from healthcheck import HealthCheck
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.logging import set_logging_configuration, is_ready_gauge, last_updated_gauge
-from utils.config import DEBUG, PORT, POD_NAME
+from utils.config import DEBUG, PORT, POD_NAME, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT
 import utils.config as config
 from api_endpoints import api_endpoints
 
 set_logging_configuration()
+logger = logging.getLogger(__name__)
 
 
 def create_app():
     app = Flask(__name__, static_folder='dist', static_url_path='/')
+
+    if not all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT]):
+        logger.warning("Postgres configuration incomplete, DB client will not be initialized.")
+        logger.info(f"Current Postgres config - DB: {POSTGRES_DB}, User: {POSTGRES_USER}, Host: {POSTGRES_HOST}, Port: {POSTGRES_PORT}, Pass: {'set' if POSTGRES_PASS else 'not set'}")
+
     health = HealthCheck()
     app.add_url_rule('/healthz', 'healthcheck', view_func=lambda: health.run())
 
     def metrics():
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
-
     app.add_url_rule('/metrics', 'metrics', view_func=metrics)
 
     app.register_blueprint(api_endpoints)

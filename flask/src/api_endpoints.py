@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client, get_title_generator
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, POSTGRES_DB
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, metrics_base_labels
@@ -110,7 +110,7 @@ def create_thread_message(thread_id):
     title_thread = None
     title_result = None
     conversation_title = None
-    if user_email and not conversation_id and message:
+    if POSTGRES_DB and user_email and not conversation_id and message:
         # Generate title while we await the chat response.
         title_thread, title_result = _start_title_generation_thread(first_user_message=message)
 
@@ -137,6 +137,9 @@ def create_thread_message(thread_id):
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
+
+    if not POSTGRES_DB:
+        return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
     # Update DB (same semantics as chat mode)
     db_session = None
@@ -245,7 +248,7 @@ def create_chat_message():
     title_thread = None
     title_result = None
     conversation_title = None
-    if user_email and not conversation_id and messages:
+    if POSTGRES_DB and user_email and not conversation_id and messages:
         first_user_message = next(
             (m.get("content", "") for m in messages if m.get("role") == "user"),
             ""
@@ -262,6 +265,9 @@ def create_chat_message():
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
+
+    if not POSTGRES_DB:
+        return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
     # Update DB
     db_session = None
@@ -348,7 +354,6 @@ def load_conversation_by_permit():
 
     Ignores X-User-Email entirely.
     """
-
     try:
         token = extract_bearer_token(request.headers.get('Authorization'))
         if not token:
