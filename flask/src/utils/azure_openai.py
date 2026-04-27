@@ -92,6 +92,14 @@ class AzureOpenAIClient:
         self.top_n_documents = TOP_N_DOCUMENTS
         self.search_strictness = SEARCH_STRICTNESS
 
+    def close(self) -> None:
+        try:
+            close_fn = getattr(self.client, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
     def get_client(self):
         return self.client
 
@@ -259,14 +267,46 @@ class Agent(Chat):
         self.assistant_alt_id = ASSISTANT_ALT_ID
         self.project_name = AZURE_AIFOUNDRY_PROJECT_NAME
 
-        pooled_session = _create_pooled_requests_session()
-        transport = RequestsTransport(session=pooled_session)
+        self._session = _create_pooled_requests_session()
+        self._transport = RequestsTransport(session=self._session)
         self.project = AIProjectClient(
             credential=DefaultAzureCredential(),
             endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}",
-            transport=transport,
+            transport=self._transport,
         )
         # self.agent = self.project.agents.get_agent(self.assistant_id)
+
+        self._closed = False
+
+    def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+
+        try:
+            close_fn = getattr(self.project, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        try:
+            transport = getattr(self, "_transport", None)
+            close_fn = getattr(transport, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        try:
+            session = getattr(self, "_session", None)
+            close_fn = getattr(session, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        super().close()
 
     def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
