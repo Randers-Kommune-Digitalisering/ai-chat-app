@@ -3,6 +3,7 @@ import re
 from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
+from azure.core.pipeline.transport import RequestsTransport
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents.models import ListSortOrder
 import urllib
@@ -30,8 +31,28 @@ from utils.config import (
     TOP_P_VALUE,
     TEMPERATURE_VALUE,
     TOP_N_DOCUMENTS,
-    SEARCH_STRICTNESS
+    SEARCH_STRICTNESS,
+    REQUESTS_POOL_CONNECTIONS,
+    REQUESTS_POOL_MAXSIZE,
+    REQUESTS_POOL_BLOCK,
 )
+
+
+def _create_pooled_requests_session():
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    adapter = HTTPAdapter(
+        pool_connections=REQUESTS_POOL_CONNECTIONS,
+        pool_maxsize=REQUESTS_POOL_MAXSIZE,
+        pool_block=REQUESTS_POOL_BLOCK,
+        max_retries=0,
+    )
+
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 def get_chat_client():
@@ -237,9 +258,13 @@ class Agent(Chat):
         self.assistant_id = ASSISTANT_ID
         self.assistant_alt_id = ASSISTANT_ALT_ID
         self.project_name = AZURE_AIFOUNDRY_PROJECT_NAME
+
+        pooled_session = _create_pooled_requests_session()
+        transport = RequestsTransport(session=pooled_session)
         self.project = AIProjectClient(
             credential=DefaultAzureCredential(),
-            endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}"
+            endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}",
+            transport=transport,
         )
         # self.agent = self.project.agents.get_agent(self.assistant_id)
 
