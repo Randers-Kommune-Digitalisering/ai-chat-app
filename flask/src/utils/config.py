@@ -87,8 +87,8 @@ REQUESTS_POOL_BLOCK = os.environ.get('REQUESTS_POOL_BLOCK', 'False') in ['True',
 POSTGRES_USER = os.environ.get('POSTGRES_USER', '').strip()
 POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', '').strip()
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '').strip()
-POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '').strip()
-POSTGRES_DB = os.environ.get('POSTGRES_DB', '5432').strip()
+POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
+POSTGRES_DB = os.environ.get('POSTGRES_DB', '').strip()
 
 # Permit-based conversation loading (portal -> iframe chat-app)
 # The portal issues a short-lived RS256-signed JWT/JWS permit.
