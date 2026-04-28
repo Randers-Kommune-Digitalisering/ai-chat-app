@@ -74,7 +74,7 @@ ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'tr
 
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
-    REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 100))
+    REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 10))
 except ValueError:
     REQUESTS_POOL_CONNECTIONS = 100
 try:
