@@ -1,5 +1,6 @@
 import logging
 import threading
+import atexit
 from flask import Blueprint, jsonify, request
 import base64
 import io
@@ -28,6 +29,18 @@ logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
 db_client = get_db_client()
+
+
+def _close_azure_client() -> None:
+    try:
+        close_fn = getattr(azure_client, "close", None)
+        if callable(close_fn):
+            close_fn()
+    except Exception:
+        pass
+
+
+atexit.register(_close_azure_client)
 
 
 def _start_title_generation_thread(*, first_user_message: str):

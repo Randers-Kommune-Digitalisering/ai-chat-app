@@ -3,6 +3,7 @@ import re
 from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
+from azure.core.pipeline.transport import RequestsTransport
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents.models import ListSortOrder
 import urllib
@@ -30,8 +31,28 @@ from utils.config import (
     TOP_P_VALUE,
     TEMPERATURE_VALUE,
     TOP_N_DOCUMENTS,
-    SEARCH_STRICTNESS
+    SEARCH_STRICTNESS,
+    REQUESTS_POOL_CONNECTIONS,
+    REQUESTS_POOL_MAXSIZE,
+    REQUESTS_POOL_BLOCK,
 )
+
+
+def _create_pooled_requests_session():
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    adapter = HTTPAdapter(
+        pool_connections=REQUESTS_POOL_CONNECTIONS,
+        pool_maxsize=REQUESTS_POOL_MAXSIZE,
+        pool_block=REQUESTS_POOL_BLOCK,
+        max_retries=0,
+    )
+
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 def get_chat_client():
@@ -70,6 +91,14 @@ class AzureOpenAIClient:
         self.temperature = TEMPERATURE_VALUE
         self.top_n_documents = TOP_N_DOCUMENTS
         self.search_strictness = SEARCH_STRICTNESS
+
+    def close(self) -> None:
+        try:
+            close_fn = getattr(self.client, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
 
     def get_client(self):
         return self.client
@@ -237,11 +266,47 @@ class Agent(Chat):
         self.assistant_id = ASSISTANT_ID
         self.assistant_alt_id = ASSISTANT_ALT_ID
         self.project_name = AZURE_AIFOUNDRY_PROJECT_NAME
+
+        self._session = _create_pooled_requests_session()
+        self._transport = RequestsTransport(session=self._session)
         self.project = AIProjectClient(
             credential=DefaultAzureCredential(),
-            endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}"
+            endpoint=f"https://sc-oai-it.services.ai.azure.com/api/projects/{self.project_name}",
+            transport=self._transport,
         )
         # self.agent = self.project.agents.get_agent(self.assistant_id)
+
+        self._closed = False
+
+    def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+
+        try:
+            close_fn = getattr(self.project, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        try:
+            transport = getattr(self, "_transport", None)
+            close_fn = getattr(transport, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        try:
+            session = getattr(self, "_session", None)
+            close_fn = getattr(session, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
+        super().close()
 
     def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
