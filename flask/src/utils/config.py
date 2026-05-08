@@ -89,6 +89,7 @@ POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', '').strip()
 POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '').strip()
 POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
 POSTGRES_DB = os.environ.get('POSTGRES_DB', '').strip()
+USE_DB = all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT])
 
 # Permit-based conversation loading (portal -> iframe chat-app)
 # The portal issues a short-lived RS256-signed JWT/JWS permit.

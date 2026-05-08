@@ -1,14 +1,15 @@
 import datetime
 import re
+import logging
 from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
+from azure.ai.agents.models import RunStatus
+from azure.ai.agents.models import ListSortOrder
 from azure.core.pipeline.transport import RequestsTransport
 from azure.identity import DefaultAzureCredential
-from azure.ai.agents.models import ListSortOrder
 import urllib
 from utils.extract_filedata import extract_text_from_file
-
 from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
     AZURE_AISEARCH_INDEX_NAME,
@@ -36,6 +37,8 @@ from utils.config import (
     REQUESTS_POOL_MAXSIZE,
     REQUESTS_POOL_BLOCK,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _create_pooled_requests_session():
@@ -310,7 +313,8 @@ class Agent(Chat):
 
     def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
-            return {"role": "assistant", "content": "Error: No thread_id provided for Agent. Please create a thread first."}, []
+            logger.error("Thread ID is required for fetching chat response in Agent mode.")
+            return None, []
 
         # Append document text to the last user message if available
         request_message = chat_message
@@ -321,17 +325,24 @@ class Agent(Chat):
                 doc_text = extract_text_from_file(file)
                 request_message = f"{request_message}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
 
+        run_list = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+        if any(run.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value] for run in run_list):
+            logger.error(f"A run is already active for thread_id {thread_id}. Cannot start a new run until the current one finishes.")
+            return None, []  # Return early to avoid creating a new run if one is already active
+
         self.project.agents.messages.create(
             thread_id=thread_id,
             role="user",
             content=request_message
         )
+
         run = self.project.agents.runs.create_and_process(
             thread_id=thread_id,
             agent_id=self.assistant_id if not use_alt else self.assistant_alt_id
         )
+
         if run.status == "failed":
-            print(f"Run failed: {run.last_error}")
+            logger.error(f"Run failed: {run.last_error}")
             return None, []
         else:
             messages = self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)

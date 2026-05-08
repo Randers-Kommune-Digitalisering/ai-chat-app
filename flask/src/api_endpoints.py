@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client, get_title_generator
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, POSTGRES_DB
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, metrics_base_labels
@@ -102,9 +102,9 @@ def create_thread_message(thread_id):
     conversation_id = request.json.get("conversation_id")
     user_email = request.headers.get("X-User-Email") or "guest"
     if not thread_id:
-        return jsonify({"success": False, "message": "thread_id is required"}), 400
+        return jsonify({"success": False, "message": "Der opstod en fejl. Start en ny samtale, genindlæs siden eller prøv igen senere."}), 400
     if not message:
-        return jsonify({"success": False, "message": "Message is required"}), 400
+        return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
 
     # Normalize conversation_id (frontend may send it as a string)
     if conversation_id in ("", None):
@@ -113,7 +113,7 @@ def create_thread_message(thread_id):
         try:
             conversation_id = int(conversation_id)
         except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "conversation_id must be an integer"}), 400
+            return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
 
     chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
 
@@ -123,7 +123,7 @@ def create_thread_message(thread_id):
     title_thread = None
     title_result = None
     conversation_title = None
-    if POSTGRES_DB and user_email and not conversation_id and message:
+    if USE_DB and user_email and not conversation_id and message:
         # Generate title while we await the chat response.
         title_thread, title_result = _start_title_generation_thread(first_user_message=message)
 
@@ -146,12 +146,12 @@ def create_thread_message(thread_id):
     try:
         response, refs = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
         if not response:
-            return jsonify({"success": False, "message": "Failed to fetch response from Azure"}), 500
+            return jsonify({"success": False, "message": "Der opstod en fejl under hentning af assistentens svar. Genindlæs siden eller prøv igen senere."}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
+        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline. Genindlæs siden eller prøv igen senere."}), 500
 
-    if not POSTGRES_DB:
+    if not USE_DB:
         return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
     # Update DB (same semantics as chat mode)
@@ -261,7 +261,7 @@ def create_chat_message():
     title_thread = None
     title_result = None
     conversation_title = None
-    if POSTGRES_DB and user_email and not conversation_id and messages:
+    if USE_DB and user_email and not conversation_id and messages:
         first_user_message = next(
             (m.get("content", "") for m in messages if m.get("role") == "user"),
             ""
@@ -279,7 +279,7 @@ def create_chat_message():
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
 
-    if not POSTGRES_DB:
+    if not USE_DB:
         return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
     # Update DB
