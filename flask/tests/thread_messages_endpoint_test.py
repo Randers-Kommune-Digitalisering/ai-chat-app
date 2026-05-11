@@ -61,7 +61,7 @@ def test_thread_messages_db_unavailable_still_returns_success(client):
         return_value=(dummy_thread, title_result),
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=("assistant reply", [{"url": "https://example.com"}]),
+        return_value=("assistant reply", [{"url": "https://example.com"}], None),
     ), patch(
         "api_endpoints.db_client.get_session",
         side_effect=Exception("db down"),
@@ -94,7 +94,7 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
         return_value=(dummy_thread, title_result),
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=("assistant reply", []),
+        return_value=("assistant reply", [], None),
     ), patch(
         "api_endpoints.db_client.get_session",
         return_value=db_session,
@@ -141,7 +141,7 @@ def test_thread_messages_create_conversation_fails_still_returns_success_with_ti
         return_value=(dummy_thread, title_result),
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=("assistant reply", []),
+        return_value=("assistant reply", [], None),
     ), patch(
         "api_endpoints.db_client.get_session",
         return_value=db_session,
@@ -182,7 +182,7 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
         return_value=(dummy_thread, title_result),
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=("assistant reply", []),
+        return_value=("assistant reply", [], None),
     ), patch(
         "api_endpoints.db_client.get_session",
         return_value=db_session,

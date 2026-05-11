@@ -72,6 +72,12 @@ FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
 
 ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
 
+# Max length of the user message (currently including any appended document content) to prevent Azure OpenAI rejections
+try:
+    MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 285632))
+except ValueError:
+    MAX_MESSAGE_LENGTH = 285632
+
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
     REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 10))

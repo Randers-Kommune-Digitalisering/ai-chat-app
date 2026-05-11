@@ -36,6 +36,8 @@ from utils.config import (
     REQUESTS_POOL_CONNECTIONS,
     REQUESTS_POOL_MAXSIZE,
     REQUESTS_POOL_BLOCK,
+
+    MAX_MESSAGE_LENGTH,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,6 +179,11 @@ class Chat(AzureOpenAIClient):
                     request_message["content"] = f"{request_message['content']}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
             request_messages.append(request_message)
 
+        # Return early if message exceeds maximum length
+        message_length = len(request_message)
+        if message_length > MAX_MESSAGE_LENGTH:
+            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
+
         response = self.client.chat.completions.create(
             messages=request_messages,
             temperature=self.temperature,
@@ -254,7 +261,7 @@ class Chat(AzureOpenAIClient):
                 # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
                 assistant_response = re.sub(r'(\[\d+\]){2,}', self.sort_refs, assistant_response)
 
-        return assistant_response, referenced_citations if 'referenced_citations' in locals() else []
+        return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None
 
     def parse_urlencoding(self, s):
         if not s:
@@ -314,7 +321,7 @@ class Agent(Chat):
     def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
             logger.error("Thread ID is required for fetching chat response in Agent mode.")
-            return None, []
+            return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale."  # Return early if thread_id is missing
 
         # Append document text to the last user message if available
         request_message = chat_message
@@ -325,10 +332,16 @@ class Agent(Chat):
                 doc_text = extract_text_from_file(file)
                 request_message = f"{request_message}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
 
+        # Return early if message exceeds maximum length
+        message_length = len(request_message)
+        if message_length > MAX_MESSAGE_LENGTH:
+            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
+
+        # Return early to avoid creating a new run if one is already active
         run_list = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
         if any(run.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value] for run in run_list):
             logger.error(f"A run is already active for thread_id {thread_id}. Cannot start a new run until the current one finishes.")
-            return None, []  # Return early to avoid creating a new run if one is already active
+            return None, [], "Assistenten er allerede ved at svare på denne samtale. Prøv at genindlæse siden, eller start en ny samtale."
 
         self.project.agents.messages.create(
             thread_id=thread_id,
@@ -343,7 +356,7 @@ class Agent(Chat):
 
         if run.status == "failed":
             logger.error(f"Run failed: {run.last_error}")
-            return None, []
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
         else:
             messages = self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
 
@@ -395,7 +408,7 @@ class Agent(Chat):
         # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
         # text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
 
-        return text_value, citations
+        return text_value, citations, None
 
     def create_thread(self):
         thread = self.project.agents.threads.create()

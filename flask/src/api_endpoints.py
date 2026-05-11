@@ -144,9 +144,9 @@ def create_thread_message(thread_id):
 
     # Get response from Azure
     try:
-        response, refs = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
+        response, refs, error_message = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
         if not response:
-            return jsonify({"success": False, "message": "Der opstod en fejl under hentning af assistentens svar. Genindlæs siden eller prøv igen senere."}), 500
+            return jsonify({"success": False, "message": error_message}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Assistenten ser ud til at være offline. Genindlæs siden eller prøv igen senere."}), 500
@@ -272,9 +272,9 @@ def create_chat_message():
 
     # Get response from Azure
     try:
-        response, refs = azure_client.fetch_chat_response(messages)
+        response, refs, error_message = azure_client.fetch_chat_response(messages)
         if not response:
-            return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
+            return jsonify({"success": False, "message": error_message}), 500
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
