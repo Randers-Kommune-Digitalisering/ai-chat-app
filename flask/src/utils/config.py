@@ -74,9 +74,9 @@ ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'tr
 
 # Max length of the user message (currently including any appended document content) to prevent Azure OpenAI rejections
 try:
-    MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 285632))
+    MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 256000))
 except ValueError:
-    MAX_MESSAGE_LENGTH = 285632
+    MAX_MESSAGE_LENGTH = 256000
 
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
