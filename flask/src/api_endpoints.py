@@ -89,8 +89,18 @@ def get_config():
 
 @api_endpoints.route('/threads', methods=['POST'])
 def create_thread():
-    thread_id = azure_client.create_thread()
-    return jsonify({"success": True, "message": "Thread created successfully", "thread_id": thread_id})
+    try:
+        thread_id = azure_client.create_thread()
+        return jsonify({"success": True, "message": "Thread created successfully", "thread_id": thread_id})
+    except Exception as e:
+        logger.error(f"Error creating thread: {e}", exc_info=True)
+        return (
+            jsonify({
+                "success": False,
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+            }),
+            503,
+        )
 
 
 # Endpoint to handle messages in a thread (Agent mode)
@@ -144,12 +154,23 @@ def create_thread_message(thread_id):
 
     # Get response from Azure
     try:
-        response, refs, error_message = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
+        azure_result = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
+        if isinstance(azure_result, tuple) and len(azure_result) == 4:
+            response, refs, error_message, azure_status = azure_result
+        else:
+            response, refs, error_message = azure_result
+            azure_status = None
         if not response:
-            return jsonify({"success": False, "message": error_message}), 500
+            return (
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                int(azure_status or 500),
+            )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline. Genindlæs siden eller prøv igen senere."}), 500
+        return (
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            503,
+        )
 
     if not USE_DB:
         return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
@@ -272,12 +293,23 @@ def create_chat_message():
 
     # Get response from Azure
     try:
-        response, refs, error_message = azure_client.fetch_chat_response(messages)
+        azure_result = azure_client.fetch_chat_response(messages)
+        if isinstance(azure_result, tuple) and len(azure_result) == 4:
+            response, refs, error_message, azure_status = azure_result
+        else:
+            response, refs, error_message = azure_result
+            azure_status = None
         if not response:
-            return jsonify({"success": False, "message": error_message}), 500
+            return (
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                int(azure_status or 500),
+            )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
-        return jsonify({"success": False, "message": "Assistenten ser ud til at være offline, prøv igen senere."}), 500
+        return (
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            503,
+        )
 
     if not USE_DB:
         return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})

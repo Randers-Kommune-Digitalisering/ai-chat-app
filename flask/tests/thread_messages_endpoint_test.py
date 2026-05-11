@@ -212,3 +212,16 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
     assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "agent"
     mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
+
+
+def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client):
+    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen om lidt.", 429),
+    ):
+        res = _post_thread_message(client, thread_id="thr_rate", message="Hi")
+
+    assert res.status_code == 429
+    body = res.get_json()
+    assert body["success"] is False
+    assert "travl" in body["message"].lower()

@@ -1,12 +1,16 @@
 import datetime
 import re
 import logging
+import random
+import time
+from json import JSONDecodeError
 from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.ai.agents.models import RunStatus
 from azure.ai.agents.models import ListSortOrder
 from azure.core.pipeline.transport import RequestsTransport
+from azure.core.exceptions import ServiceRequestError
 from azure.identity import DefaultAzureCredential
 import urllib
 from utils.extract_filedata import extract_text_from_file
@@ -41,6 +45,102 @@ from utils.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+def _safe_status_code(exc: Exception):
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    response = getattr(exc, "response", None)
+    for attr in ("status_code", "status", "http_status"):
+        val = getattr(response, attr, None) if response is not None else None
+        if isinstance(val, int):
+            return val
+    return None
+
+
+def _is_retryable_exception(exc: Exception) -> bool:
+    if isinstance(exc, (ServiceRequestError, TimeoutError)):
+        return True
+    if isinstance(exc, JSONDecodeError):
+        # Azure SDK sometimes returns a non-JSON/empty body on 5xx, which blows up
+        # when the SDK tries to deserialize an error model.
+        return True
+
+    status_code = _safe_status_code(exc)
+    if status_code in _RETRYABLE_STATUS_CODES:
+        return True
+
+    msg = str(exc or "").lower()
+    if "internal server error" in msg or "status 'internal server error'" in msg:
+        return True
+    if "timeout" in msg or "timed out" in msg or "temporarily" in msg:
+        return True
+    return False
+
+
+def _error_to_user_message_and_status(exc: Exception):
+    status_code = _safe_status_code(exc)
+
+    # Default mapping
+    user_status = 503 if _is_retryable_exception(exc) else 500
+    user_message = "Assistenten havde en midlertidig fejl. Prøv igen om lidt."
+
+    if status_code == 429:
+        return "Assistenten er travl lige nu. Prøv igen om lidt.", 429
+
+    if status_code is not None and 400 <= status_code < 500:
+        # Client/request issues — don't encourage retries.
+        if status_code in (401, 403):
+            return "Assistenten er ikke korrekt konfigureret. Prøv igen senere.", 503
+        if status_code == 404:
+            return "Der opstod en fejl med samtalen. Start en ny samtale og prøv igen.", 400
+        return "Der opstod en fejl i forespørgslen. Genindlæs siden eller prøv igen senere.", 400
+
+    # Retryable 5xx and network-type errors
+    if _is_retryable_exception(exc):
+        return "Assistenten havde en midlertidig fejl. Prøv igen om lidt.", user_status
+
+    return user_message, user_status
+
+
+def _call_with_retries(*, operation: str, func, max_retries: int = 2, base_delay_s: float = 0.4):
+    attempt = 0
+    while True:
+        try:
+            return func()
+        except Exception as exc:
+            retryable = _is_retryable_exception(exc)
+            status_code = _safe_status_code(exc)
+
+            if retryable and attempt < max_retries:
+                delay = base_delay_s * (2**attempt) + random.uniform(0.0, 0.25)
+                logger.warning(
+                    "Azure op failed (op=%s attempt=%s/%s status=%s): %s; retrying in %.2fs",
+                    operation,
+                    attempt + 1,
+                    max_retries + 1,
+                    status_code,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            logger.error(
+                "Azure op failed (op=%s attempts=%s status=%s): %s",
+                operation,
+                attempt + 1,
+                status_code,
+                exc,
+                exc_info=True,
+            )
+            raise
 
 
 def _create_pooled_requests_session():
@@ -180,17 +280,36 @@ class Chat(AzureOpenAIClient):
             request_messages.append(request_message)
 
         # Return early if message exceeds maximum length
-        message_length = len(request_message)
-        if message_length > MAX_MESSAGE_LENGTH:
-            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
-
-        response = self.client.chat.completions.create(
-            messages=request_messages,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            model=self.deployment_name,
-            extra_body=ai_search_body
+        total_chars = sum(
+            len(m.get("content", ""))
+            for m in request_messages
+            if isinstance(m, dict) and isinstance(m.get("content"), str)
         )
+        message_length = total_chars
+        if message_length > MAX_MESSAGE_LENGTH:
+            has_files = bool(files)
+            return (
+                None,
+                [],
+                f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
+                400,
+            )
+
+        try:
+            response = _call_with_retries(
+                operation="openai.chat.completions.create",
+                func=lambda: self.client.chat.completions.create(
+                    messages=request_messages,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    model=self.deployment_name,
+                    extra_body=ai_search_body,
+                ),
+                max_retries=2,
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc)
+            return None, [], msg, status
 
         if response and hasattr(response, "choices") and len(response.choices) > 0:
             choice = response.choices[0]
@@ -261,7 +380,7 @@ class Chat(AzureOpenAIClient):
                 # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
                 assistant_response = re.sub(r'(\[\d+\]){2,}', self.sort_refs, assistant_response)
 
-        return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None
+        return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None, 200
 
     def parse_urlencoding(self, s):
         if not s:
@@ -321,7 +440,7 @@ class Agent(Chat):
     def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
         if not thread_id:
             logger.error("Thread ID is required for fetching chat response in Agent mode.")
-            return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale."  # Return early if thread_id is missing
+            return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale.", 400  # Return early if thread_id is missing
 
         # Append document text to the last user message if available
         request_message = chat_message
@@ -335,30 +454,88 @@ class Agent(Chat):
         # Return early if message exceeds maximum length
         message_length = len(request_message)
         if message_length > MAX_MESSAGE_LENGTH:
-            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
+            has_files = bool(files)
+            return (
+                None,
+                [],
+                f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
+                400,
+            )
 
         # Return early to avoid creating a new run if one is already active
-        run_list = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+        try:
+            run_list = _call_with_retries(
+                operation="agents.runs.list",
+                func=lambda: self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
+                max_retries=2,
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc)
+            return None, [], msg, status
+
         if any(run.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value] for run in run_list):
             logger.error(f"A run is already active for thread_id {thread_id}. Cannot start a new run until the current one finishes.")
-            return None, [], "Assistenten er allerede ved at svare på denne samtale. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Assistenten er allerede ved at svare på denne samtale. Prøv at genindlæse siden, eller start en ny samtale.", 409
 
-        self.project.agents.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=request_message
-        )
+        try:
+            # Avoid retrying message creation to prevent duplicate user messages.
+            self.project.agents.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=request_message,
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc)
+            return None, [], msg, status
 
-        run = self.project.agents.runs.create_and_process(
-            thread_id=thread_id,
-            agent_id=self.assistant_id if not use_alt else self.assistant_alt_id
-        )
+        def _create_run_once():
+            return self.project.agents.runs.create_and_process(
+                thread_id=thread_id,
+                agent_id=self.assistant_id if not use_alt else self.assistant_alt_id,
+            )
+
+        try:
+            # Retry transient 5xx/429/etc. If a run actually started, don't create a second run.
+            try:
+                run = _call_with_retries(
+                    operation="agents.runs.create_and_process",
+                    func=_create_run_once,
+                    max_retries=1,
+                )
+            except Exception as exc:
+                if _is_retryable_exception(exc):
+                    try:
+                        run_list_after = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+                        if any(
+                            r.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value]
+                            for r in run_list_after
+                        ):
+                            return (
+                                None,
+                                [],
+                                "Assistenten er ved at behandle din besked. Prøv at genindlæse siden om lidt.",
+                                409,
+                            )
+                    except Exception:
+                        pass
+                raise
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc)
+            return None, [], msg, status
 
         if run.status == "failed":
             logger.error(f"Run failed: {run.last_error}")
-            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale.", 503
         else:
-            messages = self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+            try:
+                messages = _call_with_retries(
+                    operation="agents.messages.list",
+                    func=lambda: self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
+                    max_retries=2,
+                )
+            except Exception as exc:
+                msg, status = _error_to_user_message_and_status(exc)
+                return None, [], msg, status
 
         assistant_message = next(  # Find the latest assistant message in the thread
             (
@@ -409,7 +586,7 @@ class Agent(Chat):
                 thread_id,
                 getattr(run, "status", None),
             )
-            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale.", 502
 
         # Remove spaces between consecutive references (e.g., [1] [2] [3] -> [1][2][3])
         # text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
@@ -417,10 +594,14 @@ class Agent(Chat):
         # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
         # text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
 
-        return text_value, citations, None
+        return text_value, citations, None, 200
 
     def create_thread(self):
-        thread = self.project.agents.threads.create()
+        thread = _call_with_retries(
+            operation="agents.threads.create",
+            func=lambda: self.project.agents.threads.create(),
+            max_retries=2,
+        )
         return thread.id
 
 

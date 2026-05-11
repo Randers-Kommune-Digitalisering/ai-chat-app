@@ -66,7 +66,7 @@ def test_agent_fetch_chat_response_returns_early_when_run_active():
     agent = Agent.__new__(Agent)
     agent.project = _Project([RunStatus.IN_PROGRESS.value])
 
-    response, refs, error_message = agent.fetch_chat_response(
+    response, refs, error_message, status = agent.fetch_chat_response(
         chat_message="hello",
         files=[],
         thread_id="thread_test",
@@ -76,6 +76,7 @@ def test_agent_fetch_chat_response_returns_early_when_run_active():
     assert response is None
     assert refs == []
     assert error_message is not None
+    assert status == 409
 
 
 def test_agent_fetch_chat_response_returns_error_when_no_assistant_message():
@@ -85,7 +86,7 @@ def test_agent_fetch_chat_response_returns_error_when_no_assistant_message():
     agent.assistant_id = "assistant_test"
     agent.assistant_alt_id = "assistant_alt_test"
 
-    response, refs, error_message = agent.fetch_chat_response(
+    response, refs, error_message, status = agent.fetch_chat_response(
         chat_message="hello",
         files=[],
         thread_id="thread_test",
@@ -95,3 +96,4 @@ def test_agent_fetch_chat_response_returns_error_when_no_assistant_message():
     assert response is None
     assert refs == []
     assert error_message is not None
+    assert status == 502
