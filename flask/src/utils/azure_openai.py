@@ -376,6 +376,7 @@ class Agent(Chat):
 
         text_value = ""
         annotations = []
+        citations = []
         if assistant_message:
             for content_block in assistant_message.content:
                 # Extract the text value from the first content block of type 'text'
@@ -386,8 +387,6 @@ class Agent(Chat):
                         if hasattr(text_obj, "annotations"):
                             annotations = text_obj.annotations
                         break
-
-            citations = []
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
@@ -401,6 +400,14 @@ class Agent(Chat):
 
                 for ref in citation["refs"]:
                     text_value = text_value.replace(citation["replace_refs"], "")  # Replace with f"[{ref}]" if needed
+
+        else:
+            logger.error(
+                "No assistant text message returned for thread_id %s (run status=%s)",
+                thread_id,
+                getattr(run, "status", None),
+            )
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
 
         # Remove spaces between consecutive references (e.g., [1] [2] [3] -> [1][2][3])
         # text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
