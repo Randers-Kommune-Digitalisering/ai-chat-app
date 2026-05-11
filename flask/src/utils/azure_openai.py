@@ -377,6 +377,8 @@ class Agent(Chat):
         text_value = ""
         annotations = []
         citations = []
+
+        # Loop content blocks to extract assistant response and citations
         if assistant_message:
             for content_block in assistant_message.content:
                 # Extract the text value from the first content block of type 'text'
@@ -387,6 +389,7 @@ class Agent(Chat):
                         if hasattr(text_obj, "annotations"):
                             annotations = text_obj.annotations
                         break
+
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
@@ -398,8 +401,7 @@ class Agent(Chat):
                 if citation not in citations:
                     citations.append(citation)
 
-                for ref in citation["refs"]:
-                    text_value = text_value.replace(citation["replace_refs"], "")  # Replace with f"[{ref}]" if needed
+                text_value = text_value.replace(citation["replace_refs"], "")  # Remove original ref from response text
 
         else:
             logger.error(
