@@ -13,6 +13,7 @@ from azure.core.pipeline.transport import RequestsTransport
 from azure.core.exceptions import ServiceRequestError
 from azure.identity import DefaultAzureCredential
 import urllib
+import tiktoken
 from utils.extract_filedata import extract_text_from_file
 from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
@@ -29,6 +30,9 @@ from utils.config import (
     ASSISTANT_TYPE,
     ASSISTANT_ID,
     ASSISTANT_ALT_ID,
+    DEFAULT_TOKEN_ENCODING,
+    MAX_TOKEN_LIMIT_HISTORY,
+    MAX_TOKEN_LIMIT_MESSAGE,
 
     USE_GENERAL_KNOWLEDGE,
     EMPHASIZE_RECENT_CONTENT,
@@ -279,19 +283,33 @@ class Chat(AzureOpenAIClient):
                     request_message["content"] = f"{request_message['content']}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
             request_messages.append(request_message)
 
-        # Return early if message exceeds maximum length
-        total_chars = sum(
-            len(m.get("content", ""))
-            for m in request_messages
-            if isinstance(m, dict) and isinstance(m.get("content"), str)
-        )
-        message_length = total_chars
-        if message_length > MAX_MESSAGE_LENGTH:
+        # Return early if message(s) exceeds maximum token length
+        try:
+            encoding = tiktoken.encoding_for_model(self.deployment_name)
+        except KeyError:
+            encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
+
+        message_tokens = len(encoding.encode(request_messages[-1]["content"]))
+        if message_tokens > MAX_TOKEN_LIMIT_MESSAGE:
             has_files = bool(files)
             return (
                 None,
                 [],
                 f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
+                400,
+            )
+        total_tokens = sum(
+            len(encoding.encode(m.get("content", "")))
+            for m in request_messages
+            if isinstance(m, dict) and isinstance(m.get("content"), str)
+        )
+        message_length = total_tokens
+        if message_length > MAX_TOKEN_LIMIT_HISTORY:
+            has_files = bool(files)
+            return (
+                None,
+                [],
+                f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Overvej at starte en ny samtale.",
                 400,
             )
 

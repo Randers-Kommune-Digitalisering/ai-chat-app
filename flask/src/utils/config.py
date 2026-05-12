@@ -72,11 +72,25 @@ FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
 
 ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
 
-# Max length of the user message (currently including any appended document content) to prevent Azure OpenAI rejections
+# Max length of the user message when using Agent-mode (currently including any appended document content)
 try:
     MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 256000))
 except ValueError:
     MAX_MESSAGE_LENGTH = 256000
+
+# Max token limit for chat history when using Chat-mode (including any appended document content)
+try:
+    MAX_TOKEN_LIMIT_HISTORY = int(os.environ.get('MAX_TOKEN_LIMIT', 1000000))
+except ValueError:
+    MAX_TOKEN_LIMIT_HISTORY = 1000000
+
+# Max token limit for each user message when using Chat-mode (currently including any appended document content)
+try:
+    MAX_TOKEN_LIMIT_MESSAGE = int(os.environ.get('MAX_TOKEN_LIMIT_MESSAGE', 129024))
+except ValueError:
+    MAX_TOKEN_LIMIT_MESSAGE = 129024
+
+DEFAULT_TOKEN_ENCODING = os.environ.get('DEFAULT_TOKEN_ENCODING', 'cl100k_base').strip()  # Used for token counting, e.g. with tiktoken
 
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
