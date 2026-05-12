@@ -24,6 +24,7 @@ def test_create_thread_returns_503_on_azure_exception(client):
     with patch(
         "api_endpoints.azure_client.create_thread",
         side_effect=JSONDecodeError("Expecting value", "", 0),
+        create=True,
     ):
         res = client.post("/api/threads")
 
