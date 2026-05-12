@@ -291,7 +291,7 @@ class Chat(AzureOpenAIClient):
 
         message_tokens = len(encoding.encode(request_messages[-1]["content"]))
         if message_tokens > MAX_TOKEN_LIMIT_MESSAGE:
-            has_files = bool(files)
+            has_files = bool(chat_message.get("files"))
             return (
                 None,
                 [],
@@ -305,7 +305,7 @@ class Chat(AzureOpenAIClient):
         )
         message_length = total_tokens
         if message_length > MAX_TOKEN_LIMIT_HISTORY:
-            has_files = bool(files)
+            has_files = bool(any(m.get("files") for m in chat_messages if m.get("role") == "user"))
             return (
                 None,
                 [],
