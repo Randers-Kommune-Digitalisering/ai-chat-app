@@ -164,6 +164,10 @@ def _create_pooled_requests_session():
     return session
 
 
+def _desanitize_metadata_value(value):
+    return urllib.parse.unquote(value)
+
+
 def get_chat_client():
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
@@ -172,10 +176,6 @@ def get_chat_client():
 
 def get_title_generator():
     return AzureOpenAITitleGenerator()
-
-
-def desanitize_metadata_value(value):
-    return urllib.parse.unquote(value)
 
 
 class AzureOpenAIClient:
@@ -367,7 +367,7 @@ class Chat(AzureOpenAIClient):
 
                 # Update titles for referenced citations only once
                 for idx, item in enumerate(referenced_citations):
-                    old_title = desanitize_metadata_value(item.get('title'))
+                    old_title = _desanitize_metadata_value(item.get('title'))
                     item["title"] = f"[{idx + 1}] {old_title}"
 
                 # Update assistant response with new reference numbers
@@ -584,7 +584,7 @@ class Agent(Chat):
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
-                citation["title"] = desanitize_metadata_value(citation.get("title", ""))
+                citation["title"] = _desanitize_metadata_value(citation.get("title", ""))
 
                 # Find the index of the citation URL in the unique list of annotation URLs
                 citation["refs"] = [i + 1 for i, a in enumerate(annotations) if a.get("url_citation") and a.get("url_citation").get("url") == citation.get("url")]
