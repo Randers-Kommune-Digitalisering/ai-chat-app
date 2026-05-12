@@ -13,6 +13,7 @@ from azure.core.pipeline.transport import RequestsTransport
 from azure.core.exceptions import ServiceRequestError
 from azure.identity import DefaultAzureCredential
 import urllib
+import requests
 import tiktoken
 from utils.extract_filedata import extract_text_from_file
 from utils.config import (
@@ -49,12 +50,16 @@ from utils.config import (
 )
 
 logger = logging.getLogger(__name__)
-
-
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
-def _safe_status_code(exc: Exception):
+def _safe_status_code(exc: Exception) -> int | None:
+    """
+    Safely extract the status code from an exception.
+
+    :param exc: The exception to extract the status code from.
+    :return: The status code if found, otherwise None.
+    """
     status_code = getattr(exc, "status_code", None)
     if isinstance(status_code, int):
         return status_code
@@ -68,6 +73,12 @@ def _safe_status_code(exc: Exception):
 
 
 def _is_retryable_exception(exc: Exception) -> bool:
+    """
+    Determine if an exception is retryable.
+
+    :param exc: The exception to check.
+    :return: True if the exception is retryable, False otherwise.
+    """
     if isinstance(exc, (ServiceRequestError, TimeoutError)):
         return True
     if isinstance(exc, JSONDecodeError):
@@ -87,7 +98,13 @@ def _is_retryable_exception(exc: Exception) -> bool:
     return False
 
 
-def _error_to_user_message_and_status(exc: Exception):
+def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
+    """
+    Convert an exception to a user-friendly message and HTTP status code.
+
+    :param exc: The exception to convert.
+    :return: A tuple containing the user-friendly message and HTTP status code.
+    """
     status_code = _safe_status_code(exc)
 
     # Default mapping
@@ -113,6 +130,16 @@ def _error_to_user_message_and_status(exc: Exception):
 
 
 def _call_with_retries(*, operation: str, func, max_retries: int = 2, base_delay_s: float = 0.4):
+    """
+    Call a function with retries for retryable exceptions.
+
+    :param operation: The name of the operation being performed.
+    :param func: The function to call.
+    :param max_retries: The maximum number of retries.
+    :param base_delay_s: The base delay between retries in seconds.
+    :return: The result of the function call.
+    :raises: The last exception if all retries fail.
+    """
     attempt = 0
     while True:
         try:
@@ -147,7 +174,12 @@ def _call_with_retries(*, operation: str, func, max_retries: int = 2, base_delay
             raise
 
 
-def _create_pooled_requests_session():
+def _create_pooled_requests_session() -> requests.Session:
+    """
+    Create a requests session with a connection pool.
+
+    :return: A requests session with a connection pool.
+    """
     import requests
     from requests.adapters import HTTPAdapter
 
@@ -164,18 +196,8 @@ def _create_pooled_requests_session():
     return session
 
 
-def _desanitize_metadata_value(value):
+def _desanitize_metadata_value(value: str) -> str:
     return urllib.parse.unquote(value)
-
-
-def get_chat_client():
-    if ASSISTANT_TYPE.lower() == "agent":
-        return Agent()
-    return Chat()
-
-
-def get_title_generator():
-    return AzureOpenAITitleGenerator()
 
 
 class AzureOpenAIClient:
@@ -202,6 +224,9 @@ class AzureOpenAIClient:
         self.search_strictness = SEARCH_STRICTNESS
 
     def close(self) -> None:
+        """
+        Close any resources held by the client, such as sessions or connections.
+        """
         try:
             close_fn = getattr(self.client, "close", None)
             if callable(close_fn):
@@ -239,7 +264,16 @@ class Chat(AzureOpenAIClient):
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
+    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from Azure OpenAI ChatCompletions, optionally using Azure Search for retrieval-augmented generation.
+
+        :param chat_messages: A list of chat messages in the conversation history.
+        :param files: Optional list of files uploaded by the user, to be included as context.
+        :param thread_id: Optional thread ID for agent mode (not used in this Chat implementation).
+        :param use_alt: Optional flag to use an alternative assistant configuration (not used in this Chat implementation).
+        :return: A tuple containing the assistant response, list of referenced citations, error message (if any), and HTTP status code.
+        """
         ai_search_body = {
             "data_sources": [
                 {
@@ -401,13 +435,19 @@ class Chat(AzureOpenAIClient):
         return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None, 200
 
     def parse_urlencoding(self, s):
+        """
+        Decode a URL-encoded string.
+
+        :param s: The URL-encoded string to decode.
+        :return: The decoded string.
+        """
         if not s:
             return s
         import urllib.parse
         return urllib.parse.unquote(s)
 
 
-class Agent(Chat):
+class Agent(AzureOpenAIClient):
     def __init__(self):
         super().__init__()
         self.assistant_id = ASSISTANT_ID
@@ -426,6 +466,9 @@ class Agent(Chat):
         self._closed = False
 
     def close(self) -> None:
+        """
+        Close any resources held by the client, such as sessions or connections.
+        """
         if getattr(self, "_closed", False):
             return
         self._closed = True
@@ -455,7 +498,17 @@ class Agent(Chat):
 
         super().close()
 
-    def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
+    def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from Azure OpenAI Agents, by creating a new message and run in the specified thread,
+        then retrieving the assistant's response message and any citations.
+
+        :param chat_message: The latest user message to send to the agent.
+        :param files: Optional list of files uploaded by the user, to be included as context.
+        :param thread_id: The thread ID for the conversation.
+        :param use_alt: Optional flag to use an alternative assistant configuration.
+        :return: A tuple containing the assistant's response, any referenced citations, an error message if applicable, and the HTTP status code.
+        """
         if not thread_id:
             logger.error("Thread ID is required for fetching chat response in Agent mode.")
             return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale.", 400  # Return early if thread_id is missing
@@ -602,15 +655,14 @@ class Agent(Chat):
             )
             return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale.", 502
 
-        # Remove spaces between consecutive references (e.g., [1] [2] [3] -> [1][2][3])
-        # text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
-
-        # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
-        # text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
-
         return text_value, citations, None, 200
 
-    def create_thread(self):
+    def create_thread(self) -> str:
+        """
+        Create a new thread for the Agent conversation.'
+
+        :return: The string ID of the newly created thread.
+        """
         thread = _call_with_retries(
             operation="agents.threads.create",
             func=lambda: self.project.agents.threads.create(),
@@ -629,6 +681,12 @@ class AzureOpenAITitleGenerator():
         self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION
 
     def generate_title(self, conversation_messages):
+        """
+        Generate a short title for a conversation based on the user's first message.
+
+        :param conversation_messages: A list of messages in the conversation.
+        :return: A string containing the generated title.
+        """
         system_prompt = {
             "role": "system",
             "content": "Du er en hjælpsom assistent, der genererer korte og præcise titler (maksimalt 24 tegn) til samtaler baseret på brugerens første besked. Titlen skal være på dansk og opsummere samtalens emne uden at inkludere citater eller referencer."
@@ -652,3 +710,13 @@ class AzureOpenAITitleGenerator():
                 return title
 
         return "Ny samtale"  # Fallback title
+
+
+def get_chat_client() -> AzureOpenAIClient:
+    if ASSISTANT_TYPE.lower() == "agent":
+        return Agent()
+    return Chat()
+
+
+def get_title_generator() -> AzureOpenAITitleGenerator:
+    return AzureOpenAITitleGenerator()
