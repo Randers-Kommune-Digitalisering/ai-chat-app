@@ -515,11 +515,7 @@ class Agent(Chat):
         try:
             # Retry transient 5xx/429/etc. If a run actually started, don't create a second run.
             try:
-                run = _call_with_retries(
-                    operation="agents.runs.create_and_process",
-                    func=_create_run_once,
-                    max_retries=1,
-                )
+                run = _create_run_once()
             except Exception as exc:
                 if _is_retryable_exception(exc):
                     try:
