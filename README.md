@@ -1,3 +1,5 @@
+# TODO: README er ikke blevet updated i 2 måneder
+# TODO: Beskriv flowet med Azure fejl håndtering
 # ai-chat-app
 Applikationen udstiller et webbasseret chat-interface til afvikling af samtaler med AI-assistenter via Azure OpenAI API-endpoints. Samtaler opbevares i Postgres database. 
 
