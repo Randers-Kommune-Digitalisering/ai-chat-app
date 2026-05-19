@@ -19,6 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# TODO: better func name for the purpose eg. get_ai_chat_db_client?
 def get_db_client():
     return DatabaseClient(
         db_type='postgresql',
@@ -30,6 +31,7 @@ def get_db_client():
     )
 
 
+# TODO: add doc string + type hints
 def get_user_conversation(session, user_email, conversation_id):
     try:
         conversation = session.query(Conversation).filter(
@@ -46,6 +48,7 @@ def get_user_conversation(session, user_email, conversation_id):
         return None
 
 
+# TODO: add doc string + type hints
 def create_conversation(session, user_email, title, thread_id=None):
     try:
         now = datetime.utcnow()
@@ -67,9 +70,10 @@ def create_conversation(session, user_email, title, thread_id=None):
         return None
 
 
+# TODO: remove unused func?
 def deactivate_conversation(session, user_email, conversation_id):
     try:
-        conversation = get_user_conversation(session, user_email, conversation_id)
+        conversation = get_user_conversation(session=session, user_email=user_email, conversation_id=conversation_id)
         if conversation:
             conversation.is_active = False
             session.commit()
@@ -81,6 +85,7 @@ def deactivate_conversation(session, user_email, conversation_id):
         return False
 
 
+# TODO: add doc string + type hints
 def add_message_to_conversation(session, conversation_id, message_content, sender, references=None, file_content=None):
     try:
         try:
@@ -110,6 +115,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
             # violations for Attachment/Reference.message_id.
             session.flush()
 
+            # TODO: add type hint
             def _normalize_file_item(item):
                 """Return normalized attachment dict or None.
 
@@ -173,6 +179,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
                     "file_content": base64.b64encode(data).decode("ascii") if data else "",
                 }
 
+            # TODO: add type hints
             def _normalize_reference_item(item):
                 """Return normalized reference dict or None.
 
@@ -211,7 +218,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
             # Insert attachments (user uploaded files)
             if file_content:
                 for fc in file_content if isinstance(file_content, (list, tuple)) else [file_content]:
-                    normalized = _normalize_file_item(fc)
+                    normalized = _normalize_file_item(item=fc)
                     if not normalized:
                         continue
                     session.add(
@@ -227,7 +234,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
             # Insert references (assistant citations)
             if references:
                 for ref in references if isinstance(references, (list, tuple)) else [references]:
-                    normalized = _normalize_reference_item(ref)
+                    normalized = _normalize_reference_item(item=ref)
                     if not normalized:
                         continue
                     session.add(
@@ -249,9 +256,10 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
         return False
 
 
+# TODO: remove unused func?
 def update_conversation_title(session, user_email, conversation_id, new_title):
     try:
-        conversation = get_user_conversation(session, user_email, conversation_id)
+        conversation = get_user_conversation(session=session, user_email=user_email, conversation_id=conversation_id)
         if conversation:
             conversation.title = new_title
             conversation.updated_at = datetime.utcnow()
