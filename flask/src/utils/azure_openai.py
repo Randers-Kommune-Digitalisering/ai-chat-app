@@ -86,7 +86,7 @@ def _is_retryable_exception(exc: Exception) -> bool:
         # when the SDK tries to deserialize an error model.
         return True
 
-    status_code = _safe_status_code(exc)
+    status_code = _safe_status_code(exc=exc)
     if status_code in _RETRYABLE_STATUS_CODES:
         return True
 
@@ -105,10 +105,10 @@ def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
     :param exc: The exception to convert.
     :return: A tuple containing the user-friendly message and HTTP status code.
     """
-    status_code = _safe_status_code(exc)
+    status_code = _safe_status_code(exc=exc)
 
     # Default mapping
-    user_status = 503 if _is_retryable_exception(exc) else 500
+    user_status = 503 if _is_retryable_exception(exc=exc) else 500
     user_message = "Assistenten havde en midlertidig fejl. Prøv igen om lidt."
 
     if status_code == 429:
@@ -123,7 +123,7 @@ def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
         return "Der opstod en fejl i forespørgslen. Genindlæs siden eller prøv igen senere.", 400
 
     # Retryable 5xx and network-type errors
-    if _is_retryable_exception(exc):
+    if _is_retryable_exception(exc=exc):
         return "Assistenten havde en midlertidig fejl. Prøv igen om lidt.", user_status
 
     return user_message, user_status
@@ -145,8 +145,8 @@ def _call_with_retries(*, operation: str, func, max_retries: int = 2, base_delay
         try:
             return func()
         except Exception as exc:
-            retryable = _is_retryable_exception(exc)
-            status_code = _safe_status_code(exc)
+            retryable = _is_retryable_exception(exc=exc)
+            status_code = _safe_status_code(exc=exc)
 
             if retryable and attempt < max_retries:
                 delay = base_delay_s * (2**attempt) + random.uniform(0.0, 0.25)
@@ -180,7 +180,7 @@ def _create_pooled_requests_session() -> requests.Session:
 
     :return: A requests session with a connection pool.
     """
-    import requests
+    import requests  # TODO: Er der en grund til at importere requests her i stedet for øverst? Hvis ikke, bør det flyttes op sammen med de andre imports.
     from requests.adapters import HTTPAdapter
 
     adapter = HTTPAdapter(
@@ -196,10 +196,12 @@ def _create_pooled_requests_session() -> requests.Session:
     return session
 
 
+# TODO: add doc string
 def _desanitize_metadata_value(value: str) -> str:
     return urllib.parse.unquote(value)
 
 
+# TODO: add doc string
 class AzureOpenAIClient:
     def __init__(self):
         self.client = AzureOpenAI(
@@ -313,7 +315,7 @@ class Chat(AzureOpenAIClient):
             if chat_message.get("files") and chat_message["role"] == "user":
                 request_message["content"] = f"{request_message['content']}\n\n# Der er uploadet {len(chat_message['files'])} dokument{'er' if len(chat_message['files']) > 1 else ''}. Benyt følgende indhold fra {'de uploadede dokumenter' if len(chat_message['files']) > 1 else 'det uploadede dokument'} som kontekst for forespørgslen:\n\n"
                 for index, file in enumerate(chat_message["files"]):
-                    doc_text = extract_text_from_file(file)
+                    doc_text = extract_text_from_file(file=file)
                     request_message["content"] = f"{request_message['content']}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
             request_messages.append(request_message)
 
@@ -357,10 +359,10 @@ class Chat(AzureOpenAIClient):
                     model=self.deployment_name,
                     extra_body=ai_search_body,
                 ),
-                max_retries=2,
+                max_retries=2,  # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
             )
         except Exception as exc:
-            msg, status = _error_to_user_message_and_status(exc)
+            msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
 
         if response and hasattr(response, "choices") and len(response.choices) > 0:
@@ -519,7 +521,7 @@ class Agent(AzureOpenAIClient):
             if len(files) > 1:
                 request_message = f"{request_message}\n\n# Der er uploadet {len(files)} dokumenter. Benyt følgende indhold fra de uploadede dokumenter som kontekst for forespørgslen:\n\n"
             for index, file in enumerate(files):
-                doc_text = extract_text_from_file(file)
+                doc_text = extract_text_from_file(file=file)
                 request_message = f"{request_message}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
 
         # Return early if message exceeds maximum length
@@ -538,10 +540,10 @@ class Agent(AzureOpenAIClient):
             run_list = _call_with_retries(
                 operation="agents.runs.list",
                 func=lambda: self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
-                max_retries=2,
+                max_retries=2, # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
             )
         except Exception as exc:
-            msg, status = _error_to_user_message_and_status(exc)
+            msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
 
         if any(run.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value] for run in run_list):
@@ -556,7 +558,7 @@ class Agent(AzureOpenAIClient):
                 content=request_message,
             )
         except Exception as exc:
-            msg, status = _error_to_user_message_and_status(exc)
+            msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
 
         def _create_run_once():
@@ -570,7 +572,7 @@ class Agent(AzureOpenAIClient):
             try:
                 run = _create_run_once()
             except Exception as exc:
-                if _is_retryable_exception(exc):
+                if _is_retryable_exception(exc=exc):
                     try:
                         run_list_after = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
                         if any(
@@ -587,7 +589,7 @@ class Agent(AzureOpenAIClient):
                         pass
                 raise
         except Exception as exc:
-            msg, status = _error_to_user_message_and_status(exc)
+            msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
 
         if run.status == "failed":
@@ -598,10 +600,10 @@ class Agent(AzureOpenAIClient):
                 messages = _call_with_retries(
                     operation="agents.messages.list",
                     func=lambda: self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
-                    max_retries=2,
+                    max_retries=2, # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
                 )
             except Exception as exc:
-                msg, status = _error_to_user_message_and_status(exc)
+                msg, status = _error_to_user_message_and_status(exc=exc)
                 return None, [], msg, status
 
         assistant_message = next(  # Find the latest assistant message in the thread
@@ -712,11 +714,13 @@ class AzureOpenAITitleGenerator():
         return "Ny samtale"  # Fallback title
 
 
+# TODO: add doc string
 def get_chat_client() -> AzureOpenAIClient:
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
     return Chat()
 
 
+# TODO: add doc string
 def get_title_generator() -> AzureOpenAITitleGenerator:
     return AzureOpenAITitleGenerator()
