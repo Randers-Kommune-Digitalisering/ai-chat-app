@@ -3,20 +3,24 @@ import openpyxl
 import docx
 
 
+# TODO: add doc string + type hints
 def extract_text_from_pdf(file):
     with pdfplumber.open(file) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
+# TODO: add doc string + type hints
 def extract_text_from_docx(file):
     doc = docx.Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
 
 
+# TODO: add doc string + type hints
 def extract_text_from_txt(file):
     return file.read().decode('utf-8')
 
 
+# TODO: add doc string + type hints
 def extract_text_from_xlsx(file):
     wb = openpyxl.load_workbook(file)
     text = []
@@ -26,6 +30,7 @@ def extract_text_from_xlsx(file):
     return "\n".join(text)
 
 
+# TODO: add doc string + type hints
 def extract_text_from_file(file):
     filename = file.filename.lower()
     if filename.endswith('.pdf'):
