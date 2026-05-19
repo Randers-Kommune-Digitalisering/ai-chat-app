@@ -1,7 +1,7 @@
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional  # TODO: update to newest python syntax e.g. dict instead of Dict
 
 from authlib.jose import JsonWebToken
 from authlib.jose.errors import JoseError
@@ -13,18 +13,20 @@ import utils.config as config
 class ConversationLoadPermit:
     conversation_id: int
     user_email: str
-    claims: Dict[str, Any]
+    claims: Dict[str, Any]  # TODO: update to newest python syntax e.g. dict instead of Dict
 
 
 class ConversationLoadPermitError(ValueError):
     """Raised when a conversation load permit is missing/invalid."""
 
 
+# TODO: add doc string
 def _normalize_pem(pem: str) -> str:
     # Support env vars where newlines are encoded as literal "\\n".
     return (pem or "").strip().replace("\\n", "\n")
 
 
+# TODO: add doc string
 def _b64url_decode(segment: str) -> bytes:
     if not isinstance(segment, str) or not segment:
         raise ConversationLoadPermitError("Invalid JWT header")
@@ -35,10 +37,11 @@ def _b64url_decode(segment: str) -> bytes:
         raise ConversationLoadPermitError("Invalid JWT header") from exc
 
 
+# TODO: add doc string + update type hints(Dict) that uses newest python syntax
 def _decode_jwt_header(token: str) -> Dict[str, Any]:
     try:
         header_segment = (token or "").split(".", 2)[0]
-        raw = _b64url_decode(header_segment)
+        raw = _b64url_decode(segment=header_segment)
         header = json.loads(raw.decode("utf-8"))
         if not isinstance(header, dict):
             raise ConversationLoadPermitError("Invalid JWT header")
@@ -68,11 +71,12 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     if not token or not isinstance(token, str):
         raise ConversationLoadPermitError("Missing permit")
 
-    public_key_pem = _normalize_pem(config.CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM)
+    public_key_pem = _normalize_pem(pem=config.CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM)
+
     if not public_key_pem:
         raise ConversationLoadPermitError("Permit verification is not configured")
 
-    header = _decode_jwt_header(token)
+    header = _decode_jwt_header(token=token)
     if header.get("alg") != "RS256":
         raise ConversationLoadPermitError("Unsupported permit algorithm")
 
@@ -119,6 +123,7 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     )
 
 
+# TODO: add doc string + update type hints(Optional) that uses newest python syntax
 def extract_bearer_token(authorization_header: Optional[str]) -> str:
     """Extract token from an Authorization header.
 
