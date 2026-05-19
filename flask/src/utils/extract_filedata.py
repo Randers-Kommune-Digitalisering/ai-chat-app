@@ -34,12 +34,12 @@ def extract_text_from_xlsx(file):
 def extract_text_from_file(file):
     filename = file.filename.lower()
     if filename.endswith('.pdf'):
-        return extract_text_from_pdf(file)
+        return extract_text_from_pdf(file=file)
     elif filename.endswith('.docx'):
-        return extract_text_from_docx(file)
+        return extract_text_from_docx(file=file)
     elif filename.endswith('.txt') or filename.endswith('.text') or filename.endswith('.md'):
-        return extract_text_from_txt(file)
+        return extract_text_from_txt(file=file)
     elif filename.endswith('.xlsx') or filename.endswith('.xls') or filename.endswith('.xlsm') or filename.endswith('.xlt') or filename.endswith('.xltm'):
-        return extract_text_from_xlsx(file)
+        return extract_text_from_xlsx(file=file)
     else:
         raise ValueError("Unsupported file type. Only PDF, DOCX, TXT, and MD are supported.")
