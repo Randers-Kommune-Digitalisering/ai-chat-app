@@ -31,6 +31,7 @@ azure_client = get_chat_client()
 db_client = get_db_client()
 
 
+# add doc strings
 def _close_azure_client() -> None:
     try:
         close_fn = getattr(azure_client, "close", None)
@@ -128,7 +129,7 @@ def create_thread_message(thread_id):
     chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
 
     # Redact sensitive content in user messages
-    message = redact_content(message)
+    message = redact_content(text=message)
 
     title_thread = None
     title_result = None
@@ -154,7 +155,7 @@ def create_thread_message(thread_id):
 
     # Get response from Azure
     try:
-        azure_result = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
+        azure_result = azure_client.fetch_chat_response(chat_messages=message, files=files, thread_id=thread_id, use_alt=use_alt)
         if isinstance(azure_result, tuple) and len(azure_result) == 4:
             response, refs, error_message, azure_status = azure_result
         else:
@@ -188,8 +189,8 @@ def create_thread_message(thread_id):
             conversation_title = generated_title
 
             created = create_db_conversation(
-                db_session,
-                user_email,
+                session=db_session,
+                user_email=user_email,
                 title=generated_title,
                 thread_id=thread_id,
             )
@@ -327,8 +328,8 @@ def create_chat_message():
             conversation_title = generated_title
 
             created = create_db_conversation(
-                db_session,
-                user_email,
+                session=db_session,
+                user_email=user_email,
                 title=generated_title
             )
             if created and getattr(created, "id", None) is not None:
@@ -405,10 +406,10 @@ def load_conversation_by_permit():
             data = request.get_json(silent=True) or {}
             token = (data.get('permit') or '').strip() if isinstance(data, dict) else ''
 
-        permit = verify_conversation_load_permit(token)
+        permit = verify_conversation_load_permit(token=token)
 
         with db_client.session_scope() as session:
-            conversation = get_user_conversation(session, permit.user_email, permit.conversation_id)
+            conversation = get_user_conversation(session=session, user_email=permit.user_email, conversation_id=permit.conversation_id)
             if not conversation:
                 return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 404
             payload = conversation.to_dict(include_messages=True)
