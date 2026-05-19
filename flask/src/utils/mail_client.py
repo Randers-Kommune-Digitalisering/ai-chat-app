@@ -1,3 +1,4 @@
+# TODO: erstat koden så den anvender Randers pakken(EmailSender) i stedet for den gamle mail service
 import requests
 
 from utils.config import ASSISTANT_NAME, FEEDBACK_MAIL_API_RECIPIENT, FEEDBACK_MAIL_API_SENDER, FEEDBACK_MAIL_API_URL
