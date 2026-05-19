@@ -104,11 +104,11 @@ except ValueError:
 # If True, requests will block when the pool is exhausted instead of opening/discarding extra connections.
 REQUESTS_POOL_BLOCK = os.environ.get('REQUESTS_POOL_BLOCK', 'False') in ['True', 'true']
 
-POSTGRES_USER = os.environ.get('POSTGRES_USER', '').strip()
-POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', '').strip()
-POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '').strip()
-POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()
-POSTGRES_DB = os.environ.get('POSTGRES_DB', '').strip()
+POSTGRES_USER = os.environ.get('POSTGRES_USER', '').strip()  # TODO: better config name for the purpose --> AI_CHAT_POSTGRES_USER
+POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', '').strip()  # TODO: better config name for the purpose --> AI_CHAT_POSTGRES_PASSWORD
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '').strip()  # TODO: better config name for the purpose --> AI_CHAT_POSTGRES_HOST
+POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432').strip()  # TODO: better config name for the purpose --> AI_CHAT_POSTGRES_PORT
+POSTGRES_DB = os.environ.get('POSTGRES_DB', '').strip()  # TODO: better config name for the purpose --> AI_CHAT_POSTGRES_DB
 USE_DB = all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT])
 
 # Permit-based conversation loading (portal -> iframe chat-app)
