@@ -56,7 +56,7 @@ class DatabaseClient:
         except Exception as e:
             self.logger.error(f"Error connecting to database: {e}")
 
-    def get_session(self):
+    def get_session(self) -> sqlalchemy.orm.Session | None:
         try:
             if self.engine:
                 return self._SessionLocal()

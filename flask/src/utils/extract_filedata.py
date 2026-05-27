@@ -3,25 +3,45 @@ import openpyxl
 import docx
 
 
-# TODO: add doc string + type hints
-def extract_text_from_pdf(file):
+def extract_text_from_pdf(file: bytes) -> str:
+    """
+    Extract text content from a PDF file provided as bytes.
+
+    :param file: The PDF file to extract text from, provided as bytes.
+    :return: The extracted text content.
+    """
     with pdfplumber.open(file) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
-# TODO: add doc string + type hints
-def extract_text_from_docx(file):
+def extract_text_from_docx(file: bytes) -> str:
+    """
+    Extract text content from a DOCX file provided as bytes.
+
+    :param file: The DOCX file to extract text from, provided as bytes.
+    :return: The extracted text content.
+    """
     doc = docx.Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
 
 
-# TODO: add doc string + type hints
-def extract_text_from_txt(file):
+def extract_text_from_txt(file: bytes) -> str:
+    """
+    Extract text content from a plain text file provided as bytes.
+
+    :param file: The plain text file to extract text from, provided as bytes.
+    :return: The extracted text content.
+    """
     return file.read().decode('utf-8')
 
 
-# TODO: add doc string + type hints
-def extract_text_from_xlsx(file):
+def extract_text_from_xlsx(file: bytes) -> str:
+    """
+    Extract text content from an Excel file (XLSX) provided as bytes.
+
+    :param file: The Excel file to extract text from, provided as bytes.
+    :return: The extracted text content.
+    """
     wb = openpyxl.load_workbook(file)
     text = []
     for sheet in wb.worksheets:
@@ -30,8 +50,13 @@ def extract_text_from_xlsx(file):
     return "\n".join(text)
 
 
-# TODO: add doc string + type hints
-def extract_text_from_file(file):
+def extract_text_from_file(file: bytes) -> str:
+    """
+    Extract text content from a file based on its extension.
+
+    :param file: The file to extract text from, provided as bytes.
+    :return: The extracted text content.
+    """
     filename = file.filename.lower()
     if filename.endswith('.pdf'):
         return extract_text_from_pdf(file=file)

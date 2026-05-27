@@ -1,8 +1,7 @@
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional  # TODO: update to newest python syntax e.g. dict instead of Dict
-
+from typing import Any
 from authlib.jose import JsonWebToken
 from authlib.jose.errors import JoseError
 
@@ -13,21 +12,25 @@ import utils.config as config
 class ConversationLoadPermit:
     conversation_id: int
     user_email: str
-    claims: Dict[str, Any]  # TODO: update to newest python syntax e.g. dict instead of Dict
+    claims: dict[str, Any]
 
 
 class ConversationLoadPermitError(ValueError):
     """Raised when a conversation load permit is missing/invalid."""
 
 
-# TODO: add doc string
 def _normalize_pem(pem: str) -> str:
+    """
+    Normalize a PEM string by stripping whitespace and replacing literal "\n" with actual newlines.
+    """
     # Support env vars where newlines are encoded as literal "\\n".
     return (pem or "").strip().replace("\\n", "\n")
 
 
-# TODO: add doc string
 def _b64url_decode(segment: str) -> bytes:
+    """
+    Decode a base64url-encoded string, adding necessary padding.
+    """
     if not isinstance(segment, str) or not segment:
         raise ConversationLoadPermitError("Invalid JWT header")
     padding = "=" * (-len(segment) % 4)
@@ -37,8 +40,15 @@ def _b64url_decode(segment: str) -> bytes:
         raise ConversationLoadPermitError("Invalid JWT header") from exc
 
 
-# TODO: add doc string + update type hints(Dict) that uses newest python syntax
-def _decode_jwt_header(token: str) -> Dict[str, Any]:
+def _decode_jwt_header(token: str) -> dict[str, Any]:
+    """
+    Decode the header of a JWT token.
+
+    :param token: The JWT token.
+    :return: The decoded JWT header.
+
+    :raises ConversationLoadPermitError: If the JWT header is invalid.
+    """
     try:
         header_segment = (token or "").split(".", 2)[0]
         raw = _b64url_decode(segment=header_segment)
@@ -53,7 +63,8 @@ def _decode_jwt_header(token: str) -> Dict[str, Any]:
 
 
 def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
-    """Verify and decode a portal-issued conversation load permit.
+    """
+    Verify and decode a portal-issued conversation load permit.
 
     Requirements:
     - RS256 signature
@@ -61,11 +72,10 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     - Required claims: `conversation_id` (int), `user_email` (non-empty str)
     - Optional: enforce `kid` allowlist
 
-    Returns:
-        ConversationLoadPermit
+    :param token: The JWT conversation load permit issued by the portal.
+    :return: A ConversationLoadPermit object containing the conversation_id, user_email, and all claims.
 
-    Raises:
-        ConversationLoadPermitError
+    :raises ConversationLoadPermitError: If the permit is missing, invalid, expired, or fails any verification checks.
     """
 
     if not token or not isinstance(token, str):
@@ -123,11 +133,12 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     )
 
 
-# TODO: add doc string + update type hints(Optional) that uses newest python syntax
-def extract_bearer_token(authorization_header: Optional[str]) -> str:
-    """Extract token from an Authorization header.
+def extract_bearer_token(authorization_header: str | None) -> str:
+    """
+    Extract token from an Authorization header.
 
-    Returns empty string if missing/invalid.
+    :param authorization_header: The Authorization header value.
+    :return: The extracted token, or an empty string if missing/invalid.
     """
     if not authorization_header:
         return ""

@@ -2,6 +2,9 @@ from datetime import datetime
 import base64
 import json
 import mimetypes
+from typing import Any
+
+import sqlalchemy
 
 from utils.config import (
     ASSISTANT_NAME_ID,
@@ -15,12 +18,15 @@ from utils.database import DatabaseClient
 from models import Conversation, Message, Attachment, Reference
 import logging
 
-
 logger = logging.getLogger(__name__)
 
 
-# TODO: better func name for the purpose eg. get_ai_chat_db_client?
-def get_db_client():
+def get_db_client() -> DatabaseClient:
+    """
+    Initialize and return a DatabaseClient instance for PostgreSQL.
+
+    :return: A DatabaseClient instance configured for PostgreSQL.
+    """
     return DatabaseClient(
         db_type='postgresql',
         database=POSTGRES_DB,
@@ -31,8 +37,15 @@ def get_db_client():
     )
 
 
-# TODO: add doc string + type hints
-def get_user_conversation(session, user_email, conversation_id):
+def get_user_conversation(session: sqlalchemy.orm.Session, user_email: str, conversation_id: int) -> Conversation | None:
+    """
+    Fetch a user's conversation by ID.
+
+    :param session: The SQLAlchemy session to use for the query.
+    :param user_email: The email of the user.
+    :param conversation_id: The ID of the conversation.
+    :return: The conversation if found, otherwise None.
+    """
     try:
         conversation = session.query(Conversation).filter(
             Conversation.id == conversation_id,
@@ -48,10 +61,18 @@ def get_user_conversation(session, user_email, conversation_id):
         return None
 
 
-# TODO: add doc string + type hints
-def create_conversation(session, user_email, title, thread_id=None):
+def create_conversation(session: sqlalchemy.orm.Session, user_email: str, title: str, thread_id: str | None = None) -> Conversation | None:
+    """
+    Create a new conversation for a user.
+
+    :param session: The SQLAlchemy session to use for the operation.
+    :param user_email: The email of the user.
+    :param title: The title of the conversation.
+    :param thread_id: Optional thread ID for the conversation.
+    :return: The newly created conversation if successful, otherwise None.
+    """
     try:
-        now = datetime.utcnow()
+        now = datetime.now(datetime.timezone.utc)
         new_conversation = Conversation(
             user_email=user_email,
             title=title,
@@ -70,23 +91,18 @@ def create_conversation(session, user_email, title, thread_id=None):
         return None
 
 
-# TODO: remove unused func?
-def deactivate_conversation(session, user_email, conversation_id):
-    try:
-        conversation = get_user_conversation(session=session, user_email=user_email, conversation_id=conversation_id)
-        if conversation:
-            conversation.is_active = False
-            session.commit()
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error deactivating conversation {conversation_id} for user {user_email}: {e}")
-        session.rollback()
-        return False
+def add_message_to_conversation(session: sqlalchemy.orm.Session, conversation_id: int, message_content: str, sender: str, references: list[Reference] | None = None, file_content: list[Attachment] | None = None) -> bool:
+    """
+    Add a message to a conversation.
 
-
-# TODO: add doc string + type hints
-def add_message_to_conversation(session, conversation_id, message_content, sender, references=None, file_content=None):
+    :param session: The SQLAlchemy session to use for the operation.
+    :param conversation_id: The ID of the conversation.
+    :param message_content: The content of the message.
+    :param sender: The sender of the message.
+    :param references: Optional list of references associated with the message.
+    :param file_content: Optional list of attachments associated with the message.
+    :return: True if the message was added successfully, otherwise False.
+    """
     try:
         try:
             conversation_id = int(conversation_id)
@@ -100,7 +116,7 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
         ).first()
 
         if conversation:
-            now = datetime.utcnow()
+            now = datetime.now(datetime.timezone.utc)
             message = Message(
                 conversation_id=conversation.id,
                 sender=sender,
@@ -115,13 +131,16 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
             # violations for Attachment/Reference.message_id.
             session.flush()
 
-            # TODO: add type hint
-            def _normalize_file_item(item):
-                """Return normalized attachment dict or None.
+            def _normalize_file_item(item: Any) -> dict[str, Any] | None:
+                """
+                Return normalized attachment dict or None.
 
                 Supports:
                 - file-like objects (e.g., io.BytesIO) with a .filename attribute
                 - dicts with file metadata/content
+
+                :param item: The raw file item, which can be a dict or file-like object.
+                :return: A dict with 'file_name', 'file_type', 'file_size', and 'file_content' (base64 string), or None if input is invalid.
                 """
                 if item is None:
                     return None
@@ -179,13 +198,16 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
                     "file_content": base64.b64encode(data).decode("ascii") if data else "",
                 }
 
-            # TODO: add type hints
-            def _normalize_reference_item(item):
-                """Return normalized reference dict or None.
+            def _normalize_reference_item(item: Any) -> dict[str, Any] | None:
+                """
+                Return normalized reference dict or None.
 
                 Azure clients currently return citation dicts like:
                 - Chat: { url, title, refs }
                 - Agent: { url, title, refs, replace_refs? }
+
+                :param item: The raw reference item, which can be a dict or other type.
+                :return: A dict with 'reference_type' and 'reference_content', or None if input is invalid.
                 """
                 if not item:
                     return None
@@ -252,21 +274,5 @@ def add_message_to_conversation(session, conversation_id, message_content, sende
 
     except Exception as e:
         logger.error(f"Error adding message to conversation {conversation_id}: {e}")
-        session.rollback()
-        return False
-
-
-# TODO: remove unused func?
-def update_conversation_title(session, user_email, conversation_id, new_title):
-    try:
-        conversation = get_user_conversation(session=session, user_email=user_email, conversation_id=conversation_id)
-        if conversation:
-            conversation.title = new_title
-            conversation.updated_at = datetime.utcnow()
-            session.commit()
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Error updating title for conversation {conversation_id} for user {user_email}: {e}")
         session.rollback()
         return False
