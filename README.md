@@ -121,6 +121,10 @@ Brugsstatistik trackes og udstilles med følgende Prometheus-metrikker på `/met
 	* Tæller antal bruger-beskeder modtaget af backend.
 	* `mode` er `chat` eller `agent`.
 
+* `chat_conversations_total{app, deployment, instance, mode}`
+	* Tæller antal samtaler oprettet i backend.
+	* `mode` er `chat` eller `agent`.
+
 * `chat_feedback_total{app, deployment, instance, feedback_type}`
 	* Tæller feedback events.
 	* `feedback_type` er `like` (thumbs up) eller `custom` (tekstfeedback sendt).
