@@ -15,6 +15,7 @@ from azure.identity import DefaultAzureCredential
 import urllib
 import requests
 import tiktoken
+from requests.adapters import HTTPAdapter
 from utils.extract_filedata import extract_text_from_file
 from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
@@ -180,9 +181,6 @@ def _create_pooled_requests_session() -> requests.Session:
 
     :return: A requests session with a connection pool.
     """
-    import requests  # TODO: Er der en grund til at importere requests her i stedet for øverst? Hvis ikke, bør det flyttes op sammen med de andre imports.
-    from requests.adapters import HTTPAdapter
-
     adapter = HTTPAdapter(
         pool_connections=REQUESTS_POOL_CONNECTIONS,
         pool_maxsize=REQUESTS_POOL_MAXSIZE,
@@ -196,13 +194,20 @@ def _create_pooled_requests_session() -> requests.Session:
     return session
 
 
-# TODO: add doc string
 def _desanitize_metadata_value(value: str) -> str:
+    """
+    Desanitize a metadata value by unescaping URL-encoded characters.
+
+    :param value: The sanitized metadata value to desanitize.
+    :return: The desanitized metadata value.
+    """
     return urllib.parse.unquote(value)
 
 
-# TODO: add doc string
 class AzureOpenAIClient:
+    """
+    Base client for interacting with Azure OpenAI, providing common functionality for both Chat and Agent implementations.
+    """
     def __init__(self):
         self.client = AzureOpenAI(
             api_version=AZURE_API_VERSION_OPENAI,
@@ -237,9 +242,19 @@ class AzureOpenAIClient:
             pass
 
     def get_client(self):
+        """
+        Get the Azure OpenAI client.
+
+        :return: The Azure OpenAI client instance.
+        """
         return self.client
 
     def get_system_prompt(self):
+        """
+        Get the system prompt for the Azure OpenAI client (only used in Chat, not Agent).
+
+        :return: The system prompt string.
+        """
         system_prompt = SYSTEM_PROMPT.strip()
 
         if self.emphasize_recent_content:
@@ -252,7 +267,13 @@ class AzureOpenAIClient:
         return system_prompt
 
     @abstractmethod
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
+    def fetch_chat_response(self, **args) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from the Azure OpenAI client (ChatCompletions for Chat, Agents for Agent).
+
+        :param args: Additional arguments for the chat request.
+        :return: A tuple containing the assistant response, list of referenced citations, error message (if any), and HTTP status code.
+        """
         pass
 
     @staticmethod
@@ -263,10 +284,13 @@ class AzureOpenAIClient:
 
 
 class Chat(AzureOpenAIClient):
+    """
+    Client for handling chat interactions using Azure OpenAI ChatCompletions, including optional retrieval-augmented generation with Azure Search.
+    """
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False) -> tuple[str | None, list[dict], str | None, int]:
+    def fetch_chat_response(self, chat_messages) -> tuple[str | None, list[dict], str | None, int]:
         """
         Fetch a chat response from Azure OpenAI ChatCompletions, optionally using Azure Search for retrieval-augmented generation.
 
@@ -359,7 +383,6 @@ class Chat(AzureOpenAIClient):
                     model=self.deployment_name,
                     extra_body=ai_search_body,
                 ),
-                max_retries=2,  # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
             )
         except Exception as exc:
             msg, status = _error_to_user_message_and_status(exc=exc)
@@ -450,6 +473,9 @@ class Chat(AzureOpenAIClient):
 
 
 class Agent(AzureOpenAIClient):
+    """
+    Client for handling interactions with Azure OpenAI Agents (V1).
+    """
     def __init__(self):
         super().__init__()
         self.assistant_id = ASSISTANT_ID
@@ -540,7 +566,6 @@ class Agent(AzureOpenAIClient):
             run_list = _call_with_retries(
                 operation="agents.runs.list",
                 func=lambda: self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
-                max_retries=2, # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
             )
         except Exception as exc:
             msg, status = _error_to_user_message_and_status(exc=exc)
@@ -600,7 +625,6 @@ class Agent(AzureOpenAIClient):
                 messages = _call_with_retries(
                     operation="agents.messages.list",
                     func=lambda: self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
-                    max_retries=2, # TODO: er max_retries=2 ikke default værdien for _call_with_retries? Hvis det er tilfældet, kan det undlades her for at reducere redundans.
                 )
             except Exception as exc:
                 msg, status = _error_to_user_message_and_status(exc=exc)
@@ -714,13 +738,21 @@ class AzureOpenAITitleGenerator():
         return "Ny samtale"  # Fallback title
 
 
-# TODO: add doc string
 def get_chat_client() -> AzureOpenAIClient:
+    """
+    Get the appropriate Azure OpenAI client based on the assistant type.
+
+    :return: An instance of AzureOpenAIClient (either Agent or Chat).
+    """
     if ASSISTANT_TYPE.lower() == "agent":
         return Agent()
     return Chat()
 
 
-# TODO: add doc string
 def get_title_generator() -> AzureOpenAITitleGenerator:
+    """
+    Get the Azure OpenAI client for title generation.
+
+    :return: An instance of AzureOpenAITitleGenerator.
+    """
     return AzureOpenAITitleGenerator()
