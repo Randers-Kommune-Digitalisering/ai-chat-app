@@ -5,6 +5,9 @@ from typing import Protocol
 
 
 class UploadedFile(Protocol):
+    """
+    Protocol for a file-like object with a `.filename` attribute and binary `.read()` method.
+    """
     filename: str
 
     def read(self, size: int = -1) -> bytes:
