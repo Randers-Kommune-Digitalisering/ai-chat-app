@@ -295,9 +295,6 @@ class Chat(AzureOpenAIClient):
         Fetch a chat response from Azure OpenAI ChatCompletions, optionally using Azure Search for retrieval-augmented generation.
 
         :param chat_messages: A list of chat messages in the conversation history, including attached files.
-        :param files: Not used in Chat implementation, included for interface consistency with Agent.
-        :param thread_id: Not used in Chat implementation, included for interface consistency with Agent.
-        :param use_alt: Not used in Chat implementation, included for interface consistency with Agent.
         :return: A tuple containing the assistant response, list of referenced citations, error message (if any), and HTTP status code.
         """
         ai_search_body = {

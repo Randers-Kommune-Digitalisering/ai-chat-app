@@ -1,45 +1,59 @@
 import pdfplumber
 import openpyxl
 import docx
+from typing import Protocol
 
 
-def extract_text_from_pdf(file: bytes) -> str:
+class UploadedFile(Protocol):
+    filename: str
+
+    def read(self, size: int = -1) -> bytes:
+        ...
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        ...
+
+    def tell(self) -> int:
+        ...
+
+
+def extract_text_from_pdf(file: UploadedFile) -> str:
     """
-    Extract text content from a PDF file provided as bytes.
+    Extract text content from a PDF file-like object.
 
-    :param file: The PDF file to extract text from, provided as bytes.
+    :param file: File-like object with a `.filename` attribute and binary `.read()`.
     :return: The extracted text content.
     """
     with pdfplumber.open(file) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
-def extract_text_from_docx(file: bytes) -> str:
+def extract_text_from_docx(file: UploadedFile) -> str:
     """
-    Extract text content from a DOCX file provided as bytes.
+    Extract text content from a DOCX file-like object.
 
-    :param file: The DOCX file to extract text from, provided as bytes.
+    :param file: File-like object with a `.filename` attribute and binary `.read()`.
     :return: The extracted text content.
     """
     doc = docx.Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
 
 
-def extract_text_from_txt(file: bytes) -> str:
+def extract_text_from_txt(file: UploadedFile) -> str:
     """
-    Extract text content from a plain text file provided as bytes.
+    Extract text content from a plain text file-like object.
 
-    :param file: The plain text file to extract text from, provided as bytes.
+    :param file: File-like object with a `.filename` attribute and binary `.read()`.
     :return: The extracted text content.
     """
     return file.read().decode('utf-8')
 
 
-def extract_text_from_xlsx(file: bytes) -> str:
+def extract_text_from_xlsx(file: UploadedFile) -> str:
     """
-    Extract text content from an Excel file (XLSX) provided as bytes.
+    Extract text content from an Excel file (XLSX) file-like object.
 
-    :param file: The Excel file to extract text from, provided as bytes.
+    :param file: File-like object with a `.filename` attribute and binary `.read()`.
     :return: The extracted text content.
     """
     wb = openpyxl.load_workbook(file)
@@ -50,11 +64,11 @@ def extract_text_from_xlsx(file: bytes) -> str:
     return "\n".join(text)
 
 
-def extract_text_from_file(file: bytes) -> str:
+def extract_text_from_file(file: UploadedFile) -> str:
     """
     Extract text content from a file based on its extension.
 
-    :param file: The file to extract text from, provided as bytes.
+    :param file: File-like object with a `.filename` attribute and binary `.read()`.
     :return: The extracted text content.
     """
     filename = file.filename.lower()

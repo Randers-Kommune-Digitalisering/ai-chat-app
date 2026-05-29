@@ -14,7 +14,7 @@ Frontend sender filer som base64 i request-body, backend dekoder til bytes og ge
 #### :elephant: Opbevaring af samtaler i Postgres
 Samtaler og beskeder persistéres i Postgres (Conversation/Message/Attachment/Reference) og opdateres løbende, når der sendes nye bruger- og assistentbeskeder.
 
-#### :closed_lock_with_key: Indlæsning af samtaler med nøvendige rettigheder
+#### :closed_lock_with_key: Indlæsning af samtaler med nødvendige rettigheder
 Samtaler kan kun indlæses via en kortlivet, signeret “load permit” (RS256) gennem `POST /api/conversations/load` (legacy `GET /api/conversations/<id>` er deaktiveret).
 
 #### :shield: Sikker tovejskommunikation med [ai-chat-portal](https://github.com/Randers-Kommune-Digitalisering/ai-chat-portal) (til samtalehistorik)
