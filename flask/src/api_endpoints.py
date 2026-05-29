@@ -287,7 +287,7 @@ def create_chat_message():
 
     for msg in messages:
         # Redact sensitive content in user messages
-        msg["content"] = redact_content(msg.get("content", ""))
+        msg["content"] = redact_content(text=msg.get("content", ""))
 
         # Parse files from JSON: each file is { name, content (base64) }
         new_files = []

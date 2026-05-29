@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import base64
 import json
 import mimetypes
@@ -72,7 +72,7 @@ def create_conversation(session: sqlalchemy.orm.Session, user_email: str, title:
     :return: The newly created conversation if successful, otherwise None.
     """
     try:
-        now = datetime.now(datetime.timezone.utc)
+        now = datetime.now(timezone.utc)
         new_conversation = Conversation(
             user_email=user_email,
             title=title,
@@ -116,7 +116,7 @@ def add_message_to_conversation(session: sqlalchemy.orm.Session, conversation_id
         ).first()
 
         if conversation:
-            now = datetime.now(datetime.timezone.utc)
+            now = datetime.now(timezone.utc)
             message = Message(
                 conversation_id=conversation.id,
                 sender=sender,
