@@ -15,6 +15,7 @@ METRICS_APP = os.getenv('METRICS_APP', 'ai-chat-app').strip()
 METRICS_DEPLOYMENT = os.getenv('METRICS_DEPLOYMENT', os.getenv('DEPLOYMENT', 'unknown')).strip() or 'unknown'
 METRICS_INSTANCE = os.getenv('METRICS_INSTANCE', POD_NAME).strip() or POD_NAME
 
+# Azure OpenAI and AI Search configuration
 AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY').strip()
 AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT').strip()
 AZURE_OPENAI_DEPLOYMENT_NAME = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME').strip()
@@ -28,6 +29,7 @@ AZURE_AIFOUNDRY_PROJECT_NAME = os.environ.get('AZURE_AIFOUNDRY_PROJECT_NAME', ''
 AZURE_API_VERSION_OPENAI = os.environ.get('AZURE_API_VERSION_OPENAI', '2024-12-01-preview').strip()
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
 
+# Assistant configuration
 ASSISTANT_NAME = os.environ.get('ASSISTANT_NAME', 'AI Assistent').strip()  # Display name
 ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').strip()  # ID used in portal (i.e. randers-gpt)
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
@@ -42,6 +44,7 @@ SHOW_ASSISTANT_TOGGLE = bool(ASSISTANT_ALT_ID)
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
 ASSISTANT_DESCRIPTION = os.environ.get('ASSISTANT_DESCRIPTION', '').strip()
+ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']  # not in effect
 
 ALT_TOGGLE_LABEL = os.environ.get('ALT_TOGGLE_LABEL', "Brug alternativ assistent").strip()
 ALT_ALERT_MSG = os.environ.get('ALT_ALERT_MSG', '').strip()
@@ -49,6 +52,7 @@ ALT_ALERT_TYPE = os.environ.get('ALT_ALERT_TYPE', 'info').strip()  # info, warni
 
 EMPHASIZE_RECENT_CONTENT = os.environ.get('EMPHASIZE_RECENT_CONTENT', 'True') in ['True', 'true']
 USE_GENERAL_KNOWLEDGE = os.environ.get('USE_GENERAL_KNOWLEDGE', 'True') in ['True', 'true']
+
 try:
     TOP_P_VALUE = float(os.environ.get('TOP_P_VALUE', 0.8))
 except ValueError:
@@ -66,11 +70,24 @@ try:
 except ValueError:
     SEARCH_STRICTNESS = 3
 
-FEEDBACK_MAIL_API_URL = os.environ.get('FEEDBACK_MAIL_API_URL').strip()
-FEEDBACK_MAIL_API_RECIPIENT = os.environ.get('FEEDBACK_MAIL_API_RECIPIENT').strip()
-FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER').strip()
+# Legacy (HTTP mail-service) env vars. Kept for backwards compatibility.
+FEEDBACK_MAIL_API_RECIPIENT = os.environ.get('FEEDBACK_MAIL_API_RECIPIENT', '').strip()
+FEEDBACK_MAIL_API_SENDER = os.environ.get('FEEDBACK_MAIL_API_SENDER', '').strip()
 
-ALLOW_FILE_UPLOAD = os.environ.get('ALLOW_FILE_UPLOAD', 'False') in ['True', 'true']
+# Feedback email via SMTP (rk-digi EmailSender)
+FEEDBACK_SMTP_SERVER = os.environ.get('FEEDBACK_SMTP_SERVER', '').strip()
+try:
+    FEEDBACK_SMTP_PORT = int(os.environ.get('FEEDBACK_SMTP_PORT', '25'))
+except ValueError:
+    FEEDBACK_SMTP_PORT = 25
+FEEDBACK_SMTP_SENDER_EMAIL = os.environ.get('FEEDBACK_SMTP_SENDER_EMAIL', FEEDBACK_MAIL_API_SENDER).strip()
+FEEDBACK_SMTP_SENDER_PASSWORD = os.environ.get('FEEDBACK_SMTP_SENDER_PASSWORD', '').strip()
+FEEDBACK_SMTP_SENDER_NAME = os.environ.get('FEEDBACK_SMTP_SENDER_NAME', '').strip()
+FEEDBACK_MAIL_RECIPIENT = [
+    s.strip()
+    for s in os.environ.get('FEEDBACK_MAIL_RECIPIENT', FEEDBACK_MAIL_API_RECIPIENT).replace(';', ',').split(',')
+    if s.strip()
+]
 
 # Max length of the user message when using Agent-mode (currently including any appended document content)
 try:
@@ -119,7 +136,9 @@ CONVERSATION_LOAD_PERMIT_AUDIENCE = os.environ.get('CONVERSATION_LOAD_PERMIT_AUD
 
 # Optional: comma-separated list of allowed JWT header kid values.
 CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS = [
-    s.strip() for s in os.environ.get('CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS', '').split(',') if s.strip()
+    s.strip()
+    for s in os.environ.get('CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS', '').replace(';', ',').split(',')
+    if s.strip()
 ]
 
 # Optional: restrict who can embed this app.

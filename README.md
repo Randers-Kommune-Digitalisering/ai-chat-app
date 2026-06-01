@@ -58,9 +58,10 @@ Disse skal altid være sat (uanset assistent-type), da de bruges uden sikre defa
 | `AZURE_OPENAI_ENDPOINT` | — | Base endpoint for Azure OpenAI-ressourcen. |
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | — | Deployment/model-navn der bruges til chat. |
 | `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version for OpenAI endpoints. |
-| `FEEDBACK_MAIL_API_URL` | — | Endpoint til feedback-mail service. |
-| `FEEDBACK_MAIL_API_RECIPIENT` | — | Modtageradresse for feedback. |
-| `FEEDBACK_MAIL_API_SENDER` | — | Afsenderadresse for feedback. |
+| `FEEDBACK_SMTP_SENDER_EMAIL` | — | Afsenderadresse for feedback (og evt. SMTP login). |
+| `FEEDBACK_SMTP_SERVER` | — | SMTP server til feedback-mail (rk-digi EmailSender). |
+| `FEEDBACK_SMTP_PORT` | `25` | SMTP port. |
+| `FEEDBACK_MAIL_RECIPIENT` | — | Modtageradresse(r) for feedback (komma- eller semikolon-separeret). |
 
 ### Chat-type miljøvariabler
 Skal sættes når `ASSISTANT_TYPE` er `Chat`.
@@ -89,7 +90,9 @@ Skal sættes når `ASSISTANT_TYPE` er `Agent`.
 | `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for alternativ assistent-toggle i UI, hvis `ASSISTANT_ALT_ID` er sat. |
 | `ALT_ALERT_MSG` | — | Alert-tekst der kan vises ifm. alternativ assistent, hvis `ASSISTANT_ALT_ID` er sat. |
 | `ALT_ALERT_TYPE` | `info` | Alert-type for alternativ assistent (`info`, `warning`, `danger`), hvis `ALT_ALERT_MSG` er sat. |
-| `ALLOW_FILE_UPLOAD` | `False` | Slår fil-upload til/fra. |
+| `ALLOW_FILE_UPLOAD` | `False` | Slår fil-upload til/fra (*under udvikling - ikke aktiv*). |
+| `FEEDBACK_SMTP_SENDER_PASSWORD` | — | SMTP password (valgfrit, afhænger af SMTP server). |
+| `FEEDBACK_SMTP_SENDER_NAME` | — | Visningsnavn på afsender (valgfrit). |
 | `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | — | Alias: `AZURE_OPENAI_DEPLOYMENT_NAME`. Deployment/model-navn til automatisk titelgenerering. |
 | `AZURE_AISEARCH_INDEX_NAME` | — | Index-navn i Azure AI Search (hvis retrieval anvendes), kan kun anvendes hvis `ASSISTANT_TYPE` er `chat`. |
 | `AZURE_AISEARCH_ENDPOINT` | — | Endpoint for Azure AI Search, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
@@ -105,7 +108,7 @@ Skal sættes når `ASSISTANT_TYPE` er `Agent`.
 | `CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM` | — | RS256 public key (PEM) til validering af portalens load-permits. |
 | `CONVERSATION_LOAD_PERMIT_ISSUER` | `gpt-dashboard-portal` | Forventet JWT issuer for load-permit. |
 | `CONVERSATION_LOAD_PERMIT_AUDIENCE` | `chat-app` | Forventet JWT audience for load-permit. |
-| `CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS` | — | Komma-separeret liste af tilladte `kid` værdier fra JWT header. |
+| `CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS` | — | Liste af tilladte `kid` værdier fra JWT header (komma- eller semikolon-separeret). |
 | `CSP_FRAME_ANCESTORS` | — | Hvis sat, begrænser hvem der må embedde app’en (CSP `frame-ancestors`). |
 | `DEBUG` | `False` | Aktiverer debug-funktionalitet i backend. |
 | `PORT` | `8080` | Port som backend skal lytte på. |
