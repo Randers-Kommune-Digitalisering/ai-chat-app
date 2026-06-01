@@ -22,6 +22,9 @@ class ConversationLoadPermitError(ValueError):
 def _normalize_pem(pem: str) -> str:
     """
     Normalize a PEM string by stripping whitespace and replacing literal "\n" with actual newlines.
+
+    :param pem: The PEM string to normalize.
+    :return: The normalized PEM string.
     """
     # Support env vars where newlines are encoded as literal "\\n".
     return (pem or "").strip().replace("\\n", "\n")
@@ -30,6 +33,9 @@ def _normalize_pem(pem: str) -> str:
 def _b64url_decode(segment: str) -> bytes:
     """
     Decode a base64url-encoded string, adding necessary padding.
+
+    :param segment: The base64url-encoded string to decode.
+    :return: The decoded bytes.
     """
     if not isinstance(segment, str) or not segment:
         raise ConversationLoadPermitError("Invalid JWT header")
