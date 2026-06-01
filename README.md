@@ -58,10 +58,10 @@ Disse skal altid være sat (uanset assistent-type), da de bruges uden sikre defa
 | `AZURE_OPENAI_ENDPOINT` | — | Base endpoint for Azure OpenAI-ressourcen. |
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | — | Deployment/model-navn der bruges til chat. |
 | `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version for OpenAI endpoints. |
-| `FEEDBACK_SMTP_SENDER_EMAIL` | — | Afsenderadresse for feedback (og evt. SMTP login). |
+| `FEEDBACK_SMTP_SENDER_EMAIL` | — | Afsenderadresse for feedback (og evt. SMTP login). Hvis domæne mangler, tilføjes automatisk `@randers.dk` (fx `fornavn.efternavn` → `fornavn.efternavn@randers.dk`). |
 | `FEEDBACK_SMTP_SERVER` | — | SMTP server til feedback-mail (rk-digi EmailSender). |
 | `FEEDBACK_SMTP_PORT` | `25` | SMTP port. |
-| `FEEDBACK_MAIL_RECIPIENT` | — | Modtageradresse(r) for feedback (komma- eller semikolon-separeret). |
+| `FEEDBACK_MAIL_RECIPIENT` | — | Modtageradresse(r) for feedback (komma- eller semikolon-separeret). Hvis domæne mangler på en adresse, tilføjes automatisk `@randers.dk`. |
 
 ### Chat-type miljøvariabler
 Skal sættes når `ASSISTANT_TYPE` er `Chat`.
