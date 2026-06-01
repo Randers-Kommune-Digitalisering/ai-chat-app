@@ -41,7 +41,10 @@ def test_chat_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -75,7 +78,10 @@ def test_chat_messages_creates_conversation_persists_messages_and_returns_title_
     created_conversation = MagicMock()
     created_conversation.id = 123
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -120,7 +126,10 @@ def test_chat_messages_create_conversation_fails_still_returns_success_with_titl
 
     db_session = MagicMock()
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -161,7 +170,10 @@ def test_chat_messages_partial_write_user_message_insert_fails_still_returns_suc
     created_conversation = MagicMock()
     created_conversation.id = 123
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(

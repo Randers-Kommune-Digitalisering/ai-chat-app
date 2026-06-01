@@ -56,7 +56,10 @@ def test_thread_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -89,7 +92,10 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
     created_conversation = MagicMock()
     created_conversation.id = 456
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -136,7 +142,10 @@ def test_thread_messages_create_conversation_fails_still_returns_success_with_ti
 
     db_session = MagicMock()
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -177,7 +186,10 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
     created_conversation = MagicMock()
     created_conversation.id = 456
 
-    with patch("api_endpoints.redact_content", side_effect=lambda s: s), patch(
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
     ), patch(
@@ -212,3 +224,19 @@ def test_thread_messages_partial_write_user_message_insert_fails_still_returns_s
     assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "agent"
     mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
+
+
+def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client):
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen om lidt.", 429),
+    ):
+        res = _post_thread_message(client, thread_id="thr_rate", message="Hi")
+
+    assert res.status_code == 429
+    body = res.get_json()
+    assert body["success"] is False
+    assert "travl" in body["message"].lower()

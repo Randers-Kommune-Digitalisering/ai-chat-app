@@ -1,14 +1,21 @@
 import datetime
 import re
 import logging
+import random
+import time
+from json import JSONDecodeError
 from abc import abstractmethod
 from openai import AzureOpenAI
 from azure.ai.projects import AIProjectClient
 from azure.ai.agents.models import RunStatus
 from azure.ai.agents.models import ListSortOrder
 from azure.core.pipeline.transport import RequestsTransport
+from azure.core.exceptions import ServiceRequestError
 from azure.identity import DefaultAzureCredential
 import urllib
+import requests
+import tiktoken
+from requests.adapters import HTTPAdapter
 from utils.extract_filedata import extract_text_from_file
 from utils.config import (
     AZURE_AISEARCH_ENDPOINT,
@@ -25,6 +32,9 @@ from utils.config import (
     ASSISTANT_TYPE,
     ASSISTANT_ID,
     ASSISTANT_ALT_ID,
+    DEFAULT_TOKEN_ENCODING,
+    MAX_TOKEN_LIMIT_HISTORY,
+    MAX_TOKEN_LIMIT_MESSAGE,
 
     USE_GENERAL_KNOWLEDGE,
     EMPHASIZE_RECENT_CONTENT,
@@ -41,12 +51,136 @@ from utils.config import (
 )
 
 logger = logging.getLogger(__name__)
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
-def _create_pooled_requests_session():
-    import requests
-    from requests.adapters import HTTPAdapter
+def _safe_status_code(exc: Exception) -> int | None:
+    """
+    Safely extract the status code from an exception.
 
+    :param exc: The exception to extract the status code from.
+    :return: The status code if found, otherwise None.
+    """
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    response = getattr(exc, "response", None)
+    for attr in ("status_code", "status", "http_status"):
+        val = getattr(response, attr, None) if response is not None else None
+        if isinstance(val, int):
+            return val
+    return None
+
+
+def _is_retryable_exception(exc: Exception) -> bool:
+    """
+    Determine if an exception is retryable.
+
+    :param exc: The exception to check.
+    :return: True if the exception is retryable, False otherwise.
+    """
+    if isinstance(exc, (ServiceRequestError, TimeoutError)):
+        return True
+    if isinstance(exc, JSONDecodeError):
+        # Azure SDK sometimes returns a non-JSON/empty body on 5xx, which blows up
+        # when the SDK tries to deserialize an error model.
+        return True
+
+    status_code = _safe_status_code(exc=exc)
+    if status_code in _RETRYABLE_STATUS_CODES:
+        return True
+
+    msg = str(exc or "").lower()
+    if "internal server error" in msg or "status 'internal server error'" in msg:
+        return True
+    if "timeout" in msg or "timed out" in msg or "temporarily" in msg:
+        return True
+    return False
+
+
+def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
+    """
+    Convert an exception to a user-friendly message and HTTP status code.
+
+    :param exc: The exception to convert.
+    :return: A tuple containing the user-friendly message and HTTP status code.
+    """
+    status_code = _safe_status_code(exc=exc)
+
+    # Default mapping
+    user_status = 503 if _is_retryable_exception(exc=exc) else 500
+    user_message = "Assistenten havde en midlertidig fejl. Prøv igen om lidt."
+
+    if status_code == 429:
+        return "Assistenten er travl lige nu. Prøv igen om lidt.", 429
+
+    if status_code is not None and 400 <= status_code < 500:
+        # Client/request issues — don't encourage retries.
+        if status_code in (401, 403):
+            return "Assistenten er ikke korrekt konfigureret. Prøv igen senere.", 503
+        if status_code == 404:
+            return "Der opstod en fejl med samtalen. Start en ny samtale og prøv igen.", 400
+        return "Der opstod en fejl i forespørgslen. Genindlæs siden eller prøv igen senere.", 400
+
+    # Retryable 5xx and network-type errors
+    if _is_retryable_exception(exc=exc):
+        return "Assistenten havde en midlertidig fejl. Prøv igen om lidt.", user_status
+
+    return user_message, user_status
+
+
+def _call_with_retries(*, operation: str, func, max_retries: int = 2, base_delay_s: float = 0.4):
+    """
+    Call a function with retries for retryable exceptions.
+
+    :param operation: The name of the operation being performed.
+    :param func: The function to call.
+    :param max_retries: The maximum number of retries.
+    :param base_delay_s: The base delay between retries in seconds.
+    :return: The result of the function call.
+    :raises: The last exception if all retries fail.
+    """
+    attempt = 0
+    while True:
+        try:
+            return func()
+        except Exception as exc:
+            retryable = _is_retryable_exception(exc=exc)
+            status_code = _safe_status_code(exc=exc)
+
+            if retryable and attempt < max_retries:
+                delay = base_delay_s * (2**attempt) + random.uniform(0.0, 0.25)
+                logger.warning(
+                    "Azure op failed (op=%s attempt=%s/%s status=%s): %s; retrying in %.2fs",
+                    operation,
+                    attempt + 1,
+                    max_retries + 1,
+                    status_code,
+                    exc,
+                    delay,
+                )
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            logger.error(
+                "Azure op failed (op=%s attempts=%s status=%s): %s",
+                operation,
+                attempt + 1,
+                status_code,
+                exc,
+                exc_info=True,
+            )
+            raise
+
+
+def _create_pooled_requests_session() -> requests.Session:
+    """
+    Create a requests session with a connection pool.
+
+    :return: A requests session with a connection pool.
+    """
     adapter = HTTPAdapter(
         pool_connections=REQUESTS_POOL_CONNECTIONS,
         pool_maxsize=REQUESTS_POOL_MAXSIZE,
@@ -60,21 +194,20 @@ def _create_pooled_requests_session():
     return session
 
 
-def get_chat_client():
-    if ASSISTANT_TYPE.lower() == "agent":
-        return Agent()
-    return Chat()
+def _desanitize_metadata_value(value: str) -> str:
+    """
+    Desanitize a metadata value by unescaping URL-encoded characters.
 
-
-def get_title_generator():
-    return AzureOpenAITitleGenerator()
-
-
-def desanitize_metadata_value(value):
+    :param value: The sanitized metadata value to desanitize.
+    :return: The desanitized metadata value.
+    """
     return urllib.parse.unquote(value)
 
 
 class AzureOpenAIClient:
+    """
+    Base client for interacting with Azure OpenAI, providing common functionality for both Chat and Agent implementations.
+    """
     def __init__(self):
         self.client = AzureOpenAI(
             api_version=AZURE_API_VERSION_OPENAI,
@@ -98,6 +231,9 @@ class AzureOpenAIClient:
         self.search_strictness = SEARCH_STRICTNESS
 
     def close(self) -> None:
+        """
+        Close any resources held by the client, such as sessions or connections.
+        """
         try:
             close_fn = getattr(self.client, "close", None)
             if callable(close_fn):
@@ -106,9 +242,19 @@ class AzureOpenAIClient:
             pass
 
     def get_client(self):
+        """
+        Get the Azure OpenAI client.
+
+        :return: The Azure OpenAI client instance.
+        """
         return self.client
 
     def get_system_prompt(self):
+        """
+        Get the system prompt for the Azure OpenAI client (only used in Chat, not Agent).
+
+        :return: The system prompt string.
+        """
         system_prompt = SYSTEM_PROMPT.strip()
 
         if self.emphasize_recent_content:
@@ -121,7 +267,13 @@ class AzureOpenAIClient:
         return system_prompt
 
     @abstractmethod
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
+    def fetch_chat_response(self, **args) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from the Azure OpenAI client (ChatCompletions for Chat, Agents for Agent).
+
+        :param args: Additional arguments for the chat request.
+        :return: A tuple containing the assistant response, list of referenced citations, error message (if any), and HTTP status code.
+        """
         pass
 
     @staticmethod
@@ -132,10 +284,19 @@ class AzureOpenAIClient:
 
 
 class Chat(AzureOpenAIClient):
+    """
+    Client for handling chat interactions using Azure OpenAI ChatCompletions, including optional retrieval-augmented generation with Azure Search.
+    """
     def __init__(self):
         super().__init__()
 
-    def fetch_chat_response(self, chat_messages, files=None, thread_id=None, use_alt=False):
+    def fetch_chat_response(self, chat_messages) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from Azure OpenAI ChatCompletions, optionally using Azure Search for retrieval-augmented generation.
+
+        :param chat_messages: A list of chat messages in the conversation history, including attached files.
+        :return: A tuple containing the assistant response, list of referenced citations, error message (if any), and HTTP status code.
+        """
         ai_search_body = {
             "data_sources": [
                 {
@@ -175,22 +336,54 @@ class Chat(AzureOpenAIClient):
             if chat_message.get("files") and chat_message["role"] == "user":
                 request_message["content"] = f"{request_message['content']}\n\n# Der er uploadet {len(chat_message['files'])} dokument{'er' if len(chat_message['files']) > 1 else ''}. Benyt følgende indhold fra {'de uploadede dokumenter' if len(chat_message['files']) > 1 else 'det uploadede dokument'} som kontekst for forespørgslen:\n\n"
                 for index, file in enumerate(chat_message["files"]):
-                    doc_text = extract_text_from_file(file)
+                    doc_text = extract_text_from_file(file=file)
                     request_message["content"] = f"{request_message['content']}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
             request_messages.append(request_message)
 
-        # Return early if message exceeds maximum length
-        message_length = len(request_message)
-        if message_length > MAX_MESSAGE_LENGTH:
-            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
+        # Return early if message(s) exceeds maximum token length
+        try:
+            encoding = tiktoken.encoding_for_model(self.deployment_name)
+        except KeyError:
+            encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
 
-        response = self.client.chat.completions.create(
-            messages=request_messages,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            model=self.deployment_name,
-            extra_body=ai_search_body
+        message_tokens = len(encoding.encode(request_messages[-1]["content"]))
+        if message_tokens > MAX_TOKEN_LIMIT_MESSAGE:
+            has_files = bool(chat_message.get("files"))
+            return (
+                None,
+                [],
+                f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
+                400,
+            )
+        total_tokens = sum(
+            len(encoding.encode(m.get("content", "")))
+            for m in request_messages
+            if isinstance(m, dict) and isinstance(m.get("content"), str)
         )
+        message_length = total_tokens
+        if message_length > MAX_TOKEN_LIMIT_HISTORY:
+            has_files = bool(any(m.get("files") for m in chat_messages if m.get("role") == "user"))
+            return (
+                None,
+                [],
+                f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Overvej at starte en ny samtale.",
+                400,
+            )
+
+        try:
+            response = _call_with_retries(
+                operation="openai.chat.completions.create",
+                func=lambda: self.client.chat.completions.create(
+                    messages=request_messages,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    model=self.deployment_name,
+                    extra_body=ai_search_body,
+                ),
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc=exc)
+            return None, [], msg, status
 
         if response and hasattr(response, "choices") and len(response.choices) > 0:
             choice = response.choices[0]
@@ -230,7 +423,7 @@ class Chat(AzureOpenAIClient):
 
                 # Update titles for referenced citations only once
                 for idx, item in enumerate(referenced_citations):
-                    old_title = desanitize_metadata_value(item.get('title'))
+                    old_title = _desanitize_metadata_value(item.get('title'))
                     item["title"] = f"[{idx + 1}] {old_title}"
 
                 # Update assistant response with new reference numbers
@@ -261,16 +454,25 @@ class Chat(AzureOpenAIClient):
                 # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
                 assistant_response = re.sub(r'(\[\d+\]){2,}', self.sort_refs, assistant_response)
 
-        return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None
+        return assistant_response, referenced_citations if 'referenced_citations' in locals() else [], None, 200
 
     def parse_urlencoding(self, s):
+        """
+        Decode a URL-encoded string.
+
+        :param s: The URL-encoded string to decode.
+        :return: The decoded string.
+        """
         if not s:
             return s
         import urllib.parse
         return urllib.parse.unquote(s)
 
 
-class Agent(Chat):
+class Agent(AzureOpenAIClient):
+    """
+    Client for handling interactions with Azure OpenAI Agents (V1).
+    """
     def __init__(self):
         super().__init__()
         self.assistant_id = ASSISTANT_ID
@@ -289,6 +491,9 @@ class Agent(Chat):
         self._closed = False
 
     def close(self) -> None:
+        """
+        Close any resources held by the client, such as sessions or connections.
+        """
         if getattr(self, "_closed", False):
             return
         self._closed = True
@@ -318,10 +523,20 @@ class Agent(Chat):
 
         super().close()
 
-    def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False):
+    def fetch_chat_response(self, chat_message, files, thread_id, use_alt=False) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a chat response from Azure OpenAI Agents, by creating a new message and run in the specified thread,
+        then retrieving the assistant's response message and any citations.
+
+        :param chat_message: The latest user message to send to the agent.
+        :param files: Optional list of files uploaded by the user, to be included as context.
+        :param thread_id: The thread ID for the conversation.
+        :param use_alt: Optional flag to use an alternative assistant configuration.
+        :return: A tuple containing the assistant's response, any referenced citations, an error message if applicable, and the HTTP status code.
+        """
         if not thread_id:
             logger.error("Thread ID is required for fetching chat response in Agent mode.")
-            return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale."  # Return early if thread_id is missing
+            return None, [], "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale.", 400  # Return early if thread_id is missing
 
         # Append document text to the last user message if available
         request_message = chat_message
@@ -329,36 +544,88 @@ class Agent(Chat):
             if len(files) > 1:
                 request_message = f"{request_message}\n\n# Der er uploadet {len(files)} dokumenter. Benyt følgende indhold fra de uploadede dokumenter som kontekst for forespørgslen:\n\n"
             for index, file in enumerate(files):
-                doc_text = extract_text_from_file(file)
+                doc_text = extract_text_from_file(file=file)
                 request_message = f"{request_message}\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{doc_text}"
 
         # Return early if message exceeds maximum length
         message_length = len(request_message)
         if message_length > MAX_MESSAGE_LENGTH:
-            return None, [], f"Din besked er for lang{', eller dine dokumenter er for store.' if len(files) > 0 else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if len(files) > 0 else ''} og prøv igen."
+            has_files = bool(files)
+            return (
+                None,
+                [],
+                f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
+                400,
+            )
 
         # Return early to avoid creating a new run if one is already active
-        run_list = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+        try:
+            run_list = _call_with_retries(
+                operation="agents.runs.list",
+                func=lambda: self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc=exc)
+            return None, [], msg, status
+
         if any(run.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value] for run in run_list):
             logger.error(f"A run is already active for thread_id {thread_id}. Cannot start a new run until the current one finishes.")
-            return None, [], "Assistenten er allerede ved at svare på denne samtale. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Assistenten er allerede ved at svare på denne samtale. Prøv at genindlæse siden, eller start en ny samtale.", 409
 
-        self.project.agents.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=request_message
-        )
+        try:
+            # Avoid retrying message creation to prevent duplicate user messages.
+            self.project.agents.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=request_message,
+            )
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc=exc)
+            return None, [], msg, status
 
-        run = self.project.agents.runs.create_and_process(
-            thread_id=thread_id,
-            agent_id=self.assistant_id if not use_alt else self.assistant_alt_id
-        )
+        def _create_run_once():
+            return self.project.agents.runs.create_and_process(
+                thread_id=thread_id,
+                agent_id=self.assistant_id if not use_alt else self.assistant_alt_id,
+            )
+
+        try:
+            # Retry transient 5xx/429/etc. If a run actually started, don't create a second run.
+            try:
+                run = _create_run_once()
+            except Exception as exc:
+                if _is_retryable_exception(exc=exc):
+                    try:
+                        run_list_after = self.project.agents.runs.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+                        if any(
+                            r.status in [RunStatus.QUEUED.value, RunStatus.IN_PROGRESS.value, RunStatus.REQUIRES_ACTION.value, RunStatus.CANCELLING.value]
+                            for r in run_list_after
+                        ):
+                            return (
+                                None,
+                                [],
+                                "Assistenten er ved at behandle din besked. Prøv at genindlæse siden om lidt.",
+                                409,
+                            )
+                    except Exception:
+                        pass
+                raise
+        except Exception as exc:
+            msg, status = _error_to_user_message_and_status(exc=exc)
+            return None, [], msg, status
 
         if run.status == "failed":
             logger.error(f"Run failed: {run.last_error}")
-            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale.", 503
         else:
-            messages = self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING)
+            try:
+                messages = _call_with_retries(
+                    operation="agents.messages.list",
+                    func=lambda: self.project.agents.messages.list(thread_id=thread_id, order=ListSortOrder.DESCENDING),
+                )
+            except Exception as exc:
+                msg, status = _error_to_user_message_and_status(exc=exc)
+                return None, [], msg, status
 
         assistant_message = next(  # Find the latest assistant message in the thread
             (
@@ -393,7 +660,7 @@ class Agent(Chat):
             for annotation in annotations:
                 citation = dict(annotation.get("url_citation", {}))
                 citation["replace_refs"] = annotation.get("text", "")
-                citation["title"] = desanitize_metadata_value(citation.get("title", ""))
+                citation["title"] = _desanitize_metadata_value(citation.get("title", ""))
 
                 # Find the index of the citation URL in the unique list of annotation URLs
                 citation["refs"] = [i + 1 for i, a in enumerate(annotations) if a.get("url_citation") and a.get("url_citation").get("url") == citation.get("url")]
@@ -409,18 +676,21 @@ class Agent(Chat):
                 thread_id,
                 getattr(run, "status", None),
             )
-            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale."
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv at genindlæse siden, eller start en ny samtale.", 502
 
-        # Remove spaces between consecutive references (e.g., [1] [2] [3] -> [1][2][3])
-        # text_value = re.sub(r'(\[\d+\](?:\s+\[\d+\])+)', lambda m: re.sub(r'\s+', '', m.group(0)), text_value)
+        return text_value, citations, None, 200
 
-        # Sort consecutive references in ascending order (e.g., [2][1] -> [1][2])
-        # text_value = re.sub(r'(\[\d+\]){2,}', self.sort_refs, text_value)
+    def create_thread(self) -> str:
+        """
+        Create a new thread for the Agent conversation.'
 
-        return text_value, citations, None
-
-    def create_thread(self):
-        thread = self.project.agents.threads.create()
+        :return: The string ID of the newly created thread.
+        """
+        thread = _call_with_retries(
+            operation="agents.threads.create",
+            func=lambda: self.project.agents.threads.create(),
+            max_retries=2,
+        )
         return thread.id
 
 
@@ -434,6 +704,12 @@ class AzureOpenAITitleGenerator():
         self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION
 
     def generate_title(self, conversation_messages):
+        """
+        Generate a short title for a conversation based on the user's first message.
+
+        :param conversation_messages: A list of messages in the conversation.
+        :return: A string containing the generated title.
+        """
         system_prompt = {
             "role": "system",
             "content": "Du er en hjælpsom assistent, der genererer korte og præcise titler (maksimalt 24 tegn) til samtaler baseret på brugerens første besked. Titlen skal være på dansk og opsummere samtalens emne uden at inkludere citater eller referencer."
@@ -457,3 +733,23 @@ class AzureOpenAITitleGenerator():
                 return title
 
         return "Ny samtale"  # Fallback title
+
+
+def get_chat_client() -> AzureOpenAIClient:
+    """
+    Get the appropriate Azure OpenAI client based on the assistant type.
+
+    :return: An instance of AzureOpenAIClient (either Agent or Chat).
+    """
+    if ASSISTANT_TYPE.lower() == "agent":
+        return Agent()
+    return Chat()
+
+
+def get_title_generator() -> AzureOpenAITitleGenerator:
+    """
+    Get the Azure OpenAI client for title generation.
+
+    :return: An instance of AzureOpenAITitleGenerator.
+    """
+    return AzureOpenAITitleGenerator()
