@@ -31,7 +31,6 @@ azure_client = get_chat_client()
 db_client = get_db_client()
 
 
-# add doc strings
 def _close_azure_client() -> None:
     """
     Close the Azure OpenAI client if it has a close method. This is registered to run at exit to ensure any open connections are properly closed.
