@@ -32,6 +32,9 @@ db_client = get_db_client()
 
 
 def _close_azure_client() -> None:
+    """
+    Close the Azure OpenAI client if it has a close method. This is registered to run at exit to ensure any open connections are properly closed.
+    """
     try:
         close_fn = getattr(azure_client, "close", None)
         if callable(close_fn):
@@ -43,11 +46,12 @@ def _close_azure_client() -> None:
 atexit.register(_close_azure_client)
 
 
-def _start_title_generation_thread(*, first_user_message: str):
-    """Start generating a conversation title in the background.
+def _start_title_generation_thread(*, first_user_message: str) -> tuple[threading.Thread, dict]:
+    """
+    Start generating a conversation title in the background.
 
-    Returns (thread, result_dict). Caller can join the thread later to wait
-    for the title before writing the conversation to the DB.
+    :param first_user_message: The content of the first user message, used as input for title generation.
+    :return: A tuple containing the thread object and a shared result dictionary where the generated title will be stored once ready.
     """
 
     result = {"title": None}
@@ -73,6 +77,11 @@ def _start_title_generation_thread(*, first_user_message: str):
 # Config endpoint for frontend
 @api_endpoints.route('/config', methods=['GET'])
 def get_config():
+    """
+    Get the configuration for the frontend.
+
+    :return: A JSON response containing the configuration.
+    """
     config = {
         "assistantName": ASSISTANT_NAME,
         "assistantNameId": ASSISTANT_NAME_ID,
@@ -89,6 +98,11 @@ def get_config():
 
 @api_endpoints.route('/threads', methods=['POST'])
 def create_thread():
+    """
+    Create a new thread.
+
+    :return: A JSON response indicating the success or failure of the thread creation.
+    """
     try:
         thread_id = azure_client.create_thread()
         return jsonify({"success": True, "message": "Thread created successfully", "thread_id": thread_id})
@@ -106,6 +120,12 @@ def create_thread():
 # Endpoint to handle messages in a thread (Agent mode)
 @api_endpoints.route('/threads/<thread_id>/messages', methods=['POST'])
 def create_thread_message(thread_id):
+    """
+    Handle messages in a thread (Agent mode).
+
+    :param thread_id: The ID of the thread.
+    :return: A JSON response indicating the success or failure of the message handling.
+    """
     message = request.json.get("message")
     files_data = request.json.get("files", [])
     use_alt = request.json.get("use_alt", False)
@@ -128,7 +148,7 @@ def create_thread_message(thread_id):
     chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
 
     # Redact sensitive content in user messages
-    message = redact_content(message)
+    message = redact_content(text=message)
 
     title_thread = None
     title_result = None
@@ -154,7 +174,7 @@ def create_thread_message(thread_id):
 
     # Get response from Azure
     try:
-        azure_result = azure_client.fetch_chat_response(message, files, thread_id, use_alt=use_alt)
+        azure_result = azure_client.fetch_chat_response(chat_message=message, files=files, thread_id=thread_id, use_alt=use_alt)
         if isinstance(azure_result, tuple) and len(azure_result) == 4:
             response, refs, error_message, azure_status = azure_result
         else:
@@ -188,8 +208,8 @@ def create_thread_message(thread_id):
             conversation_title = generated_title
 
             created = create_db_conversation(
-                db_session,
-                user_email,
+                session=db_session,
+                user_email=user_email,
                 title=generated_title,
                 thread_id=thread_id,
             )
@@ -241,6 +261,11 @@ def create_thread_message(thread_id):
 # Endpoint to handle chat messages (Chat mode)
 @api_endpoints.route('/chat/messages', methods=['POST'])
 def create_chat_message():
+    """
+    Handle chat messages (Chat mode).
+
+    :return: A JSON response containing the chat response, references, conversation ID, and conversation title.
+    """
     messages = request.json.get("messages", [])
     conversation_id = request.json.get("conversation_id")
     user_email = request.headers.get("X-User-Email") or "guest"
@@ -261,7 +286,7 @@ def create_chat_message():
 
     for msg in messages:
         # Redact sensitive content in user messages
-        msg["content"] = redact_content(msg.get("content", ""))
+        msg["content"] = redact_content(text=msg.get("content", ""))
 
         # Parse files from JSON: each file is { name, content (base64) }
         new_files = []
@@ -293,7 +318,7 @@ def create_chat_message():
 
     # Get response from Azure
     try:
-        azure_result = azure_client.fetch_chat_response(messages)
+        azure_result = azure_client.fetch_chat_response(chat_messages=messages)
         if isinstance(azure_result, tuple) and len(azure_result) == 4:
             response, refs, error_message, azure_status = azure_result
         else:
@@ -327,8 +352,8 @@ def create_chat_message():
             conversation_title = generated_title
 
             created = create_db_conversation(
-                db_session,
-                user_email,
+                session=db_session,
+                user_email=user_email,
                 title=generated_title
             )
             if created and getattr(created, "id", None) is not None:
@@ -376,19 +401,6 @@ def create_chat_message():
     return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
 
-@api_endpoints.route('/conversations/<id>', methods=['GET'])
-def load_conversation(id):
-    # Legacy endpoint disabled: the portal must send a short-lived signed permit instead.
-    # Do not accept guessed conversation IDs or X-User-Email headers for loading.
-    return (
-        jsonify({
-            "success": False,
-            "message": "Legacy endpoint disabled. Use POST /api/conversations/load with a permit.",
-        }),
-        410,
-    )
-
-
 @api_endpoints.route('/conversations/load', methods=['POST'])
 def load_conversation_by_permit():
     """Load a conversation using a portal-issued RS256 load permit.
@@ -405,10 +417,10 @@ def load_conversation_by_permit():
             data = request.get_json(silent=True) or {}
             token = (data.get('permit') or '').strip() if isinstance(data, dict) else ''
 
-        permit = verify_conversation_load_permit(token)
+        permit = verify_conversation_load_permit(token=token)
 
         with db_client.session_scope() as session:
-            conversation = get_user_conversation(session, permit.user_email, permit.conversation_id)
+            conversation = get_user_conversation(session=session, user_email=permit.user_email, conversation_id=permit.conversation_id)
             if not conversation:
                 return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 404
             payload = conversation.to_dict(include_messages=True)
@@ -427,6 +439,11 @@ def load_conversation_by_permit():
 # Filter endpoint
 @api_endpoints.route('/filter', methods=['POST'])
 def filter_content():
+    """
+    Filter content using the configured content filter.
+
+    :return: A JSON response containing the filtered content.
+    """
     content = request.json.get("content")
     if not content:
         return jsonify({"success": False, "message": "Der opstod en fejl. Prøv at genindlæse siden."}), 400
@@ -441,6 +458,11 @@ def filter_content():
 # Feedback endpoint
 @api_endpoints.route('/feedback', methods=['POST'])
 def send_feedback():
+    """
+    Send user feedback for a specific chat response.
+
+    :return: A JSON response indicating the success or failure of the feedback submission.
+    """
     data = request.json
     feedback = data.get('feedback')
     response_index = data.get('response_index')
@@ -457,5 +479,10 @@ def send_feedback():
 
 @api_endpoints.route('/feedback/like', methods=['POST'])
 def send_like_feedback():
+    """
+    Send a "like" feedback for a specific chat response (metrics counter).
+
+    :return: A JSON response indicating the success of the feedback submission.
+    """
     chat_feedback_counter.labels(**metrics_base_labels(), feedback_type='like').inc()
     return jsonify({"success": True})
