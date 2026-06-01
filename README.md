@@ -135,7 +135,7 @@ Metrikkerne er afhængige af følgende miljøvariabler:
 |---|---:|---|
 | `METRICS_APP` | `ai-chat-app` | Prometheus label: applikationsnavn. |
 | `METRICS_DEPLOYMENT` | `unknown` | Alias: `DEPLOYMENT`. Prometheus label: deployment-miljø/navn. |
-| `METRICS_INSTANCE` | — | Alias: `POD_NAME`. |
+| `METRICS_INSTANCE` | `POD_NAME` | Alias: `POD_NAME`. |
 
 ## Udvikling
 
