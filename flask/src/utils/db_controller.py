@@ -28,6 +28,19 @@ ReferenceItem: TypeAlias = Mapping[str, Any] | str
 ReferencesArg: TypeAlias = Sequence[ReferenceItem] | ReferenceItem | None
 
 
+def _utcnow_naive() -> datetime:
+    """
+    Returns the current UTC time as a naive datetime.
+
+    The DB columns for timestamps are modeled as SQLAlchemy DateTime without
+    timezone support (i.e. PostgreSQL `timestamp without time zone`). psycopg2
+    and/or SQLAlchemy can reject offset-aware datetimes for those columns.
+
+    :return: Current UTC time as a naive datetime.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def get_db_client() -> DatabaseClient:
     """
     Initialize and return a DatabaseClient instance for PostgreSQL.
@@ -79,7 +92,7 @@ def create_conversation(session: sqlalchemy.orm.Session, user_email: str, title:
     :return: The newly created conversation if successful, otherwise None.
     """
     try:
-        now = datetime.now(timezone.utc)
+        now = _utcnow_naive()
         new_conversation = Conversation(
             user_email=user_email,
             title=title,
@@ -138,7 +151,7 @@ def add_message_to_conversation(
         ).first()
 
         if conversation:
-            now = datetime.now(timezone.utc)
+            now = _utcnow_naive()
             message = Message(
                 conversation_id=conversation.id,
                 sender=sender,
