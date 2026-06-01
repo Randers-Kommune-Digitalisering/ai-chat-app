@@ -1,4 +1,3 @@
-# TODO: Erstat gamle DatabaseClient med Randers pakken(DatabaseManager)
 import sqlalchemy
 import logging
 import urllib.parse
