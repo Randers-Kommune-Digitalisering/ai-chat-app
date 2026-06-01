@@ -97,11 +97,11 @@ Skal sættes når `ASSISTANT_TYPE` er `Agent`.
 | `AZURE_API_VERSION_FILES` | `2024-10-21` | API-version for file endpoints, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
 | `TOP_N_DOCUMENTS` | `10` | Antal dokumenter der hentes fra search/retrieval, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
 | `SEARCH_STRICTNESS` | `3` | Stramhed for søgning/retrieval, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `POSTGRES_USER` | `postgres` | Postgres brugernavn. |
-| `POSTGRES_PASSWORD` | `mysecretpassword` | Postgres password. |
-| `POSTGRES_HOST` | `localhost` | Postgres host. |
+| `POSTGRES_USER` | — | Postgres brugernavn (skal sættes for at DB er aktiv). |
+| `POSTGRES_PASSWORD` | — | Postgres password (skal sættes for at DB er aktiv). |
+| `POSTGRES_HOST` | — | Postgres host (skal sættes for at DB er aktiv). |
 | `POSTGRES_PORT` | `5432` | Postgres port. |
-| `POSTGRES_DB` | `ai_chat_db` | Postgres databasenavn. |
+| `POSTGRES_DB` | — | Postgres databasenavn (skal sættes for at DB er aktiv). |
 | `CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM` | — | RS256 public key (PEM) til validering af portalens load-permits. |
 | `CONVERSATION_LOAD_PERMIT_ISSUER` | `gpt-dashboard-portal` | Forventet JWT issuer for load-permit. |
 | `CONVERSATION_LOAD_PERMIT_AUDIENCE` | `chat-app` | Forventet JWT audience for load-permit. |
