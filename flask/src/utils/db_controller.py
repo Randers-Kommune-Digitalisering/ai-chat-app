@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import base64
 import json
 import mimetypes
-from typing import Any
+from typing import Any, Mapping, Sequence, TypeAlias
 
 import sqlalchemy
 
@@ -15,10 +15,17 @@ from utils.config import (
     POSTGRES_PORT,
 )
 from utils.database import DatabaseClient
+from utils.file_types import UploadedFile
 from models import Conversation, Message, Attachment, Reference
 import logging
 
 logger = logging.getLogger(__name__)
+
+FileContentItem: TypeAlias = Mapping[str, Any] | UploadedFile
+FileContentArg: TypeAlias = Sequence[FileContentItem] | FileContentItem | None
+
+ReferenceItem: TypeAlias = Mapping[str, Any] | str
+ReferencesArg: TypeAlias = Sequence[ReferenceItem] | ReferenceItem | None
 
 
 def get_db_client() -> DatabaseClient:
@@ -91,7 +98,14 @@ def create_conversation(session: sqlalchemy.orm.Session, user_email: str, title:
         return None
 
 
-def add_message_to_conversation(session: sqlalchemy.orm.Session, conversation_id: int, message_content: str, sender: str, references: list[Reference] | None = None, file_content: list[Attachment] | None = None) -> bool:
+def add_message_to_conversation(
+    session: sqlalchemy.orm.Session,
+    conversation_id: int,
+    message_content: str,
+    sender: str,
+    references: ReferencesArg = None,
+    file_content: FileContentArg = None,
+) -> bool:
     """
     Add a message to a conversation.
 
@@ -99,8 +113,16 @@ def add_message_to_conversation(session: sqlalchemy.orm.Session, conversation_id
     :param conversation_id: The ID of the conversation.
     :param message_content: The content of the message.
     :param sender: The sender of the message.
-    :param references: Optional list of references associated with the message.
-    :param file_content: Optional list of attachments associated with the message.
+    :param references: Optional reference payload(s) associated with the message.
+        Accepted shapes:
+        - dict payloads (e.g. Azure citation dicts)
+        - strings (stored as-is)
+        - a single item or a list/tuple of items
+    :param file_content: Optional attachment payload(s) associated with the message.
+        Accepted shapes:
+        - file-like objects with `.read()` and `.filename` (e.g. io.BytesIO with `.filename` attached)
+        - dict payloads with file metadata/content (e.g. {name/content} or {file_name/file_content})
+        - a single item or a list/tuple of items
     :return: True if the message was added successfully, otherwise False.
     """
     try:

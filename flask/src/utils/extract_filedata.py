@@ -1,23 +1,7 @@
 import pdfplumber
 import openpyxl
 import docx
-from typing import Protocol
-
-
-class UploadedFile(Protocol):
-    """
-    Protocol for a file-like object with a `.filename` attribute and binary `.read()` method.
-    """
-    filename: str
-
-    def read(self, size: int = -1) -> bytes:
-        ...
-
-    def seek(self, offset: int, whence: int = 0) -> int:
-        ...
-
-    def tell(self) -> int:
-        ...
+from utils.file_types import UploadedFile
 
 
 def extract_text_from_pdf(file: UploadedFile) -> str:
