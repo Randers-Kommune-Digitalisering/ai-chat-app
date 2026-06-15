@@ -1,0 +1,211 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap');
+:root {
+  font-family: 'Source Sans 3', 'Arial', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: var(--color-text-primary);
+  background-color: var(--color-background-primary);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --font-primary: 'Source Sans 3', 'Arial', sans-serif;
+  --font-code: 'Fira Code', monospace;
+
+  --color-text-primary: #31333f;
+  --color-text-faded: #666666;
+  --color-text-gray: #9f9f9f;
+
+  --color-background-primary: #FFFEFA;
+  --color-toolbar-background: #FCFAF4;
+  --color-toolbar-border: #eee;
+
+  --color-chat-user-background: #e4edf0;
+  --color-chat-user-border: #dedede;
+  --color-code-background: #f2f2f280;
+  --color-code-border: #d0d0d0;
+  --color-reference-background: #e8ebed;
+  --color-reference-background-hover: #d8e0e2;
+  --color-reference-text: #4e8dcd;
+  --color-reference-text-hover: #2c6dad;
+  --color-reference-more: #7c7c7c;
+  --color-reference-more-hover: #4f4f4f;
+
+  --color-options-text: #6f7a82;
+  --color-options-text-selected: #525252;
+  --color-options-background-hover: rgba(0, 0, 0, 0.05);
+  --color-tooltip-background: #585858;
+  --color-tooltip-text: #ebebeb;
+
+  --color-input-border: rgb(223, 223, 223);
+  --color-input-background: rgb(252, 252, 252);
+  --color-input-background-focus: rgb(255, 255, 255);
+  --color-input-placeholder: #949494;
+  --box-shadow-input: 0 0 0.5rem rgba(0, 0, 0, 0.05);
+  --color-input-fileselect-button: #949494;
+  --color-input-fileselect-button-hover: #5b5b5b;
+  --color-dropzone-background-active: rgb(255, 255, 255);
+  --color-dropzone-text: #8e8e8e;
+  --color-dropzone-green: rgb(120, 180, 110);
+  --color-dropzone-green-border: rgb(120, 180, 110, 0.5);
+  --color-dropzone-yellow: rgb(200, 180, 60);
+  --color-dropzone-yellow-border: rgb(200, 180, 60, 0.5);
+  --color-dropzone-red: rgb(200, 60, 60);
+  --color-dropzone-red-border: rgb(200, 60, 60, 0.5);
+  --color-input-button-submit: rgba(0, 0, 0, 0.06);
+  --color-input-button-submit-hover: rgba(0, 0, 0, 0.12);
+  
+  --color-button-text: #4b4b4b;
+  --color-button-text-hover: #6a6a6a;
+  --color-button-gray: #d6d6d6;
+  --color-button-gray-hover: #e2e2e2;
+  --color-button-gray-border: #b0b0b0;
+  --color-button-gray-border-hover: #d0d0d0;
+  --color-button-green: #9ec39e;
+  --color-button-green-hover: #b7d8b7;
+  --color-button-green-border: #86a086;
+  --color-button-green-border-hover: #a4c4a4;
+  --color-button-green-disabled: #e1f1e1;
+  --color-button-green-disabled-border: #d1e0d1;
+  --color-button-green-disabled-text: #a7a7a7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    background-color: var(--color-background-primary); /* toolbar: #27292b */
+    color: var(--color-text-primary);
+
+    --color-text-primary: #efefef;
+    --color-text-faded: #bbbbbb;
+    --color-text-gray: #595959;
+
+    --color-background-primary: #222326;
+    --color-toolbar-background: #27292b;
+    --color-toolbar-border: rgba(255, 255, 255, 0.1);
+
+    --color-chat-user-background: #1B2933;
+    --color-chat-user-border: rgba(255, 255, 255, 0.08);
+    --color-code-background: #1f1f1f80;
+    --color-code-border: #444;
+    --color-reference-background: #1c1e1f;
+    --color-reference-background-hover: #17191a;
+    --color-reference-text: #66b2ff;
+    --color-reference-text-hover: #a1d1ff;
+    --color-reference-more: #a1a1a1;
+    --color-reference-more-hover: #dddddd;
+
+    --color-options-text: #53575b;
+    --color-options-text-selected: #888;
+    --color-options-background-hover: rgba(255, 255, 255, 0.05);
+    --color-tooltip-background: #1d1d1d;
+    --color-tooltip-text: #cccccc;
+
+    --color-input-border: #5c5c5c;
+    --color-input-background: rgb(59, 60, 60);
+    --color-input-background-focus: rgb(46, 46, 46);
+    --color-input-placeholder: #949494;
+    --box-shadow-input: 0 0 0.5rem rgba(0, 0, 0, 0.2);
+    --color-input-fileselect-button: #949494;
+    --color-input-fileselect-button-hover: #e5e5e5;
+    --color-dropzone-background-active: rgb(66, 67, 67);
+    --color-dropzone-text: #bdbdbd;
+    --color-dropzone-green: rgb(175, 207, 173);
+    --color-dropzone-green-border: rgb(175, 207, 173, 0.5);
+    --color-dropzone-yellow: rgb(207, 205, 173);
+    --color-dropzone-yellow-border: rgb(207, 205, 173, 0.5);
+    --color-dropzone-red: rgb(207, 173, 173);
+    --color-dropzone-red-border: rgb(207, 173, 173, 0.5);
+    --color-input-button-submit: rgba(255, 255, 255, 0.1);
+    --color-input-button-submit-hover: rgba(255, 255, 255, 0.2);
+    
+    --color-button-text: #e3e3e3;
+    --color-button-text-hover: #ffffff;
+    --color-button-gray: #4b4b4b;
+    --color-button-gray-hover: #595959;
+    --color-button-gray-border: #646464;
+    --color-button-gray-border-hover: #7f7f7f;
+    --color-button-green: #3f5a3f;
+    --color-button-green-hover: #4a6a4a;
+    --color-button-green-border: #647764;
+    --color-button-green-border-hover: #7f8f7f;
+    --color-button-green-disabled: #586658;
+    --color-button-green-disabled-border: #647764;
+    --color-button-green-disabled-text: #878787;
+  }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body
+{
+    margin: 0;
+}
+
+main, #app {
+  width: 100%;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 4.5rem;
+  padding-bottom: 0;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+@media screen and (min-width: 875px) {
+  main, #app {
+      max-width: 56rem;
+  }
+}
+#app > * {
+  width: 100%;
+}
+
+
+@keyframes fadeContentOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes fadeContentIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-out > *:not(.header) {
+  animation: fadeContentOut 0.5s forwards;
+}
+.fade-in > *:not(.header) {
+  animation: fadeContentIn 0.5s forwards;
+}
+
+
+
+/* Tooltip */
+
+.tooltip {
+  opacity: 0;
+  visibility: hidden;
+  width: max-content;
+  background-color: var(--color-tooltip-background);
+  color: var(--color-tooltip-text);
+  text-align: center;
+  border-radius: 0.3rem;
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  transition: opacity 0.3s;
+  position: absolute;
+  z-index: 12;
+  user-select: none;
+}
+
+*:hover > .tooltip {
+    visibility: visible !important;
+    opacity: 1 !important;
+}

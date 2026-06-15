@@ -1,73 +1,94 @@
 <script setup>
-import { ref } from 'vue';
+    import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+    import Header from './components/Header.vue'
+    import Chat from './views/Chat.vue'
+    import { isAllowedPortalMessageEvent, normalizePortalMessage, notifyParentReady, portalDebugLog } from './utils/portalMessaging.js'
 
-import Header from './components/Menu.vue'
-const headerComponent = ref(null)
-const currentComponent = ref(null)
+    const chat = ref(null)
+    const userEmail = ref(null)
 
-// Function to update header alert from currentComponent
-const setHeaderAlert = (headerItemTitle, alertText) => {
-    headerComponent.value.setAlert(headerItemTitle, alertText)
-};
+    const hasChatMessages = computed(() => {
+        return chat.value && chat.value.chatMessages && chat.value.chatMessages.length > 0
+    })
+
+    function clearChat() {
+        // Trigger fade-out and fade-in animation
+        document.querySelector('#app').classList.remove('fade-in')
+        document.querySelector('#app').classList.add('fade-out')
+        setTimeout(() => {
+            chat.value.clearChat()
+            document.querySelector('#app').classList.remove('fade-out')
+            document.querySelector('#app').classList.add('fade-in')
+            const input = document.querySelector('.user-input')
+            if (input) input.focus()
+        }, 500)
+        setTimeout(() => {
+            document.querySelector('#app').classList.remove('fade-in')
+        }, 1100)
+    }
+
+    onMounted(() => {
+        portalDebugLog('Mounted. origin=', window.location.origin, 'href=', window.location.href)
+
+        const input = document.querySelector('.user-input')
+        if (input)
+            input.focus()
+
+        notifyParentReady()
+        portalDebugLog('Attaching window message listener')
+        window.addEventListener('message', onPortalMessage)
+    })
+
+    onBeforeUnmount(() => {
+        window.removeEventListener('message', onPortalMessage)
+    })
+
+    // Handle messages from parent portal
+    function onPortalMessage(event) {
+        if (!isAllowedPortalMessageEvent(event)) return
+
+        const msg = normalizePortalMessage(event.data)
+        if (!msg) return
+
+        // portalDebugLog('Portal message received:', msg) // Uncomment for verbose logging of all messages
+
+        switch (msg.type) {
+            case 'PARENT_INIT': {
+                // Parent portal has acknowledged the READY message
+                // Response contains user email
+                userEmail.value = msg.userEmail || null
+                portalDebugLog('Parent portal acknowledged READY message. User email set:', userEmail.value)
+                return
+            }
+            case 'LOAD_CONVERSATION': {
+                // Permit-only secure load flow
+                if (msg.version !== 2) return
+                const permit = msg.permit
+                if (!permit || typeof permit !== 'string') return
+
+                if (chat.value?.loadConversation) {
+                    // Do not trust or forward any userEmail / id from postMessage.
+                    chat.value.loadConversation(permit)
+                } else {
+                    console.error('Chat component does not expose loadConversation.')
+                }
+                return
+            }
+            case 'CLEAR_CONVERSATION': {
+                if (chat.value?.clearChat) chat.value.clearChat()
+                return
+            }
+            default:
+                return
+        }
+    }
 </script>
 
 <template>
-
-  <header>
-
-      <Header ref="headerComponent" />
-
-  </header>
-  
-  <main>
-
-      <div class="content">
-          <router-view ref="currentComponent" @onHeaderAlert="setHeaderAlert"></router-view>
-      </div>
-
-  </main>
-
+    <Header @clear-chat="clearChat" :show-start-new-chat="hasChatMessages" />
+    <Chat ref="chat" :user-email="userEmail" />
 </template>
 
-
 <style scoped>
-/* Mobile first */
-.content
-{
-    width: 100vw;
-    border-left: 0rem;
-    border-right: 0rem;
 
-    background-color: var(--color-bg-light);
-
-    padding: 2.5rem 3.5rem;
-    padding-bottom: 6rem;
-}
-
-main
-{
-    /* Add padding for header */
-    padding-top: 6rem;
-}
-
-/* Tablet or desktop */
-@media screen and (min-width: 53.125rem) /* 850px or 85rem using 16 px conversion */
-{
-    .content
-    {
-        /* Set width of main content */
-        width: 85rem;
-
-        border-left: 0.1rem solid var(--color-border);
-        border-right: 0.1rem solid var(--color-border);
-    }
-}
-@media screen and (min-width: 80rem)
-{
-    main
-    {
-        /* Remove padding for header as header becomes side menu */
-        padding-top: 0rem;
-    }
-}
 </style>

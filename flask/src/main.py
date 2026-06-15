@@ -1,21 +1,45 @@
 import os
-from flask import Flask, send_from_directory
+import logging
+from flask import Flask, Response, send_from_directory
 from healthcheck import HealthCheck
-from prometheus_client import generate_latest
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.logging import set_logging_configuration, is_ready_gauge, last_updated_gauge
-from utils.config import DEBUG, PORT, POD_NAME
+from utils.config import DEBUG, PORT, POD_NAME, USE_DB, CSP_FRAME_ANCESTORS
 from api_endpoints import api_endpoints
 
 set_logging_configuration()
+logger = logging.getLogger(__name__)
 
 
 def create_app():
     app = Flask(__name__, static_folder='dist', static_url_path='/')
+
+    if not USE_DB:
+        logger.warning("Postgres configuration incomplete, DB client will not be initialized.")
+
     health = HealthCheck()
     app.add_url_rule('/healthz', 'healthcheck', view_func=lambda: health.run())
-    app.add_url_rule('/metrics', 'metrics', view_func=generate_latest)
+
+    def metrics():
+        return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+    app.add_url_rule('/metrics', 'metrics', view_func=metrics)
 
     app.register_blueprint(api_endpoints)
+
+    @app.after_request
+    def add_security_headers(response):
+        # Prevent embedding by untrusted sites.
+        # Configure via CSP_FRAME_ANCESTORS, e.g.:
+        #   "'self' https://chat.data.randers.dk https://ai.data.randers.dk"
+        # or a full directive string containing "frame-ancestors".
+        try:
+            value = (CSP_FRAME_ANCESTORS or '').strip()
+            if value:
+                directive = value if 'frame-ancestors' in value else f"frame-ancestors {value}"
+                response.headers['Content-Security-Policy'] = directive
+        except Exception:
+            pass
+        return response
 
     @app.before_request
     def set_ready():

@@ -1,6 +1,5 @@
 import logging
 import sys
-
 from unittest.mock import patch, Mock
 from werkzeug import serving
 
