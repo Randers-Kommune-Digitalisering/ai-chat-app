@@ -348,7 +348,7 @@ class Chat(AzureOpenAIClient):
 
         message_tokens = len(encoding.encode(request_messages[-1]["content"]))
         if message_tokens > MAX_TOKEN_LIMIT_MESSAGE:
-            has_files = bool(chat_message.get("files"))
+            has_files = bool(chat_messages[-1].get("files"))
             return (
                 None,
                 [],
@@ -385,7 +385,10 @@ class Chat(AzureOpenAIClient):
             msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
 
-        if response and hasattr(response, "choices") and len(response.choices) > 0:
+        if not response or not hasattr(response, "choices") or len(response.choices) == 0:
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.", 502
+
+        elif response and hasattr(response, "choices") and len(response.choices) > 0:
             choice = response.choices[0]
             assistant_response = ""
 
