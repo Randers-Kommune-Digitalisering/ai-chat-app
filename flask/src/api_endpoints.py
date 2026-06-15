@@ -417,6 +417,9 @@ def load_conversation_by_permit():
             data = request.get_json(silent=True) or {}
             token = (data.get('permit') or '').strip() if isinstance(data, dict) else ''
 
+        if not USE_DB:
+            return jsonify({"success": False, "message": "Kunne ikke indlæse samtalen. Prøv igen senere."}), 503
+
         permit = verify_conversation_load_permit(token=token)
 
         with db_client.session_scope() as session:
