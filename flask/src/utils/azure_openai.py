@@ -396,12 +396,12 @@ class Chat(AzureOpenAIClient):
             if hasattr(choice, "message") and hasattr(choice.message, "content"):
                 assistant_response = choice.message.content
 
-                # 1. Find all citation references in the response (e.g., [doc1], [doc2], [1], [2] ...)
+                # Find all citation references in the response (e.g., [doc1], [doc2], [1], [2] ...)
                 citation_refs = re.findall(r'\[(?:doc)?(\d{1,2})\]', assistant_response)
                 citation_refs = [int(ref) for ref in citation_refs]
                 unique_refs = sorted(set(citation_refs))
 
-                # 2. Collect all citations from the response context
+                # Collect all citations from the response context
                 all_citations = []
                 if hasattr(choice.message, "context") and choice.message.context.get("citations"):
                     all_citations = choice.message.context.get("citations")
@@ -442,7 +442,7 @@ class Chat(AzureOpenAIClient):
                                 ref_number = idx + 1
                                 return f"[{ref_number}]"
 
-                    # fallback if not found
+                    # Fallback if not found
                     return f"[{orig_ref}]"
 
                 assistant_response = re.sub(
