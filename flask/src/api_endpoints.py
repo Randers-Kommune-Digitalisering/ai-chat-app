@@ -8,7 +8,14 @@ from utils.azure_openai import get_chat_client, get_title_generator
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
-from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, metrics_base_labels
+from utils.logging import (
+    chat_messages_counter,
+    chat_feedback_counter,
+    chat_conversations_counter,
+    metrics_base_labels,
+    count_text_tokens,
+    observe_token_metrics,
+)
 from utils.db_controller import (
     get_db_client,
     get_user_conversation,
@@ -185,6 +192,12 @@ def create_thread_message(thread_id):
                 jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
                 int(azure_status or 500),
             )
+
+        observe_token_metrics(
+            mode='agent',
+            input_tokens=count_text_tokens(message),
+            output_tokens=count_text_tokens(response),
+        )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
@@ -304,6 +317,11 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
+    latest_user_message = next(
+        (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
+        "",
+    )
+
     title_thread = None
     title_result = None
     conversation_title = None
@@ -329,6 +347,12 @@ def create_chat_message():
                 jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
                 int(azure_status or 500),
             )
+
+        observe_token_metrics(
+            mode='chat',
+            input_tokens=count_text_tokens(latest_user_message),
+            output_tokens=count_text_tokens(response),
+        )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
