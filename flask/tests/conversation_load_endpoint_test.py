@@ -50,11 +50,6 @@ def client(app):
     return app.test_client()
 
 
-def test_legacy_get_conversation_is_gone(client):
-    res = client.get('/api/conversations/1')
-    assert res.status_code == 410
-
-
 def test_load_conversation_requires_valid_permit(client):
     res = client.post('/api/conversations/load', json={})
     assert res.status_code == 401

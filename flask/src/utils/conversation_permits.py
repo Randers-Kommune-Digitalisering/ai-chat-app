@@ -1,8 +1,7 @@
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
-
+from typing import Any
 from authlib.jose import JsonWebToken
 from authlib.jose.errors import JoseError
 
@@ -13,7 +12,7 @@ import utils.config as config
 class ConversationLoadPermit:
     conversation_id: int
     user_email: str
-    claims: Dict[str, Any]
+    claims: dict[str, Any]
 
 
 class ConversationLoadPermitError(ValueError):
@@ -21,11 +20,23 @@ class ConversationLoadPermitError(ValueError):
 
 
 def _normalize_pem(pem: str) -> str:
+    """
+    Normalize a PEM string by stripping whitespace and replacing literal "\n" with actual newlines.
+
+    :param pem: The PEM string to normalize.
+    :return: The normalized PEM string.
+    """
     # Support env vars where newlines are encoded as literal "\\n".
     return (pem or "").strip().replace("\\n", "\n")
 
 
 def _b64url_decode(segment: str) -> bytes:
+    """
+    Decode a base64url-encoded string, adding necessary padding.
+
+    :param segment: The base64url-encoded string to decode.
+    :return: The decoded bytes.
+    """
     if not isinstance(segment, str) or not segment:
         raise ConversationLoadPermitError("Invalid JWT header")
     padding = "=" * (-len(segment) % 4)
@@ -35,10 +46,18 @@ def _b64url_decode(segment: str) -> bytes:
         raise ConversationLoadPermitError("Invalid JWT header") from exc
 
 
-def _decode_jwt_header(token: str) -> Dict[str, Any]:
+def _decode_jwt_header(token: str) -> dict[str, Any]:
+    """
+    Decode the header of a JWT token.
+
+    :param token: The JWT token.
+    :return: The decoded JWT header.
+
+    :raises ConversationLoadPermitError: If the JWT header is invalid.
+    """
     try:
         header_segment = (token or "").split(".", 2)[0]
-        raw = _b64url_decode(header_segment)
+        raw = _b64url_decode(segment=header_segment)
         header = json.loads(raw.decode("utf-8"))
         if not isinstance(header, dict):
             raise ConversationLoadPermitError("Invalid JWT header")
@@ -50,7 +69,8 @@ def _decode_jwt_header(token: str) -> Dict[str, Any]:
 
 
 def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
-    """Verify and decode a portal-issued conversation load permit.
+    """
+    Verify and decode a portal-issued conversation load permit.
 
     Requirements:
     - RS256 signature
@@ -58,21 +78,21 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     - Required claims: `conversation_id` (int), `user_email` (non-empty str)
     - Optional: enforce `kid` allowlist
 
-    Returns:
-        ConversationLoadPermit
+    :param token: The JWT conversation load permit issued by the portal.
+    :return: A ConversationLoadPermit object containing the conversation_id, user_email, and all claims.
 
-    Raises:
-        ConversationLoadPermitError
+    :raises ConversationLoadPermitError: If the permit is missing, invalid, expired, or fails any verification checks.
     """
 
     if not token or not isinstance(token, str):
         raise ConversationLoadPermitError("Missing permit")
 
-    public_key_pem = _normalize_pem(config.CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM)
+    public_key_pem = _normalize_pem(pem=config.CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM)
+
     if not public_key_pem:
         raise ConversationLoadPermitError("Permit verification is not configured")
 
-    header = _decode_jwt_header(token)
+    header = _decode_jwt_header(token=token)
     if header.get("alg") != "RS256":
         raise ConversationLoadPermitError("Unsupported permit algorithm")
 
@@ -119,10 +139,12 @@ def verify_conversation_load_permit(token: str) -> ConversationLoadPermit:
     )
 
 
-def extract_bearer_token(authorization_header: Optional[str]) -> str:
-    """Extract token from an Authorization header.
+def extract_bearer_token(authorization_header: str | None) -> str:
+    """
+    Extract token from an Authorization header.
 
-    Returns empty string if missing/invalid.
+    :param authorization_header: The Authorization header value.
+    :return: The extracted token, or an empty string if missing/invalid.
     """
     if not authorization_header:
         return ""

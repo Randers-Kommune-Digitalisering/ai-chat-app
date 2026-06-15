@@ -4,8 +4,7 @@ from flask import Flask, Response, send_from_directory
 from healthcheck import HealthCheck
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.logging import set_logging_configuration, is_ready_gauge, last_updated_gauge
-from utils.config import DEBUG, PORT, POD_NAME, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT
-import utils.config as config
+from utils.config import DEBUG, PORT, POD_NAME, USE_DB, CSP_FRAME_ANCESTORS
 from api_endpoints import api_endpoints
 
 set_logging_configuration()
@@ -15,9 +14,8 @@ logger = logging.getLogger(__name__)
 def create_app():
     app = Flask(__name__, static_folder='dist', static_url_path='/')
 
-    if not all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES_PORT]):
+    if not USE_DB:
         logger.warning("Postgres configuration incomplete, DB client will not be initialized.")
-        logger.info(f"Current Postgres config - DB: {POSTGRES_DB}, User: {POSTGRES_USER}, Host: {POSTGRES_HOST}, Port: {POSTGRES_PORT}, Pass: {'set' if POSTGRES_PASS else 'not set'}")
 
     health = HealthCheck()
     app.add_url_rule('/healthz', 'healthcheck', view_func=lambda: health.run())
@@ -35,7 +33,7 @@ def create_app():
         #   "'self' https://chat.data.randers.dk https://ai.data.randers.dk"
         # or a full directive string containing "frame-ancestors".
         try:
-            value = (config.CSP_FRAME_ANCESTORS or '').strip()
+            value = (CSP_FRAME_ANCESTORS or '').strip()
             if value:
                 directive = value if 'frame-ancestors' in value else f"frame-ancestors {value}"
                 response.headers['Content-Security-Policy'] = directive
