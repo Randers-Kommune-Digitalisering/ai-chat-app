@@ -5,10 +5,10 @@ from flask import Blueprint, jsonify, request
 import base64
 import io
 from utils.azure_openai import get_chat_client, get_title_generator
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
-from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, metrics_base_labels
+from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, title_generation_saturation_counter, title_generation_timeout_counter, title_generation_inflight_gauge, metrics_base_labels
 from utils.db_controller import (
     get_db_client,
     get_user_conversation,
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
 db_client = get_db_client()
+_title_generation_semaphore = threading.BoundedSemaphore(value=TITLE_GENERATION_MAX_CONCURRENCY)
 
 
 def _close_azure_client() -> None:
@@ -46,17 +47,27 @@ def _close_azure_client() -> None:
 atexit.register(_close_azure_client)
 
 
-def _start_title_generation_thread(*, first_user_message: str) -> tuple[threading.Thread, dict]:
+def _start_title_generation_thread(*, first_user_message: str, mode: str) -> tuple[threading.Thread | None, dict]:
     """
     Start generating a conversation title in the background.
 
     :param first_user_message: The content of the first user message, used as input for title generation.
-    :return: A tuple containing the thread object and a shared result dictionary where the generated title will be stored once ready.
+    :return: A tuple containing the thread object (or None if skipped) and a shared result dictionary where the generated title will be stored once ready.
     """
 
     result = {"title": None}
 
+    if not _title_generation_semaphore.acquire(blocking=False):
+        logger.warning(
+            "Skipping title generation due to concurrency limit (max=%s)",
+            TITLE_GENERATION_MAX_CONCURRENCY,
+        )
+        title_generation_saturation_counter.labels(**metrics_base_labels(), mode=mode).inc()
+        return None, result
+
     def _worker() -> None:
+        generator = None
+        title_generation_inflight_gauge.labels(**metrics_base_labels(), mode=mode).inc()
         try:
             generator = get_title_generator()
             if not generator:
@@ -68,10 +79,48 @@ def _start_title_generation_thread(*, first_user_message: str) -> tuple[threadin
                 result["title"] = title
         except Exception as e:
             logger.warning(f"Failed to generate conversation title: {e}")
+        finally:
+            # Ensure transport/session resources are released for each title generation call.
+            try:
+                close_fn = getattr(getattr(generator, "client", None), "close", None)
+                if callable(close_fn):
+                    close_fn()
+            except Exception:
+                pass
+            title_generation_inflight_gauge.labels(**metrics_base_labels(), mode=mode).dec()
+            _title_generation_semaphore.release()
 
     thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except Exception:
+        _title_generation_semaphore.release()
+        raise
     return thread, result
+
+
+def _resolve_title_result(*, title_thread: threading.Thread | None, title_result: dict, fallback_title: str, mode: str) -> str:
+    """
+    Resolve title generation with bounded wait.
+
+    Falls back if title generation exceeds join timeout.
+    """
+    if title_thread is None:
+        return (title_result or {}).get("title") or fallback_title
+
+    title_thread.join(timeout=TITLE_GENERATION_JOIN_TIMEOUT_S)
+    is_alive_fn = getattr(title_thread, "is_alive", None)
+    is_alive = bool(is_alive_fn()) if callable(is_alive_fn) else False
+    if is_alive:
+        logger.warning(
+            "Title generation wait timed out (mode=%s timeout_s=%.2f); using fallback title",
+            mode,
+            TITLE_GENERATION_JOIN_TIMEOUT_S,
+        )
+        title_generation_timeout_counter.labels(**metrics_base_labels(), mode=mode).inc()
+        return fallback_title
+
+    return (title_result or {}).get("title") or fallback_title
 
 
 # Config endpoint for frontend
@@ -150,12 +199,7 @@ def create_thread_message(thread_id):
     # Redact sensitive content in user messages
     message = redact_content(text=message)
 
-    title_thread = None
-    title_result = None
     conversation_title = None
-    if USE_DB and user_email and not conversation_id and message:
-        # Generate title while we await the chat response.
-        title_thread, title_result = _start_title_generation_thread(first_user_message=message)
 
     # Parse files from JSON: each file is { name, content (base64) }
     files = []
@@ -199,12 +243,20 @@ def create_thread_message(thread_id):
     db_session = None
     try:
         db_session = db_client.get_session()
+        if db_session is None:
+            logger.error("DB session unavailable for thread message persistence")
+            return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title}), 200
 
         # Create conversation if missing and we have a user
-        if user_email and not conversation_id:
-            if title_thread is not None:
-                title_thread.join()
-            generated_title = (title_result or {}).get("title") or f"Samtale {thread_id}"
+        if user_email and not conversation_id and message:
+            # Start title generation only when DB persistence is possible.
+            title_thread, title_result = _start_title_generation_thread(first_user_message=message, mode='agent')
+            generated_title = _resolve_title_result(
+                title_thread=title_thread,
+                title_result=title_result,
+                fallback_title=f"Samtale {thread_id}",
+                mode='agent',
+            )
             conversation_title = generated_title
 
             created = create_db_conversation(
@@ -304,17 +356,7 @@ def create_chat_message():
                 logger.warning(f"Failed to decode file {name}: {e}")
         msg["files"] = new_files
 
-    title_thread = None
-    title_result = None
     conversation_title = None
-    if USE_DB and user_email and not conversation_id and messages:
-        first_user_message = next(
-            (m.get("content", "") for m in messages if m.get("role") == "user"),
-            ""
-        )
-        if first_user_message:
-            # Generate title while we await the chat response.
-            title_thread, title_result = _start_title_generation_thread(first_user_message=first_user_message)
 
     # Get response from Azure
     try:
@@ -343,12 +385,27 @@ def create_chat_message():
     db_session = None
     try:
         db_session = db_client.get_session()
+        if db_session is None:
+            logger.error("DB session unavailable for chat message persistence")
+            return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
 
         # Create conversation in DB if conversation id is not provided
         if user_email and not conversation_id:
-            if title_thread is not None:
-                title_thread.join()
-            generated_title = (title_result or {}).get("title") or "Ny samtale"
+            first_user_message = next(
+                (m.get("content", "") for m in messages if m.get("role") == "user"),
+                ""
+            )
+            title_thread = None
+            title_result = None
+            if first_user_message:
+                # Start title generation only when DB persistence is possible.
+                title_thread, title_result = _start_title_generation_thread(first_user_message=first_user_message, mode='chat')
+            generated_title = _resolve_title_result(
+                title_thread=title_thread,
+                title_result=title_result,
+                fallback_title="Ny samtale",
+                mode='chat',
+            )
             conversation_title = generated_title
 
             created = create_db_conversation(

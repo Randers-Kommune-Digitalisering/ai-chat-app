@@ -48,6 +48,7 @@ from utils.config import (
     REQUESTS_POOL_BLOCK,
 
     MAX_MESSAGE_LENGTH,
+    TITLE_GENERATION_REQUEST_TIMEOUT_S,
 )
 
 logger = logging.getLogger(__name__)
@@ -726,7 +727,8 @@ class AzureOpenAITitleGenerator():
             messages=[system_prompt, user_prompt],
             temperature=0.5,
             top_p=0.9,
-            model=self.deployment_name
+            model=self.deployment_name,
+            timeout=TITLE_GENERATION_REQUEST_TIMEOUT_S,
         )
 
         if response and hasattr(response, "choices") and len(response.choices) > 0:
