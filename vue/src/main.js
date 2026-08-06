@@ -11,12 +11,18 @@ try {
 		window?.localStorage?.getItem('portalDebug') === '1';
 
 	if (debugEnabled) {
-		console.log('[ai-chat iframe] DEBUG: Bootstrap', {
+		console.debug('[ai-chat iframe] DEBUG: Bootstrap', {
 			origin: window.location.origin,
 			href: window.location.href
 		});
 		window.addEventListener('message', (e) => {
-			console.log('[ai-chat chat] DEBUG: Raw message received', {
+			// Ignore cross-extension window chatter (e.g. Selenium IDE) and only
+			// log likely portal traffic from the direct parent frame.
+			if (window.parent && window.parent !== window && e.source !== window.parent) return;
+			if (!e.data || typeof e.data !== 'object') return;
+			if (e.data.type === 'SELENIUM_IDE_CS_MSG') return;
+
+			console.debug('[ai-chat main] DEBUG: Raw message received', {
 				origin: e.origin,
 				data: e.data
 			});

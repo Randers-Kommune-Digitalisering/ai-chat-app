@@ -58,23 +58,46 @@
 
     const recentlyCopied = ref(false)
 
+    const writeTextToClipboard = async (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text)
+            return
+        }
+        throw new Error('Clipboard API not available or context not secure')
+    }
+
     const copyTextToClipboard = async (text) => {
         try {
-            // Use Clipboard API if available and page is secure
-            if (navigator.clipboard && window.isSecureContext) {
-                await navigator.clipboard.writeText(text)
-                recentlyCopied.value = true
-                setTimeout(() => {
-                    recentlyCopied.value = false
-                }, 1500)
-                console.log('Text copied to clipboard:', text)
-            } else {
-                throw new Error('Clipboard API not available or context not secure')
-            }
+            await writeTextToClipboard(text)
+            recentlyCopied.value = true
+            setTimeout(() => {
+                recentlyCopied.value = false
+            }, 1500)
         } catch (err) {
             recentlyCopied.value = false
             alert('Kunne ikke kopiere tekst: ' + err)
             console.error('Could not copy text: ', err)
+        }
+    }
+
+    async function onChatContentClick(event) {
+        const button = event?.target?.closest?.('.code-copy-button')
+        if (!button) return
+
+        const codeElement = button.parentElement?.querySelector('pre > code')
+        if (!codeElement) return
+
+        const originalHtml = button.innerHTML || '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div>'
+        try {
+            await writeTextToClipboard(codeElement.textContent || '')
+            button.innerHTML = '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiéret!</div>'
+            button.disabled = true
+            setTimeout(() => {
+                button.innerHTML = originalHtml
+                button.disabled = false
+            }, 1200)
+        } catch (err) {
+            alert('Kunne ikke kopiere kode: ' + err)
         }
     }
 
@@ -141,6 +164,14 @@
         return content
     })
 
+    const renderedMessage = computed(() => {
+        const html = marked(highlightedMessage.value)
+        return html.replace(
+            /<pre><code([\s\S]*?)>([\s\S]*?)<\/code><\/pre>/g,
+            '<div class="code-block"><div type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></div><pre><code$1>$2</code></pre></div>'
+        )
+    })
+
     const isUrl = (string) => {
         try {
             new URL(string)
@@ -198,7 +229,7 @@
 
 <template>
     <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="marked(highlightedMessage)"></div>
+        <div class="chat-content" v-html="renderedMessage" @click="onChatContentClick"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -334,6 +365,12 @@
             font-family: var(--font-code);
             border: 0.05rem solid var(--color-code-border);
             font-size: 0.8em;
+            max-width: 100%;
+            overflow: auto;
+        }
+        :deep(.chat-content p > code) {
+            white-space: pre-wrap;
+            transform: translateY(0.5rem);
         }
         :deep(.chat-content mark) {
             padding-left: 0.2rem;
@@ -341,6 +378,43 @@
             background-color: #ff615579;
             color: inherit;
             border-radius: 0.2rem;
+        }
+        :deep(.chat-content .code-block) {
+            position: relative;
+            margin: 0;
+        }
+        :deep(.chat-content .code-block code) {
+            width: 100%;
+            padding-top: 0.6rem;
+            padding-bottom: 0.6rem;
+        }
+        :deep(.chat-content .code-block pre) {
+            margin: 0;
+            max-width: 100%;
+            overflow: auto;
+        }
+        :deep(.chat-content .code-copy-button) {
+            position: absolute;
+            top: 0.35rem;
+            right: 0.35rem;
+            border: 0.05rem solid var(--color-code-border);
+            background-color: var(--color-code-background);
+            color: var(--color-text-primary);
+            /* border-radius: 0.3rem;
+            padding: 0.4rem 0.5rem; */
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: none;
+        }
+        :deep(.chat-content .code-block:hover .code-copy-button) {
+            display: block;
+        }
+        :deep(.chat-content .code-copy-button:hover:not(:disabled)) {
+            background-color: var(--color-options-background-hover);
+        }
+        :deep(.chat-content .code-copy-button:disabled) {
+            cursor: default;
+            opacity: 0.8;
         }
 
     .fileUploads {
@@ -436,7 +510,7 @@
         display: flex;
         color: var(--color-options-text);
     }
-    .option {
+    .option, :deep(.code-copy-button) {
         position: relative;
         transition: color 0.2s;
         background-color: transparent;
@@ -467,11 +541,15 @@
     .show-more-less i {
         font-size: 0.7em;
     }
-    .option .tooltip {
+    .option .tooltip, :deep(.code-copy-button > .tooltip) {
         bottom: -100%;
         left: 50%;
         transform: translateX(-50%);
     }
+    :deep(.code-copy-button > .tooltip) {
+        bottom: -110%;
+    }
+
     .feedback-sent-message {
         margin-left: 0.5rem;
         font-size: 0.9rem;

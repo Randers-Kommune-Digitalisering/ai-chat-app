@@ -178,9 +178,7 @@ input[type='checkbox'] + label, input[type='radio'] + label
     margin-left: 1rem;
 }
 
-code {
-    background-color: var(--color-border);
-}
+
 
 
 /* Custom components */
