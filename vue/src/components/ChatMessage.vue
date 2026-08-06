@@ -90,7 +90,7 @@
         const originalHtml = button.innerHTML || '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div>'
         try {
             await writeTextToClipboard(codeElement.textContent || '')
-            button.innerHTML = '<i class="fa-solid fa-copy"></i><div class="tooltip">Kopiéret!</div>'
+            button.innerHTML = '<i class="fa-solid fa-copy"></i><div class="tooltip">Kopieret!</div>'
             button.disabled = true
             setTimeout(() => {
                 button.innerHTML = originalHtml

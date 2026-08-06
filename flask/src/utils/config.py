@@ -111,7 +111,7 @@ DEFAULT_TOKEN_ENCODING = os.environ.get('DEFAULT_TOKEN_ENCODING', 'cl100k_base')
 
 # Title generation concurrency/timeout controls
 try:
-    TITLE_GENERATION_MAX_CONCURRENCY = int(os.environ.get('TITLE_GENERATION_MAX_CONCURRENCY', '100'))
+    TITLE_GENERATION_MAX_CONCURRENCY = max(10, int(os.environ.get('TITLE_GENERATION_MAX_CONCURRENCY', '100')))
 except ValueError:
     TITLE_GENERATION_MAX_CONCURRENCY = 100
 try:

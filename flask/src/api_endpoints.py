@@ -99,11 +99,15 @@ def _start_title_generation_thread(*, first_user_message: str, mode: str) -> tup
     return thread, result
 
 
-def _resolve_title_result(*, title_thread: threading.Thread | None, title_result: dict, fallback_title: str, mode: str) -> str:
+def _resolve_title_result(*, title_thread: threading.Thread | None, title_result: dict | None, fallback_title: str, mode: str) -> str:
     """
-    Resolve title generation with bounded wait.
+    Resolve title generation with bounded wait. Falls back if title generation exceeds join timeout.
 
-    Falls back if title generation exceeds join timeout.
+    :param title_thread: The thread object for title generation, or None if skipped.
+    :param title_result: The shared result dictionary where the generated title will be stored.
+    :param fallback_title: The title to use if generation fails or times out.
+    :param mode: The mode of operation ('chat' or 'agent') for metrics labeling.
+    :return: The generated title if available, otherwise the fallback title.
     """
     if title_thread is None:
         return (title_result or {}).get("title") or fallback_title
