@@ -94,6 +94,9 @@ Skal sættes når `ASSISTANT_TYPE` er `Agent`.
 | `FEEDBACK_SMTP_SENDER_PASSWORD` | — | SMTP password (valgfrit, afhænger af SMTP server). |
 | `FEEDBACK_SMTP_SENDER_NAME` | — | Visningsnavn på afsender (valgfrit). |
 | `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | — | Alias: `AZURE_OPENAI_DEPLOYMENT_NAME`. Deployment/model-navn til automatisk titelgenerering. |
+| `TITLE_GENERATION_MAX_CONCURRENCY` | `100` | Maksimalt antal samtidige titel-genereringer pr. app-proces. Hvis grænsen nås, springes titelgenerering over, og fallback-titel bruges. Minimum håndhæves til `10`. |
+| `TITLE_GENERATION_REQUEST_TIMEOUT_S` | `8` | Timeout i sekunder for kaldet til title-generation modellen. Ved timeout anvendes fallback-titel. |
+| `TITLE_GENERATION_JOIN_TIMEOUT_S` | `9` | Maksimal ventetid i sekunder på title-generation tråden i request-flowet. Ved overskridelse anvendes fallback-titel, og request fortsætter. |
 | `AZURE_AISEARCH_INDEX_NAME` | — | Index-navn i Azure AI Search (hvis retrieval anvendes), kan kun anvendes hvis `ASSISTANT_TYPE` er `chat`. |
 | `AZURE_AISEARCH_ENDPOINT` | — | Endpoint for Azure AI Search, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
 | `AZURE_AISEARCH_SEMANTIC_CONFIG` | `default-semantic-config` | Navn på semantic configuration i Azure AI Search, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
@@ -131,6 +134,20 @@ Brugsstatistik trackes og udstilles med følgende Prometheus-metrikker på `/met
 * `chat_feedback_total{app, deployment, instance, feedback_type}`
 	* Tæller feedback events.
 	* `feedback_type` er `like` (thumbs up) eller `custom` (tekstfeedback sendt).
+
+Yderligere metrikker der primært bruges til debugging:
+
+* `title_generation_saturation_total{app, deployment, instance, mode}`
+	* Tæller antal gange titelgenerering blev sprunget over pga. concurrency-grænse.
+	* `mode` er `chat` eller `agent`.
+
+* `title_generation_timeout_total{app, deployment, instance, mode}`
+	* Tæller antal gange ventetiden på titelgenerering overskred join-timeout, så fallback-titel blev brugt.
+	* `mode` er `chat` eller `agent`.
+
+* `title_generation_inflight{app, deployment, instance, mode}`
+	* Gauge for antal titelgenereringer, der er i gang lige nu.
+	* `mode` er `chat` eller `agent`.
 
 Metrikkerne er afhængige af følgende miljøvariabler:
 

@@ -90,7 +90,7 @@
         const originalHtml = button.innerHTML || '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div>'
         try {
             await writeTextToClipboard(codeElement.textContent || '')
-            button.innerHTML = '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiéret!</div>'
+            button.innerHTML = '<i class="fa-solid fa-copy"></i><div class="tooltip">Kopieret!</div>'
             button.disabled = true
             setTimeout(() => {
                 button.innerHTML = originalHtml
@@ -278,7 +278,7 @@
 
             <div class="options">
                 <div class="option" @click="copyTextToClipboard(props.message)">
-                    <i class="fa-regular fa-copy"></i>
+                    <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
                 <div :class="['option', { disabled: feedbackLiked }]" @click="onThumbsUpClick">
@@ -385,8 +385,10 @@
         }
         :deep(.chat-content .code-block code) {
             width: 100%;
-            padding-top: 0.6rem;
-            padding-bottom: 0.6rem;
+            padding-top: 0.65rem;
+            padding-bottom: 0.65rem;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
         }
         :deep(.chat-content .code-block pre) {
             margin: 0;

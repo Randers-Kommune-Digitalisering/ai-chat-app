@@ -109,6 +109,20 @@ except ValueError:
 
 DEFAULT_TOKEN_ENCODING = os.environ.get('DEFAULT_TOKEN_ENCODING', 'cl100k_base').strip()  # Used for token counting, e.g. with tiktoken
 
+# Title generation concurrency/timeout controls
+try:
+    TITLE_GENERATION_MAX_CONCURRENCY = max(10, int(os.environ.get('TITLE_GENERATION_MAX_CONCURRENCY', '100')))
+except ValueError:
+    TITLE_GENERATION_MAX_CONCURRENCY = 100
+try:
+    TITLE_GENERATION_REQUEST_TIMEOUT_S = float(os.environ.get('TITLE_GENERATION_REQUEST_TIMEOUT_S', '8'))
+except ValueError:
+    TITLE_GENERATION_REQUEST_TIMEOUT_S = 8.0
+try:
+    TITLE_GENERATION_JOIN_TIMEOUT_S = float(os.environ.get('TITLE_GENERATION_JOIN_TIMEOUT_S', '9'))
+except ValueError:
+    TITLE_GENERATION_JOIN_TIMEOUT_S = 9.0
+
 # requests/urllib3 connection pooling (affects Azure SDK clients using RequestsTransport, and any custom requests.Session)
 try:
     REQUESTS_POOL_CONNECTIONS = int(os.environ.get('REQUESTS_POOL_CONNECTIONS', 10))

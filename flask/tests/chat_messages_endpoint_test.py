@@ -26,6 +26,19 @@ class _DummyThread:
         self.join_called += 1
 
 
+class _HungThread:
+    def __init__(self):
+        self.join_called = 0
+        self.last_timeout = None
+
+    def join(self, timeout=None):
+        self.join_called += 1
+        self.last_timeout = timeout
+
+    def is_alive(self):
+        return True
+
+
 def _post_chat_message(client, *, messages, conversation_id=None, user_email="user@example.com"):
     payload = {"messages": messages}
     if conversation_id is not None:
@@ -47,7 +60,7 @@ def test_chat_messages_db_unavailable_still_returns_success(client):
     ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
-    ), patch(
+    ) as mock_start_title, patch(
         "api_endpoints.azure_client.fetch_chat_response",
         return_value=("assistant reply", [{"url": "https://example.com"}], None),
     ), patch(
@@ -66,8 +79,9 @@ def test_chat_messages_db_unavailable_still_returns_success(client):
     assert body.get("conversation_id") is None
     assert body.get("title") is None
 
-    # Title thread is started, but join only happens during DB create path.
+    # Title generation starts only after DB session is confirmed.
     assert dummy_thread.join_called == 0
+    mock_start_title.assert_not_called()
 
 
 def test_chat_messages_creates_conversation_persists_messages_and_returns_title_and_id(client):
@@ -208,3 +222,72 @@ def test_chat_messages_partial_write_user_message_insert_fails_still_returns_suc
     assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "chat"
     mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
+
+
+def test_chat_messages_title_join_timeout_uses_fallback_and_tracks_metric(client):
+    import api_endpoints
+
+    hung_thread = _HungThread()
+    title_result = {"title": "Generated title"}
+
+    db_session = MagicMock()
+    created_conversation = MagicMock()
+    created_conversation.id = 321
+
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(hung_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.chat_conversations_counter",
+    ), patch(
+        "api_endpoints.title_generation_timeout_counter",
+    ) as mock_timeout_counter, patch(
+        "api_endpoints.create_db_conversation",
+        return_value=created_conversation,
+    ) as mock_create_conv, patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ):
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body.get("conversation_id") == 321
+    assert body.get("title") == "Ny samtale"
+
+    assert hung_thread.join_called == 1
+    assert hung_thread.last_timeout == api_endpoints.TITLE_GENERATION_JOIN_TIMEOUT_S
+
+    mock_timeout_counter.labels.assert_called_once()
+    assert mock_timeout_counter.labels.call_args.kwargs.get("mode") == "chat"
+    mock_timeout_counter.labels.return_value.inc.assert_called_once()
+
+    assert mock_create_conv.call_args.kwargs.get("title") == "Ny samtale"
+
+
+def test_start_title_generation_thread_saturation_tracks_metric(client):
+    with patch(
+        "api_endpoints._title_generation_semaphore.acquire",
+        return_value=False,
+    ), patch(
+        "api_endpoints.title_generation_saturation_counter",
+    ) as mock_saturation_counter:
+        from api_endpoints import _start_title_generation_thread
+
+        thread, result = _start_title_generation_thread(first_user_message="hello", mode='chat')
+
+    assert thread is None
+    assert result == {"title": None}
+    mock_saturation_counter.labels.assert_called_once()
+    assert mock_saturation_counter.labels.call_args.kwargs.get("mode") == "chat"
+    mock_saturation_counter.labels.return_value.inc.assert_called_once()
