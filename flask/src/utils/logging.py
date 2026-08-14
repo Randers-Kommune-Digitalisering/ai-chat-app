@@ -57,14 +57,18 @@ chat_message_token_messages_counter = Counter(
     labelnames=['app', 'deployment', 'instance', 'mode', 'token_direction'],
 )
 
+_token_encoding = None
+
 
 def count_text_tokens(text: str) -> int:
     if not isinstance(text, str) or not text:
         return 0
 
+    global _token_encoding
     try:
-        encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
-        return len(encoding.encode(text))
+        if _token_encoding is None:
+            _token_encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
+        return len(_token_encoding.encode(text))
     except Exception:
         # Keep metrics resilient even if tokenization fails.
         return 0
