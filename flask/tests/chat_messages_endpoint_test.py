@@ -208,3 +208,30 @@ def test_chat_messages_partial_write_user_message_insert_fails_still_returns_suc
     assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "chat"
     mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
+
+
+def test_chat_messages_records_token_metrics(client):
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.count_text_tokens",
+        side_effect=[5, 9],
+    ) as mock_count_tokens, patch(
+        "api_endpoints.observe_token_metrics",
+    ) as mock_observe_token_metrics:
+        res = _post_chat_message(client, messages=[{"role": "user", "content": "Hi"}])
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+
+    assert mock_count_tokens.call_count == 2
+    mock_observe_token_metrics.assert_called_once_with(
+        mode='chat',
+        input_tokens=5,
+        output_tokens=9,
+    )

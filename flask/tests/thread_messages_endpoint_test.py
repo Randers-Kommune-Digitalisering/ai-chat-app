@@ -240,3 +240,30 @@ def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client)
     body = res.get_json()
     assert body["success"] is False
     assert "travl" in body["message"].lower()
+
+
+def test_thread_messages_records_token_metrics(client):
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.count_text_tokens",
+        side_effect=[7, 12],
+    ) as mock_count_tokens, patch(
+        "api_endpoints.observe_token_metrics",
+    ) as mock_observe_token_metrics:
+        res = _post_thread_message(client, thread_id="thr_metrics", message="Hi")
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+
+    assert mock_count_tokens.call_count == 2
+    mock_observe_token_metrics.assert_called_once_with(
+        mode='agent',
+        input_tokens=7,
+        output_tokens=12,
+    )

@@ -1,11 +1,12 @@
 import sys
 import logging
 import re
+import tiktoken
 
 from werkzeug import serving
 from prometheus_client import Gauge, Counter
 
-from utils.config import DEBUG, METRICS_APP, METRICS_DEPLOYMENT, METRICS_INSTANCE
+from utils.config import DEBUG, METRICS_APP, METRICS_DEPLOYMENT, METRICS_INSTANCE, DEFAULT_TOKEN_ENCODING
 
 # Prometheus metricts
 
@@ -38,12 +39,52 @@ chat_feedback_counter = Counter(
     labelnames=['app', 'deployment', 'instance', 'feedback_type'],
 )
 
-
 chat_conversations_counter = Counter(
     'chat_conversations_total',
     'Number of conversations started (created) in the backend',
     labelnames=['app', 'deployment', 'instance', 'mode'],
 )
+
+chat_message_tokens_counter = Counter(
+    'chat_message_tokens_total',
+    'Number of tokens processed in chat messages',
+    labelnames=['app', 'deployment', 'instance', 'mode', 'token_direction'],
+)
+
+chat_message_token_messages_counter = Counter(
+    'chat_message_token_messages_total',
+    'Number of message events included in chat token metrics',
+    labelnames=['app', 'deployment', 'instance', 'mode', 'token_direction'],
+)
+
+_token_encoding = None
+
+
+def count_text_tokens(text: str) -> int:
+    if not isinstance(text, str) or not text:
+        return 0
+
+    global _token_encoding
+    try:
+        if _token_encoding is None:
+            _token_encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
+        return len(_token_encoding.encode(text))
+    except Exception:
+        # Keep metrics resilient even if tokenization fails.
+        return 0
+
+
+def observe_token_metrics(*, mode: str, input_tokens: int, output_tokens: int) -> None:
+    labels = metrics_base_labels()
+
+    input_value = max(int(input_tokens or 0), 0)
+    output_value = max(int(output_tokens or 0), 0)
+
+    chat_message_tokens_counter.labels(**labels, mode=mode, token_direction='input').inc(input_value)
+    chat_message_tokens_counter.labels(**labels, mode=mode, token_direction='output').inc(output_value)
+
+    chat_message_token_messages_counter.labels(**labels, mode=mode, token_direction='input').inc()
+    chat_message_token_messages_counter.labels(**labels, mode=mode, token_direction='output').inc()
 
 
 # Logging configuration
