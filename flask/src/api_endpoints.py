@@ -1,7 +1,8 @@
 import logging
 import threading
 import atexit
-from flask import Blueprint, jsonify, request
+import json
+from flask import Blueprint, jsonify, request, Response, stream_with_context
 import base64
 import io
 from utils.azure_openai2 import get_chat_client, get_title_generator
@@ -30,6 +31,40 @@ api_endpoints = Blueprint('api', __name__, url_prefix='/api')
 azure_client = get_chat_client()
 db_client = get_db_client()
 _title_generation_semaphore = threading.BoundedSemaphore(value=TITLE_GENERATION_MAX_CONCURRENCY)
+
+
+def _sse_event(event_name: str, payload: dict) -> str:
+    """
+    Build one SSE event chunk.
+
+    :param event_name: SSE event name.
+    :param payload: JSON-serializable payload.
+    :return: Formatted SSE event string.
+    """
+    return f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _decode_uploaded_files(files_data: list) -> list:
+    """
+    Decode base64 file payloads from request JSON into file-like objects.
+
+    :param files_data: Request files list where each item is {name, content}.
+    :return: List of in-memory file objects.
+    """
+    files = []
+    for file_info in files_data:
+        name = file_info.get("name")
+        content_b64 = file_info.get("content")
+        if not name or not content_b64:
+            continue
+        try:
+            file_bytes = base64.b64decode(content_b64)
+            file_obj = io.BytesIO(file_bytes)
+            file_obj.filename = name
+            files.append(file_obj)
+        except Exception as e:
+            logger.warning(f"Failed to decode file {name}: {e}")
+    return files
 
 
 def _close_azure_client() -> None:
@@ -205,20 +240,7 @@ def create_thread_message(thread_id):
 
     conversation_title = None
 
-    # Parse files from JSON: each file is { name, content (base64) }
-    files = []
-    for file_info in files_data:
-        name = file_info.get("name")
-        content_b64 = file_info.get("content")
-        if not name or not content_b64:
-            continue
-        try:
-            file_bytes = base64.b64decode(content_b64)
-            file_obj = io.BytesIO(file_bytes)
-            file_obj.filename = name  # For extract_text_from_file
-            files.append(file_obj)
-        except Exception as e:
-            logger.warning(f"Failed to decode file {name}: {e}")
+    files = _decode_uploaded_files(files_data)
 
     # Get response from Azure
     try:
@@ -312,6 +334,149 @@ def create_thread_message(thread_id):
             pass
 
     return jsonify({"success": True, "response": response, "references": refs, "conversation_id": conversation_id, "title": conversation_title})
+
+
+@api_endpoints.route('/threads/<thread_id>/messages/stream', methods=['POST'])
+def create_thread_message_stream(thread_id):
+    """
+    Handle messages in a thread (Agent mode) with SSE streaming.
+
+    :param thread_id: The ID of the thread.
+    :return: A text/event-stream response with start, delta, end, and error events.
+    """
+    message = request.json.get("message")
+    files_data = request.json.get("files", [])
+    use_alt = request.json.get("use_alt", False)
+    conversation_id = request.json.get("conversation_id")
+    user_email = request.headers.get("X-User-Email") or "guest"
+
+    if not thread_id:
+        return jsonify({"success": False, "message": "Der opstod en fejl. Start en ny samtale, genindlæs siden eller prøv igen senere."}), 400
+    if not message:
+        return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
+
+    if conversation_id in ("", None):
+        conversation_id = None
+    else:
+        try:
+            conversation_id = int(conversation_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
+
+    chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
+    message = redact_content(text=message)
+    files = _decode_uploaded_files(files_data)
+
+    @stream_with_context
+    def generate_events():
+        local_conversation_id = conversation_id
+        conversation_title = None
+        refs = []
+
+        yield _sse_event("start", {
+            "thread_id": thread_id,
+            "conversation_id": local_conversation_id,
+        })
+
+        try:
+            response_chunks = []
+            for delta in azure_client.stream_chat_response(
+                chat_message=message,
+                files=files,
+                thread_id=thread_id,
+                use_alt=use_alt,
+            ):
+                response_chunks.append(delta)
+                yield _sse_event("delta", {"text": delta})
+
+            response = "".join(response_chunks).strip()
+            if not response:
+                yield _sse_event("error", {
+                    "message": "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.",
+                    "status": 502,
+                })
+                return
+
+            if USE_DB:
+                db_session = None
+                try:
+                    db_session = db_client.get_session()
+                    if db_session is None:
+                        logger.error("DB session unavailable for thread message persistence")
+                    else:
+                        if user_email and not local_conversation_id and message:
+                            title_thread, title_result = _start_title_generation_thread(first_user_message=message, mode='agent')
+                            generated_title = _resolve_title_result(
+                                title_thread=title_thread,
+                                title_result=title_result,
+                                fallback_title=f"Samtale {thread_id}",
+                                mode='agent',
+                            )
+                            conversation_title = generated_title
+
+                            created = create_db_conversation(
+                                session=db_session,
+                                user_email=user_email,
+                                title=generated_title,
+                                thread_id=thread_id,
+                            )
+                            if created and getattr(created, "id", None) is not None:
+                                chat_conversations_counter.labels(**metrics_base_labels(), mode='agent').inc()
+                                local_conversation_id = int(created.id)
+
+                        if local_conversation_id:
+                            updated = add_message_to_conversation(
+                                session=db_session,
+                                conversation_id=local_conversation_id,
+                                message_content=message,
+                                sender='user',
+                                file_content=files
+                            )
+                            if not updated:
+                                logger.error("Failed to add user message to conversation in DB")
+
+                            updated = add_message_to_conversation(
+                                session=db_session,
+                                conversation_id=local_conversation_id,
+                                message_content=response,
+                                sender='assistant',
+                                references=refs
+                            )
+                            if not updated:
+                                logger.error("Failed to add assistant message to conversation in DB")
+
+                except Exception as e:
+                    logger.error(f"Error updating conversation in DB: {e}")
+                finally:
+                    try:
+                        if db_session is not None:
+                            db_session.close()
+                    except Exception:
+                        pass
+
+            yield _sse_event("end", {
+                "success": True,
+                "response": response,
+                "references": refs,
+                "conversation_id": local_conversation_id,
+                "title": conversation_title,
+            })
+
+        except GeneratorExit:
+            logger.info("Client disconnected from SSE stream (thread_id=%s)", thread_id)
+            return
+        except Exception as e:
+            logger.error(f"Error in stream endpoint: {e}", exc_info=True)
+            yield _sse_event("error", {
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+                "status": 503,
+            })
+
+    response = Response(generate_events(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Connection'] = 'keep-alive'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
 
 
 # Endpoint to handle chat messages (Chat mode)

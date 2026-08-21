@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { startThread, sendThreadMessageStream, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -319,6 +319,7 @@
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
         startTimer()
+        const isFirstMessageInConversation = chatMessages.value.length == 1
 
         // Prepare messages for chat mode
         let message = chatMessage.content
@@ -336,21 +337,106 @@
             console.log("Started new thread successfully")
             if (!threadId.value) {
                 console.error("Failed to start new thread.")
+                stopTimer()
+                awaitingResponse.value = false
+                errorMessage.value = "Der opstod en fejl. Start en ny samtale eller prøv igen om lidt."
                 return
             }
         }
 
-        // Send message to backend
-        const result = isAgent.value ?
-            await sendThreadMessage(
+        if (isAgent.value) {
+            const assistantMessage = new ChatMessage('assistant', '', [], [], [], 0)
+            chatMessages.value.push(assistantMessage)
+
+            let streamedResponse = ''
+            let scrollQueued = false
+            const queueStreamScroll = () => {
+                if (scrollQueued) return
+                scrollQueued = true
+                requestAnimationFrame(() => {
+                    scrollQueued = false
+                    scrollToMessage(chatMessages.value.length - 1, false)
+                })
+            }
+
+            nextTick(() => {
+                queueStreamScroll()
+            })
+
+            const result = await sendThreadMessageStream(
                 threadId.value,
                 activeConversationId.value,
                 message,
                 chatMessage.files.map(({ name, content }) => ({ name, content })),
                 useAltAssistant.value,
-                currentUserEmail.value
-            ) :
-            await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
+                currentUserEmail.value,
+                {
+                    onStart: (payload) => {
+                        if (payload?.conversation_id) {
+                            activeConversationId.value = payload.conversation_id
+                        }
+                    },
+                    onDelta: (delta) => {
+                        streamedResponse += delta
+                        assistantMessage.content = unfilterResponseContent(streamedResponse)
+                        queueStreamScroll()
+                    }
+                }
+            )
+
+            const { success, message: backendMessage, response, references, conversation_id, title } = result
+
+            if (success === false) {
+                stopTimer()
+                awaitingResponse.value = false
+
+                const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+                if (lastMessage === assistantMessage) {
+                    chatMessages.value.pop()
+                }
+
+                undoAndEditMessage(chatMessage)
+                errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+                nextTick(() => {
+                    const input = document.querySelector('.user-input')
+                    if (input) input.focus()
+                    scrollToMessage(chatMessages.value.length - 1)
+                })
+                return
+            }
+
+            activeConversationId.value = conversation_id
+
+            if (isFirstMessageInConversation)
+                notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
+
+            const spentTime = Number((stopTimer() / 1000).toFixed(2))
+            if (!awaitingResponse.value) {
+                console.warn("Response received but awaitingResponse is false. Ignoring response.")
+                return
+            }
+            awaitingResponse.value = false
+
+            assistantMessage.timeSpent = spentTime
+            assistantMessage.references = (references || []).map(ref => new Reference(ref.title, ref.url))
+
+            const finalResponse = response || streamedResponse
+            assistantMessage.content = unfilterResponseContent(finalResponse)
+            if (!assistantMessage.content || assistantMessage.content.trim() === "") {
+                assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
+            }
+
+            nextTick(() => {
+                const input = document.querySelector('.user-input')
+                if (input) input.focus()
+                scrollToMessage(chatMessages.value.length - 1)
+            })
+
+            return
+        }
+
+        // Send message to backend
+        const result = await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
@@ -371,7 +457,7 @@
 
         activeConversationId.value = conversation_id
 
-        if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
+        if (isFirstMessageInConversation) // If first message - notify parent of new conversation
             notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
 
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals

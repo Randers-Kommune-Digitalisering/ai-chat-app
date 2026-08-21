@@ -340,23 +340,14 @@ class Agent(AzureOpenAIClient):
             )
 
         try:
-            agent_reference = self._resolve_agent_reference(use_alt=use_alt)
-            response_input = self._prepare_response_input(chat_message=chat_message, files=files)
-
-            stream = _call_with_retries(
-                operation="openai.responses.create",
-                func=lambda: self.client.responses.create(
-                    conversation=thread_id,
-                    input=response_input,
-                    stream=True,
-                    extra_body={"agent_reference": agent_reference},
-                ),
-            )
-
             response_chunks = []
-            for event in stream:
-                if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
-                    response_chunks.append(event.delta)
+            for delta in self.stream_chat_response(
+                chat_message=chat_message,
+                files=files,
+                thread_id=thread_id,
+                use_alt=use_alt,
+            ):
+                response_chunks.append(delta)
 
             assistant_response = "".join(response_chunks).strip()
             if not assistant_response:
@@ -368,6 +359,36 @@ class Agent(AzureOpenAIClient):
         except Exception as exc:
             msg, status = _error_to_user_message_and_status(exc=exc)
             return None, [], msg, status
+
+    def stream_chat_response(self, chat_message, files, thread_id, use_alt=False):
+        """
+        Stream assistant text deltas for one user turn.
+
+        :param chat_message: Latest user message.
+        :param files: Optional uploaded files.
+        :param thread_id: Conversation id from create_thread().
+        :param use_alt: Use alternate configured agent reference if available.
+        :yield: Text delta chunks from the assistant response.
+        """
+        if not thread_id:
+            raise ValueError("Missing thread id")
+
+        agent_reference = self._resolve_agent_reference(use_alt=use_alt)
+        response_input = self._prepare_response_input(chat_message=chat_message, files=files)
+
+        stream = _call_with_retries(
+            operation="openai.responses.create",
+            func=lambda: self.client.responses.create(
+                conversation=thread_id,
+                input=response_input,
+                stream=True,
+                extra_body={"agent_reference": agent_reference},
+            ),
+        )
+
+        for event in stream:
+            if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+                yield event.delta
 
     def create_thread(self) -> str:
         """
