@@ -13,7 +13,7 @@
 
 
     class ChatMessage {
-        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
+        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0, isStreaming = false) {
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
@@ -21,6 +21,7 @@
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
+            this.isStreaming = isStreaming
         }
     }
     class Reference {
@@ -345,7 +346,7 @@
         }
 
         if (isAgent.value) {
-            const assistantMessage = new ChatMessage('assistant', '', [], [], [], 0)
+            const assistantMessage = new ChatMessage('assistant', '', [], [], [], 0, true)
             chatMessages.value.push(assistantMessage)
 
             let streamedResponse = ''
@@ -417,6 +418,7 @@
             }
             awaitingResponse.value = false
 
+            assistantMessage.isStreaming = false
             assistantMessage.timeSpent = spentTime
             assistantMessage.references = (references || []).map(ref => new Reference(ref.title, ref.url))
 
@@ -617,6 +619,7 @@
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
                 :chatHistory="chatMessages"
+                :isStreaming="msg.isStreaming"
             />
            
             <div v-if="msg.illegalContents.length > 0" class="alert-content-filter">
@@ -635,7 +638,7 @@
 
         <div v-if="awaitingResponse" class="loading-indicator">
             <i class="fa-solid fa-rotate rotate"></i>
-            Assistenten tænker ...
+            Assistenten svarer ...
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}

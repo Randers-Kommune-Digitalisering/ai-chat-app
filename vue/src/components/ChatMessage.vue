@@ -50,6 +50,11 @@
             type: Array,
             required: false,
             default: () => []
+        },
+        isStreaming: {
+            type: Boolean,
+            required: false,
+            default: false
         }
     })
 
@@ -276,7 +281,7 @@
             </div>
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
-            <div class="options">
+            <div class="options" v-if="!props.isStreaming">
                 <div class="option" @click="copyTextToClipboard(props.message)">
                     <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
@@ -294,7 +299,7 @@
                 </div>
             </div>
 
-            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen" tabindex="-1">
+            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen && !props.isStreaming" tabindex="-1">
                 <textarea
                     v-model="feedbackText"
                     ref="feedbackTextareaRef"
