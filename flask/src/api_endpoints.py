@@ -4,7 +4,7 @@ import atexit
 from flask import Blueprint, jsonify, request
 import base64
 import io
-from utils.azure_openai import get_chat_client, get_title_generator
+from utils.azure_openai2 import get_chat_client, get_title_generator
 from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
