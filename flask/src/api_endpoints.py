@@ -250,6 +250,12 @@ def create_thread_message(thread_id):
         else:
             response, refs, error_message = azure_result
             azure_status = None
+        logger.info(
+            "Thread message references from azure_client (thread_id=%s count=%s): %s",
+            thread_id,
+            len(refs or []),
+            refs or [],
+        )
         if not response:
             return (
                 jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
@@ -380,14 +386,26 @@ def create_thread_message_stream(thread_id):
 
         try:
             response_chunks = []
-            for delta in azure_client.stream_chat_response(
+            for stream_event in azure_client.stream_chat_response_with_metadata(
                 chat_message=message,
                 files=files,
                 thread_id=thread_id,
                 use_alt=use_alt,
             ):
-                response_chunks.append(delta)
-                yield _sse_event("delta", {"text": delta})
+                event_type = (stream_event or {}).get("type")
+                if event_type == "delta":
+                    delta = (stream_event or {}).get("text") or ""
+                    if delta:
+                        response_chunks.append(delta)
+                        yield _sse_event("delta", {"text": delta})
+                elif event_type == "references":
+                    refs = (stream_event or {}).get("references") or []
+                    logger.info(
+                        "Thread stream references event received (thread_id=%s count=%s): %s",
+                        thread_id,
+                        len(refs),
+                        refs,
+                    )
 
             response = "".join(response_chunks).strip()
             if not response:
@@ -454,6 +472,13 @@ def create_thread_message_stream(thread_id):
                     except Exception:
                         pass
 
+            logger.info(
+                "Thread stream end sent references (thread_id=%s conversation_id=%s count=%s): %s",
+                thread_id,
+                local_conversation_id,
+                len(refs),
+                refs,
+            )
             yield _sse_event("end", {
                 "success": True,
                 "response": response,
@@ -535,6 +560,12 @@ def create_chat_message():
         else:
             response, refs, error_message = azure_result
             azure_status = None
+        logger.info(
+            "Chat message references from azure_client (conversation_id=%s count=%s): %s",
+            conversation_id,
+            len(refs or []),
+            refs or [],
+        )
         if not response:
             return (
                 jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),

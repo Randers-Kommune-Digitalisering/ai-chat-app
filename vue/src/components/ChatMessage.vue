@@ -113,6 +113,35 @@
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
 
+    function decodeReferenceTitle(value) {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+        try {
+            return decodeURIComponent(raw)
+        } catch (_) {
+            return raw.replace(/%20/g, ' ')
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+    }
+
+    function formatInlineReferenceLabel(value) {
+        const decoded = decodeReferenceTitle(value)
+        if (!decoded) return ''
+        return `<span class="inline-reference">[${escapeHtml(decoded)}]</span>`
+    }
+
+    function formatReferenceListLabel(value) {
+        return decodeReferenceTitle(value)
+    }
+
     function onFeedbackClick() {
         if (feedbackSent.value) return
         feedbackDialogOpen.value = !feedbackDialogOpen.value
@@ -160,13 +189,67 @@
     }
 
     const highlightedMessage = computed(() => {
-        let content = props.message
+        let content = transformedMessageWithCitations.value
         let uniqueWords = [...new Set(props.highlightedWords)]
         uniqueWords.forEach(word => {
             const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
             content = content.replace(regex, '<mark>$1</mark>')
         })
         return content
+    })
+
+    function mapInlineCitationsToTitles(message, references) {
+        let content = typeof message === 'string' ? message : ''
+        if (!content) return ''
+
+        const refs = Array.isArray(references) ? references : []
+        const indexedReplacements = []
+        const fallbackTitles = []
+
+        for (const reference of refs) {
+            const { type, payload } = pickCitationPayload(reference)
+            if (type !== 'url_citation') continue
+
+            const formattedTitle = formatInlineReferenceLabel(payload?.title)
+            if (!formattedTitle) continue
+
+            const start = Number(payload?.start_index)
+            const end = Number(payload?.end_index)
+
+            if (
+                Number.isInteger(start) &&
+                Number.isInteger(end) &&
+                start >= 0 &&
+                end > start &&
+                end <= content.length
+            ) {
+                indexedReplacements.push({ start, end, title: formattedTitle })
+            } else {
+                fallbackTitles.push(formattedTitle)
+            }
+        }
+
+        indexedReplacements
+            .sort((a, b) => b.start - a.start)
+            .forEach(({ start, end, title }) => {
+                content = `${content.slice(0, start)}${title}${content.slice(end)}`
+            })
+
+        if (fallbackTitles.length > 0) {
+            let fallbackIndex = 0
+            const inlineMarkerPattern = /【\d+:\d+†source】|citeturn\d+:\d+/g
+            content = content.replace(inlineMarkerPattern, () => {
+                const title = fallbackTitles[fallbackIndex]
+                fallbackIndex += 1
+                return title || ''
+            })
+        }
+
+        return content
+    }
+
+    const transformedMessageWithCitations = computed(() => {
+        return mapInlineCitationsToTitles(props.message, props.references)
     })
 
     const renderedMessage = computed(() => {
@@ -185,6 +268,51 @@
             return false
         }
     }
+
+    function pickCitationPayload(reference) {
+        if (!reference || typeof reference !== 'object') {
+            return { type: '', payload: {} }
+        }
+
+        if (typeof reference.type === 'string' && reference.type.trim()) {
+            return { type: reference.type.trim(), payload: reference }
+        }
+
+        for (const key of ['url_citation', 'file_citation', 'container_file_citation', 'file_path']) {
+            const nested = reference[key]
+            if (nested && typeof nested === 'object') {
+                return { type: key, payload: nested }
+            }
+        }
+
+        return { type: '', payload: reference }
+    }
+
+    function toRenderedReference(reference) {
+        const { type, payload } = pickCitationPayload(reference)
+
+        if (type === 'url_citation') {
+            const href = typeof payload.url === 'string' ? payload.url : ''
+            const formattedTitle = formatReferenceListLabel(payload.title)
+            const label = formattedTitle || (href || 'Reference')
+            return { label, href }
+        }
+
+        if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
+            const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
+            return { label: String(label), href: '' }
+        }
+
+        const href = typeof payload.url === 'string' ? payload.url : ''
+        const formattedTitle = formatReferenceListLabel(payload.title)
+        const label = formattedTitle || (href || 'Reference')
+        return { label, href }
+    }
+
+    const renderedReferences = computed(() => {
+        const refs = Array.isArray(props.references) ? props.references : []
+        return refs.map(toRenderedReference).filter(ref => !!ref?.label)
+    })
 
     const resizeTextareaToFitContent = () => {
         if (!feedbackTextareaRef.value) return
@@ -251,26 +379,26 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div class="references" v-if="props.references.length > 0 || props.timeSpent">
+            <div class="references" v-if="renderedReferences.length > 0 || props.timeSpent">
                 <div
-                    v-if="props.references.length > 0"
-                    v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
+                    v-if="renderedReferences.length > 0"
+                    v-for="(ref, index) in renderedReferences.slice(0, showAllReferences ? renderedReferences.length : REFERENCE_DISPLAY_LIMIT)"
                     :key="index">
                     <a
-                        :href="isUrl(ref.link) ? ref.link : null"
+                        :href="isUrl(ref.href) ? ref.href : null"
                         target="_blank"
                         rel="noopener"
-                        :tabindex="isUrl(ref.link) ? 0 : -1"
-                        :aria-disabled="!isUrl(ref.link)"
-                        :class="{'disabled': !isUrl(ref.link)}"
+                        :tabindex="isUrl(ref.href) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.href)"
+                        :class="{'disabled': !isUrl(ref.href)}"
                     >
-                        {{ ref.title }}
+                        {{ ref.label }}
                     </a>
                 </div>
-                <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
+                <div v-if="renderedReferences.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
                         <template v-if="showAllReferences"><i class="fa-solid fa-arrow-left"></i></template>
-                        <template v-else><i class="fa-solid fa-plus"></i>{{ props.references.length - REFERENCE_DISPLAY_LIMIT }}</template>
+                        <template v-else><i class="fa-solid fa-plus"></i>{{ renderedReferences.length - REFERENCE_DISPLAY_LIMIT }}</template>
                     </a>
                 </div>
 
@@ -282,7 +410,7 @@
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
             <div class="options" v-if="!props.isStreaming">
-                <div class="option" @click="copyTextToClipboard(props.message)">
+                <div class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
                     <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
@@ -555,6 +683,10 @@
     }
     :deep(.code-copy-button > .tooltip) {
         bottom: -110%;
+    }
+    :deep(.inline-reference) {
+        color: var(--color-text-faded);
+        font-size: 0.8em;
     }
 
     .feedback-sent-message {

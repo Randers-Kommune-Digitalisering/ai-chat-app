@@ -150,6 +150,7 @@ export async function sendThreadMessageStream(threadId, conversationId, message,
             }
             if (eventName === 'end') {
                 finalPayload = payload;
+                console.info('SSE end event references received:', payload?.references || []);
                 if (typeof onEnd === 'function') onEnd(payload);
                 return;
             }
@@ -180,6 +181,7 @@ export async function sendThreadMessageStream(threadId, conversationId, message,
         }
 
         if (finalPayload) {
+            console.info('Stream final payload references returned to view:', finalPayload?.references || []);
             return {
                 success: finalPayload.success !== false,
                 message: finalPayload.message,

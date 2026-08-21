@@ -24,11 +24,15 @@
             this.isStreaming = isStreaming
         }
     }
-    class Reference {
-        constructor(title, link) {
-            this.title = title
-            this.link = link
-        }
+
+    function asCitationObject(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+        return value
+    }
+
+    function mapApiReferences(references) {
+        if (!Array.isArray(references)) return []
+        return references.map(ref => asCitationObject(ref)).filter(Boolean)
     }
 
     const isAgent = ref(false)
@@ -235,14 +239,14 @@
         }
         function mapReferences(msg) {
             // DB-backed references are shaped like {reference_type, reference_content}.
-            // reference_content is JSON stored by backend (see db_controller normalization).
+            // reference_content stores native citation JSON from backend.
             const raw = Array.isArray(msg?.references) ? msg.references : []
             return raw.map(ref => {
                     const content = ref?.reference_content
                     if (typeof content !== 'string') return null
                     try {
                         const parsed = JSON.parse(content)
-                        return new Reference(parsed.title ?? 'Reference', parsed.url ?? '')
+                        return asCitationObject(parsed)
                     } catch (_) {
                         return null
                     }
@@ -386,6 +390,7 @@
             )
 
             const { success, message: backendMessage, response, references, conversation_id, title } = result
+            console.info('Agent stream result references from backend:', references || [])
 
             if (success === false) {
                 stopTimer()
@@ -420,7 +425,8 @@
 
             assistantMessage.isStreaming = false
             assistantMessage.timeSpent = spentTime
-            assistantMessage.references = (references || []).map(ref => new Reference(ref.title, ref.url))
+            assistantMessage.references = mapApiReferences(references)
+            console.info('Agent stream mapped references for UI:', assistantMessage.references)
 
             const finalResponse = response || streamedResponse
             assistantMessage.content = unfilterResponseContent(finalResponse)
@@ -442,6 +448,7 @@
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
+        console.info('Chat result references from backend:', references || [])
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
@@ -472,10 +479,11 @@
             'assistant',
             unfilterResponseContent(response),
             [],
-            (references || []).map(ref => new Reference(ref.title, ref.url)),
+            mapApiReferences(references),
             [],
             timeSpent
         )
+        console.info('Chat mapped references for UI:', assistantMessage.references)
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
             for (let file of chatMessage.files) {
