@@ -1,7 +1,11 @@
+import datetime
+import html
 import logging
 import os
 import random
+import re
 import time
+import urllib.parse
 from abc import abstractmethod
 from json import JSONDecodeError
 from typing import Any
@@ -17,19 +21,44 @@ from utils.config import (
     ASSISTANT_ALT_ID,
     ASSISTANT_NAME,
     ASSISTANT_TYPE,
+    AZURE_AISEARCH_ENDPOINT,
+    AZURE_AISEARCH_INDEX_NAME,
+    AZURE_AISEARCH_SEMANTIC_CONFIG,
     AZURE_AIFOUNDRY_PROJECT_NAME,
     AZURE_API_VERSION_OPENAI,
+    AZURE_OPENAI_DEPLOYMENT_NAME,
     AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION,
     AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_KEY,
+    DEFAULT_TOKEN_ENCODING,
+    EMPHASIZE_RECENT_CONTENT,
     MAX_MESSAGE_LENGTH,
+    MAX_TOKEN_LIMIT_HISTORY,
+    MAX_TOKEN_LIMIT_MESSAGE,
+    SEARCH_STRICTNESS,
+    SYSTEM_PROMPT,
+    TEMPERATURE_VALUE,
     TITLE_GENERATION_REQUEST_TIMEOUT_S,
+    TOP_N_DOCUMENTS,
+    TOP_P_VALUE,
+    USE_GENERAL_KNOWLEDGE,
 )
+from utils.extract_filedata import extract_text_from_file
 
 
 logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+def _get_token_encoding(deployment_name: str):
+    """Resolve the tokenizer used only by the legacy Chat client."""
+    import tiktoken
+
+    try:
+        return tiktoken.encoding_for_model(deployment_name)
+    except KeyError:
+        return tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
 
 
 def _get_field(obj: Any, name: str, default: Any = None) -> Any:
@@ -418,6 +447,214 @@ class AzureOpenAIClient:
         :return: (assistant_response, citations, error_message, http_status)
         """
         pass
+
+
+class Chat(AzureOpenAIClient):
+    """
+    Legacy ChatCompletions client with optional Azure AI Search grounding.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.client = AzureOpenAI(
+            api_version=AZURE_API_VERSION_OPENAI,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            api_key=AZURE_OPENAI_KEY,
+        )
+        self.search_endpoint = AZURE_AISEARCH_ENDPOINT
+        self.search_index = AZURE_AISEARCH_INDEX_NAME
+        self.semantic_config = AZURE_AISEARCH_SEMANTIC_CONFIG
+        self.deployment_name = AZURE_OPENAI_DEPLOYMENT_NAME
+        self.use_general_knowledge = USE_GENERAL_KNOWLEDGE
+        self.emphasize_recent_content = EMPHASIZE_RECENT_CONTENT
+        self.top_p = TOP_P_VALUE
+        self.temperature = TEMPERATURE_VALUE
+        self.top_n_documents = TOP_N_DOCUMENTS
+        self.search_strictness = SEARCH_STRICTNESS
+
+    def get_system_prompt(self) -> str:
+        """Return the configured legacy system prompt."""
+        system_prompt = SYSTEM_PROMPT.strip()
+        if self.emphasize_recent_content:
+            weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lordag", "Sondag"]
+            now = datetime.datetime.now()
+            date = f"{weekdays_danish[now.weekday()]} d. {now.strftime('%d-%m-%Y')}"
+            system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgaengelig."
+        return system_prompt
+
+    @staticmethod
+    def parse_urlencoding(value):
+        """Decode a URL-encoded string."""
+        if not value:
+            return value
+        return urllib.parse.unquote(value)
+
+    @staticmethod
+    def sort_refs(match):
+        refs = re.findall(r"\[(\d+)\]", match.group(0))
+        return "".join(f"[{ref}]" for ref in sorted(int(ref) for ref in refs))
+
+    def fetch_chat_response(self, chat_messages) -> tuple[str | None, list[dict], str | None, int]:
+        """
+        Fetch a response through the legacy Azure OpenAI ChatCompletions API.
+
+        :param chat_messages: Conversation history, optionally including uploaded files.
+        :return: (assistant_response, citations, error_message, http_status)
+        """
+        ai_search_body = {}
+        if self.search_endpoint and self.search_index:
+            ai_search_body = {
+                "data_sources": [
+                    {
+                        "type": "azure_search",
+                        "parameters": {
+                            "endpoint": self.search_endpoint,
+                            "index_name": self.search_index,
+                            "semantic_configuration": self.semantic_config,
+                            "query_type": "semantic",
+                            "fields_mapping": {},
+                            "in_scope": not self.use_general_knowledge,
+                            "filter": None,
+                            "strictness": self.search_strictness,
+                            "top_n_documents": self.top_n_documents,
+                            "authentication": {"type": "system_assigned_managed_identity"},
+                        },
+                    }
+                ]
+            }
+
+        request_messages = [{"role": "system", "content": self.get_system_prompt()}]
+        for chat_message in chat_messages:
+            request_message = {
+                "role": chat_message["role"],
+                "content": chat_message["content"],
+            }
+            files = chat_message.get("files") or []
+            if files and chat_message["role"] == "user":
+                file_count = len(files)
+                document_word = "dokumenter" if file_count > 1 else "dokument"
+                document_reference = "de uploadede dokumenter" if file_count > 1 else "det uploadede dokument"
+                request_message["content"] += (
+                    f"\n\n# Der er uploadet {file_count} {document_word}. Benyt folgende indhold fra "
+                    f"{document_reference} som kontekst for foresporgslen:\n\n"
+                )
+                for index, file in enumerate(files):
+                    document_text = extract_text_from_file(file=file)
+                    request_message["content"] += (
+                        f"\n\n## Dokument {index + 1}: {file.filename}\n### Indhold:\n\n{document_text}"
+                    )
+            request_messages.append(request_message)
+
+        encoding = _get_token_encoding(self.deployment_name)
+
+        latest_message_tokens = len(encoding.encode(request_messages[-1]["content"]))
+        if latest_message_tokens > MAX_TOKEN_LIMIT_MESSAGE:
+            has_files = bool(chat_messages[-1].get("files"))
+            return (
+                None,
+                [],
+                f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
+                f"Reducer laengden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prov igen.",
+                400,
+            )
+
+        total_tokens = sum(
+            len(encoding.encode(message.get("content", "")))
+            for message in request_messages
+            if isinstance(message.get("content"), str)
+        )
+        if total_tokens > MAX_TOKEN_LIMIT_HISTORY:
+            has_files = any(message.get("files") for message in chat_messages if message.get("role") == "user")
+            return (
+                None,
+                [],
+                f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
+                "Overvej at starte en ny samtale.",
+                400,
+            )
+
+        try:
+            response = _call_with_retries(
+                operation="openai.chat.completions.create",
+                func=lambda: self.client.chat.completions.create(
+                    messages=request_messages,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                    model=self.deployment_name,
+                    extra_body=ai_search_body,
+                ),
+            )
+        except Exception as exc:
+            message, status = _error_to_user_message_and_status(exc=exc)
+            return None, [], message, status
+
+        if not response or not getattr(response, "choices", None):
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+
+        choice = response.choices[0]
+        response_message = getattr(choice, "message", None)
+        assistant_response = getattr(response_message, "content", None)
+        if assistant_response is None:
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+
+        citation_refs = [int(ref) for ref in re.findall(r"\[(?:doc)?(\d{1,2})\]", assistant_response)]
+        unique_refs = sorted(set(citation_refs))
+        context = getattr(response_message, "context", None) or {}
+        all_citations = context.get("citations", []) if hasattr(context, "get") else []
+
+        ordered_urls = []
+        for ref in unique_refs:
+            if 0 < ref <= len(all_citations):
+                citation = all_citations[ref - 1]
+                url = citation.get("url") if hasattr(citation, "get") else None
+                if url not in ordered_urls:
+                    ordered_urls.append(url)
+
+        url_index_map = []
+        for url in ordered_urls:
+            matching_citation = next(
+                (citation for citation in all_citations if citation and citation.get("url") == url),
+                {},
+            )
+            url_index_map.append({
+                "type": "url_citation",
+                "url": self.parse_urlencoding(url),
+                "title": self.parse_urlencoding(matching_citation.get("title")),
+                "refs": [
+                    index + 1
+                    for index, citation in enumerate(all_citations)
+                    if citation and citation.get("url") == url
+                ],
+            })
+
+        referenced_citations = [
+            item for item in url_index_map if any(ref in item["refs"] for ref in unique_refs)
+        ]
+
+        def replace_ref(match):
+            original_ref = int(match.group(1))
+            if 0 < original_ref <= len(all_citations):
+                citation_url = self.parse_urlencoding(all_citations[original_ref - 1].get("url"))
+                for index, url_info in enumerate(url_index_map):
+                    if url_info["url"] == citation_url:
+                        return f"[{index + 1}]"
+            return f"[{original_ref}]"
+
+        assistant_response = re.sub(r"\[(?:doc)?(\d{1,2})\]", replace_ref, assistant_response)
+        assistant_response = re.sub(r"(\[\d+\])(?:\1)+", r"\1", assistant_response)
+        assistant_response = re.sub(r"(\[\d+\]){2,}", self.sort_refs, assistant_response)
+
+        def replace_numbered_ref(match):
+            reference_index = int(match.group(1)) - 1
+            if 0 <= reference_index < len(url_index_map):
+                reference = url_index_map[reference_index]
+                label = reference.get("title") or reference.get("url") or "Reference"
+                return f'<span class="inline-reference">[{html.escape(str(label))}]</span>'
+            return match.group(0)
+
+        assistant_response = re.sub(r"\[(\d+)\]", replace_numbered_ref, assistant_response)
+
+        return assistant_response, referenced_citations, None, 200
 
 
 class Agent(AzureOpenAIClient):
@@ -809,13 +1046,13 @@ class AzureOpenAITitleGenerator:
 
 def get_chat_client() -> AzureOpenAIClient:
     """
-    Return the new prototype agent client.
+    Return the configured Agent client or the legacy Chat client.
 
-    :return: Agent client.
+    :return: Configured chat client.
     """
-    if str(ASSISTANT_TYPE).lower() != "agent":
-        logger.warning("azure_openai2 prototype only supports Agent mode. ASSISTANT_TYPE=%s", ASSISTANT_TYPE)
-    return Agent()
+    if str(ASSISTANT_TYPE).lower() == "agent":
+        return Agent()
+    return Chat()
 
 
 def get_title_generator() -> AzureOpenAITitleGenerator:
