@@ -73,7 +73,8 @@
 
     const copyTextToClipboard = async (text) => {
         try {
-            await writeTextToClipboard(text)
+            const formattedText = text.trim().replace(`<span class="inline-reference">`, '').replace(`</span>`, '')
+            await writeTextToClipboard(formattedText)
             recentlyCopied.value = true
             setTimeout(() => {
                 recentlyCopied.value = false
