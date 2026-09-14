@@ -7,7 +7,7 @@ import re
 import time
 import urllib.parse
 from abc import abstractmethod
-from json import JSONDecodeError
+from json import JSONDecodeError, loads
 from typing import Any
 
 from azure.ai.projects import AIProjectClient
@@ -148,6 +148,48 @@ def _extract_web_search_url_citations(output_items: list[Any]) -> list[dict]:
     return references
 
 
+def _extract_bing_grounding_url_citations(output_items: list[Any]) -> list[dict]:
+    """Extract public source links from loosely typed Bing grounding outputs."""
+    seen: set[str] = set()
+    references: list[dict] = []
+
+    def visit(value: Any) -> None:
+        normalized = _to_jsonable(value)
+        if isinstance(normalized, str):
+            try:
+                normalized = loads(normalized)
+            except (JSONDecodeError, TypeError):
+                return
+
+        if isinstance(normalized, list):
+            for entry in normalized:
+                visit(entry)
+            return
+
+        if not isinstance(normalized, dict):
+            return
+
+        url = str(normalized.get("url") or normalized.get("link") or "").strip()
+        if url.startswith(("https://", "http://")) and url not in seen:
+            seen.add(url)
+            title = str(normalized.get("title") or normalized.get("name") or url).strip()
+            references.append({
+                "type": "url_citation",
+                "title": title or url,
+                "url": url,
+            })
+
+        for nested in normalized.values():
+            if isinstance(nested, (dict, list)):
+                visit(nested)
+
+    for item in output_items or []:
+        if _get_field(item, "type") == "bing_grounding_call_output":
+            visit(_get_field(item, "output"))
+
+    return references
+
+
 def _summarize_output_item_for_logs(item: Any) -> dict:
     """
     Build a compact structural summary for one response output item.
@@ -177,6 +219,34 @@ def _summarize_output_item_for_logs(item: Any) -> dict:
         return summary
 
     return summary
+
+
+def _status_for_stream_event(event: Any) -> dict[str, str] | None:
+    """Map Foundry stream structure to a privacy-safe user-facing status."""
+    event_type = _get_field(event, "type")
+
+    if event_type in {"response.output_item.added", "response.output_item.done"}:
+        item_type = _get_field(_get_field(event, "item"), "type")
+        statuses = {
+            "reasoning": ("thinking", "Assistenten tænker ..."),
+            "web_search_call": ("web_search", "Assistenten søger på nettet ..."),
+            "bing_grounding_call": ("web_search", "Assistenten søger på nettet ..."),
+            "file_search_call": ("file_search", "Assistenten søger i filer ..."),
+            "code_interpreter_call": ("working", "Assistenten bearbejder data ..."),
+            "message": ("answering", "Assistenten svarer ..."),
+        }
+        status = statuses.get(item_type)
+        if status:
+            return {"status": status[0], "message": status[1]}
+
+    if event_type in {"response.content_part.added", "response.content_part.done"}:
+        if _get_field(_get_field(event, "part"), "type") in {"output_text", "text"}:
+            return {"status": "answering", "message": "Assistenten svarer ..."}
+
+    if event_type == "response.output_text.delta":
+        return {"status": "answering", "message": "Assistenten svarer ..."}
+
+    return None
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -249,9 +319,11 @@ def _extract_native_annotations_from_stream_event(event: Any) -> list[dict] | No
     if event_type == "response.output_item.added":
         item = _get_field(event, "item")
 
-        web_search_refs = _extract_web_search_url_citations(output_items=[item])
-        if web_search_refs:
-            return web_search_refs
+        grounding_refs = _extract_web_search_url_citations(output_items=[item])
+        if not grounding_refs:
+            grounding_refs = _extract_bing_grounding_url_citations(output_items=[item])
+        if grounding_refs:
+            return grounding_refs
 
         annotations = _extract_output_text_annotations_from_message_item(item=item)
         if not annotations:
@@ -261,9 +333,11 @@ def _extract_native_annotations_from_stream_event(event: Any) -> list[dict] | No
     if event_type == "response.output_item.done":
         item = _get_field(event, "item")
 
-        web_search_refs = _extract_web_search_url_citations(output_items=[item])
-        if web_search_refs:
-            return web_search_refs
+        grounding_refs = _extract_web_search_url_citations(output_items=[item])
+        if not grounding_refs:
+            grounding_refs = _extract_bing_grounding_url_citations(output_items=[item])
+        if grounding_refs:
+            return grounding_refs
 
         annotations = _extract_output_text_annotations_from_message_item(item=item)
         if not annotations:
@@ -274,15 +348,17 @@ def _extract_native_annotations_from_stream_event(event: Any) -> list[dict] | No
         response = _get_field(event, "response")
         output_items = list(_get_field(response, "output", []) or [])
 
-        web_search_refs = _extract_web_search_url_citations(output_items=output_items)
+        grounding_refs = _extract_web_search_url_citations(output_items=output_items)
+        if not grounding_refs:
+            grounding_refs = _extract_bing_grounding_url_citations(output_items=output_items)
 
         annotations: list[Any] = []
         for output_item in output_items:
             annotations.extend(_extract_output_text_annotations_from_message_item(item=output_item))
         if annotations:
             return annotations
-        if web_search_refs:
-            return web_search_refs
+        if grounding_refs:
+            return grounding_refs
         return None
 
     return None
@@ -868,7 +944,7 @@ class Agent(AzureOpenAIClient):
         :param files: Optional uploaded files.
         :param thread_id: Conversation id from create_thread().
         :param use_alt: Use alternate configured agent reference if available.
-        :yield: Dict events: {type: delta, text: ...} and {type: references, references: [...]}.
+        :yield: Dict events containing status, text delta, or reference metadata.
         """
         if not thread_id:
             raise ValueError("Missing thread id")
@@ -889,9 +965,15 @@ class Agent(AzureOpenAIClient):
         latest_references: list[dict] = []
         streamed_annotations: list[Any] = []
         references_emitted = False
+        last_status = None
 
         for event in stream:
             event_type = getattr(event, "type", None)
+
+            status = _status_for_stream_event(event=event)
+            if status and status["status"] != last_status:
+                last_status = status["status"]
+                yield {"type": "status", **status}
 
             if event_type in {"response.output_item.added", "response.output_item.done"}:
                 item = _get_field(event, "item")

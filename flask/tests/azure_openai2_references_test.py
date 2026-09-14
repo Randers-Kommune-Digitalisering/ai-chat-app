@@ -1,6 +1,55 @@
 from types import SimpleNamespace
 
-from utils.azure_openai2 import Agent, _extract_native_annotations_from_stream_event
+from utils.azure_openai2 import Agent, _extract_native_annotations_from_stream_event, _status_for_stream_event
+
+
+def test_status_for_stream_event_maps_reasoning_search_and_output_text_without_event_details():
+    cases = [
+        (
+            SimpleNamespace(type="response.output_item.done", item=SimpleNamespace(type="reasoning")),
+            {"status": "thinking", "message": "Assistenten tænker ..."},
+        ),
+        (
+            SimpleNamespace(type="response.output_item.added", item=SimpleNamespace(type="web_search_call")),
+            {"status": "web_search", "message": "Assistenten søger på nettet ..."},
+        ),
+        (
+            SimpleNamespace(type="response.output_item.added", item=SimpleNamespace(type="bing_grounding_call")),
+            {"status": "web_search", "message": "Assistenten søger på nettet ..."},
+        ),
+        (
+            SimpleNamespace(type="response.content_part.added", part=SimpleNamespace(type="output_text")),
+            {"status": "answering", "message": "Assistenten svarer ..."},
+        ),
+    ]
+
+    for event, expected in cases:
+        assert _status_for_stream_event(event) == expected
+
+
+def test_stream_chat_response_with_metadata_deduplicates_status_events():
+    events = [
+        SimpleNamespace(type="response.output_item.added", item=SimpleNamespace(type="reasoning")),
+        SimpleNamespace(type="response.output_item.done", item=SimpleNamespace(type="reasoning")),
+        SimpleNamespace(type="response.output_text.delta", delta="Svar"),
+        SimpleNamespace(type="response.output_text.delta", delta=" mere"),
+    ]
+
+    class _FakeResponses:
+        def create(self, **kwargs):
+            return iter(events)
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=_FakeResponses())
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_status"))
+
+    assert [event for event in emitted if event["type"] == "status"] == [
+        {"type": "status", "status": "thinking", "message": "Assistenten tænker ..."},
+        {"type": "status", "status": "answering", "message": "Assistenten svarer ..."},
+    ]
 
 
 def test_extract_native_annotations_from_response_completed_event_handles_nested_shapes():
@@ -130,7 +179,7 @@ def test_stream_chat_response_with_metadata_uses_streamed_annotations_when_compl
         )
     )
 
-    assert emitted[0] == {"type": "delta", "text": "Svar "}
+    assert next(event for event in emitted if event["type"] == "delta") == {"type": "delta", "text": "Svar "}
     assert emitted[-1]["type"] == "references"
     assert emitted[-1]["references"] == [
         {
@@ -234,6 +283,102 @@ def test_extract_native_annotations_from_output_item_added_uses_web_search_sourc
     ]
 
 
+def test_extract_native_annotations_from_bing_grounding_output_uses_nested_web_results():
+    event = SimpleNamespace(
+        type="response.output_item.done",
+        item=SimpleNamespace(
+            type="bing_grounding_call_output",
+            output={
+                "webPages": {
+                    "value": [
+                        {
+                            "name": "Hvidsten Kro",
+                            "url": "https://da.wikipedia.org/wiki/Hvidsten_Kro",
+                            "snippet": "Not returned to the frontend",
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+
+    assert _extract_native_annotations_from_stream_event(event) == [
+        {
+            "type": "url_citation",
+            "title": "Hvidsten Kro",
+            "url": "https://da.wikipedia.org/wiki/Hvidsten_Kro",
+        }
+    ]
+
+
+def test_status_for_bing_grounding_call_reports_web_search():
+    event = SimpleNamespace(
+        type="response.output_item.added",
+        item=SimpleNamespace(type="bing_grounding_call"),
+    )
+
+    assert _status_for_stream_event(event) == {
+        "status": "web_search",
+        "message": "Assistenten søger på nettet ...",
+    }
+
+
+def test_stream_preserves_bing_grounding_references_when_completed_has_no_annotations():
+    events = [
+        SimpleNamespace(type="response.output_item.added", item=SimpleNamespace(type="bing_grounding_call")),
+        SimpleNamespace(
+            type="response.output_item.done",
+            item=SimpleNamespace(
+                type="bing_grounding_call_output",
+                output={
+                    "webPages": {
+                        "value": [
+                            {
+                                "name": "Hvidsten Kro",
+                                "url": "https://da.wikipedia.org/wiki/Hvidsten_Kro",
+                            }
+                        ]
+                    }
+                },
+            ),
+        ),
+        SimpleNamespace(type="response.output_text.delta", delta="Svar cite8:0†source"),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(
+                output=[
+                    SimpleNamespace(
+                        type="message",
+                        content=[SimpleNamespace(type="output_text", annotations=[])],
+                    )
+                ]
+            ),
+        ),
+    ]
+
+    class _FakeResponses:
+        def create(self, **kwargs):
+            return iter(events)
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=_FakeResponses())
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_bing"))
+
+    assert emitted[-1] == {
+        "type": "references",
+        "references": [
+            {
+                "type": "url_citation",
+                "title": "Hvidsten Kro",
+                "url": "https://da.wikipedia.org/wiki/Hvidsten_Kro",
+            }
+        ],
+    }
+
+
 def test_stream_chat_response_with_metadata_emits_refs_from_output_item_added_when_completed_empty():
     events = [
         SimpleNamespace(type="response.output_text.delta", delta="Svar "),
@@ -287,7 +432,7 @@ def test_stream_chat_response_with_metadata_emits_refs_from_output_item_added_wh
         )
     )
 
-    assert emitted[0] == {"type": "delta", "text": "Svar "}
+    assert next(event for event in emitted if event["type"] == "delta") == {"type": "delta", "text": "Svar "}
     assert emitted[-1] == {
         "type": "references",
         "references": [

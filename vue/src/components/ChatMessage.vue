@@ -236,12 +236,10 @@
             })
 
         if (fallbackTitles.length > 0) {
-            let fallbackIndex = 0
-            const inlineMarkerPattern = /【\d+:\d+†source】|citeturn\d+:\d+/g
-            content = content.replace(inlineMarkerPattern, () => {
-                const title = fallbackTitles[fallbackIndex]
-                fallbackIndex += 1
-                return title || ''
+                const inlineMarkerPattern = /【\d+:(\d+)†source】|cite(?:turn)?\d+:(\d+)(?:†source)?/g
+                content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
+                    const sourceIndex = Number(legacyIndex ?? foundryIndex)
+                    return fallbackTitles[sourceIndex] || ''
             })
         }
 
@@ -361,7 +359,7 @@
 </script>
 
 <template>
-    <div :class="['chat-message', props.sender]" :id="props.id">
+    <div v-show="props.sender !== 'assistant' || props.message.trim()" :class="['chat-message', props.sender]" :id="props.id">
         <div class="chat-content" v-html="renderedMessage" @click="onChatContentClick"></div>
 
         <div v-if="props.sender == 'user'">

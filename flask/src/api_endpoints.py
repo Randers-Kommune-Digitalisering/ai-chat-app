@@ -398,6 +398,11 @@ def create_thread_message_stream(thread_id):
                     if delta:
                         response_chunks.append(delta)
                         yield _sse_event("delta", {"text": delta})
+                elif event_type == "status":
+                    yield _sse_event("status", {
+                        "status": (stream_event or {}).get("status") or "working",
+                        "message": (stream_event or {}).get("message") or "Assistenten arbejder ...",
+                    })
                 elif event_type == "references":
                     refs = (stream_event or {}).get("references") or []
                     logger.info(

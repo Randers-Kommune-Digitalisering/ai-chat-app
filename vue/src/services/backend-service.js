@@ -59,7 +59,7 @@ export async function sendThreadMessage(threadId, conversationId, message, files
 }
 
 export async function sendThreadMessageStream(threadId, conversationId, message, files, useAlt = false, userEmail = null, handlers = {}) {
-    const { onStart, onDelta, onEnd, onError } = handlers;
+    const { onStart, onStatus, onDelta, onEnd, onError } = handlers;
 
     try {
         const headers = { 'Content-Type': 'application/json' };
@@ -141,6 +141,10 @@ export async function sendThreadMessageStream(threadId, conversationId, message,
 
             if (eventName === 'start') {
                 if (typeof onStart === 'function') onStart(payload);
+                return;
+            }
+            if (eventName === 'status') {
+                if (typeof onStatus === 'function') onStatus(payload);
                 return;
             }
             if (eventName === 'delta') {

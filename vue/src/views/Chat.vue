@@ -43,6 +43,7 @@
     const userFiles = ref([])
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
+    const responseStatus = ref('Assistenten tænker ...')
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
@@ -323,6 +324,7 @@
         awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
+        responseStatus.value = 'Assistenten tænker ...'
         startTimer()
         const isFirstMessageInConversation = chatMessages.value.length == 1
 
@@ -379,6 +381,11 @@
                     onStart: (payload) => {
                         if (payload?.conversation_id) {
                             activeConversationId.value = payload.conversation_id
+                        }
+                    },
+                    onStatus: (payload) => {
+                        if (payload?.message) {
+                            responseStatus.value = payload.message
                         }
                     },
                     onDelta: (delta) => {
@@ -644,9 +651,9 @@
             </div>
         </template>
 
-        <div v-if="awaitingResponse" class="loading-indicator">
+        <div v-if="awaitingResponse" class="loading-indicator" role="status" aria-live="polite">
             <i class="fa-solid fa-rotate rotate"></i>
-            Assistenten svarer ...
+            {{ responseStatus }}
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}
