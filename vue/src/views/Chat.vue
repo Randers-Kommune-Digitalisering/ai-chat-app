@@ -57,6 +57,8 @@
 
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
+    const followStreamAutoScroll = ref(true)
+    const isProgrammaticStreamScroll = ref(false)
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -71,7 +73,14 @@
 
         adjustChatMessagesPaddingBottom()
         window.addEventListener('resize', onResize)
+        window.addEventListener('scroll', onWindowScroll, { passive: true })
     })
+
+    function onWindowScroll() {
+        if (!awaitingResponse.value) return
+        if (isProgrammaticStreamScroll.value) return
+        followStreamAutoScroll.value = false
+    }
 
     function adjustChatMessagesPaddingBottom() {
         nextTick(() => {
@@ -162,6 +171,7 @@
     
     onUnmounted(() => {
         window.removeEventListener('resize', onResize)
+        window.removeEventListener('scroll', onWindowScroll)
         if (resizeTimeoutId !== null) {
             clearTimeout(resizeTimeoutId)
             resizeTimeoutId = null
@@ -292,7 +302,7 @@
         clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         nextTick(() => {
-            scrollToMessage(chatMessages.value.length - 1)
+            scrollToBottom(false)
         })
 
         // Send message if no illegal content
@@ -324,6 +334,7 @@
         awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
+        followStreamAutoScroll.value = true
         responseStatus.value = 'Assistenten tænker ...'
         startTimer()
         const isFirstMessageInConversation = chatMessages.value.length == 1
@@ -358,17 +369,19 @@
             let streamedResponse = ''
             let scrollQueued = false
             const queueStreamScroll = () => {
+                if (!followStreamAutoScroll.value) return
                 if (scrollQueued) return
                 scrollQueued = true
                 requestAnimationFrame(() => {
                     scrollQueued = false
+                    if (!followStreamAutoScroll.value) return
+                    isProgrammaticStreamScroll.value = true
                     scrollToMessage(chatMessages.value.length - 1, false)
+                    requestAnimationFrame(() => {
+                        isProgrammaticStreamScroll.value = false
+                    })
                 })
             }
-
-            nextTick(() => {
-                queueStreamScroll()
-            })
 
             const result = await sendThreadMessageStream(
                 threadId.value,
@@ -444,7 +457,9 @@
             nextTick(() => {
                 const input = document.querySelector('.user-input')
                 if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
+                if (followStreamAutoScroll.value) {
+                    scrollToMessage(chatMessages.value.length - 1)
+                }
             })
 
             return
@@ -560,6 +575,14 @@
     }
 
     // Scroll to specific message
+    function scrollToBottom(smoothScroll = true) {
+        window.scrollTo({
+            left: 0,
+            top: document.documentElement.scrollHeight,
+            behavior: smoothScroll ? 'smooth' : 'auto'
+        })
+    }
+
     function scrollToMessage(index, smoothScroll = true) {
         const item = document.getElementById('msg_' + index)
         if (item) {
