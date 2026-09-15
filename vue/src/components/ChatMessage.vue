@@ -500,7 +500,7 @@
             max-width: 100%;
             overflow: auto;
         }
-        :deep(.chat-content p > code) {
+        :deep(.chat-content p > code), :deep(.chat-content li > code) {
             white-space: pre-wrap;
             transform: translateY(0.5rem);
         }
