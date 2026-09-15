@@ -17,7 +17,7 @@
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
-            this.redactedContents = illegalContents.slice() // Preserve original filtered content for later restoration when unfiltering assistant responses
+            this.redactedContents = Array.isArray(illegalContents) ? illegalContents.slice() : [] // Preserve original filtered content for later restoration when unfiltering assistant responses
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
@@ -295,6 +295,15 @@
             illegalContents = await getIllegalContents(message)
         } catch (error) {
             console.error("Error filtering message:", error)
+            errorMessage.value = "Der opstod en fejl. Prøv venligst igen."
+            return
+        }
+
+        if (!Array.isArray(illegalContents) && typeof illegalContents === 'object' && illegalContents.success == false)
+        {
+            errorMessage.value = illegalContents.message || "Der opstod en fejl. Prøv venligst igen."
+            await undoAndEditMessage(new ChatMessage('user', message, [], [], [...userFiles.value]))
+            return
         }
 
         // Add user message to state (with all file info for display)
@@ -352,7 +361,7 @@
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
             threadId.value = await startThread()
-            console.log("Started new thread successfully")
+            console.debug("Started new thread successfully")
             if (!threadId.value) {
                 console.error("Failed to start new thread.")
                 stopTimer()
@@ -410,7 +419,7 @@
             )
 
             const { success, message: backendMessage, response, references, conversation_id, title } = result
-            console.info('Agent stream result references from backend:', references || [])
+            console.debug('Agent stream result references from backend:', references || [])
 
             if (success === false) {
                 stopTimer()
@@ -423,11 +432,6 @@
 
                 undoAndEditMessage(chatMessage)
                 errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
-                nextTick(() => {
-                    const input = document.querySelector('.user-input')
-                    if (input) input.focus()
-                    scrollToMessage(chatMessages.value.length - 1)
-                })
                 return
             }
 
@@ -478,11 +482,6 @@
             awaitingResponse.value = false
             undoAndEditMessage(chatMessage)
             errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
-            nextTick(() => {
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
-            })
             return
         }
 

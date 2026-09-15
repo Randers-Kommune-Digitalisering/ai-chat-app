@@ -323,7 +323,6 @@
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
-        console.log('Scrolling to feedback dialog for message id:', props.id)
         await nextTick()
         // Wait an extra frame so layout/positions are accurate.
         await new Promise((resolve) => requestAnimationFrame(resolve))
