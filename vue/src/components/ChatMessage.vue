@@ -73,7 +73,7 @@
 
     const copyTextToClipboard = async (text) => {
         try {
-            const formattedText = text.trim().replace(/<span class="inline-reference">([\s\S]*?)<\/span>/g, '$1')
+            const formattedText = text.trim().replace(`<span class="inline-reference">`, '').replace(`</span>`, '')
             await writeTextToClipboard(formattedText)
             recentlyCopied.value = true
             setTimeout(() => {
@@ -579,13 +579,13 @@
         outline: 0;
     }
     .chat-message.assistant:has(:focus) .focus-bar {
-        background-color: var(--color-text-faded);
+        background-color: rgba(145, 145, 145, 0.3);
         left: -1rem;
         right: auto;
         height: calc(100% - 2rem);
     }
     .chat-message.user:has(:focus) .focus-bar {
-        background-color: var(--color-text-faded);
+        background-color: rgba(145, 145, 145, 0.3);
         right: -1rem;
         top: 0rem;
         left: auto;
