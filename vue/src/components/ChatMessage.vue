@@ -259,13 +259,23 @@
         )
     })
 
-    const isUrl = (string) => {
+    const toSafeHttpUrl = (value) => {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+
         try {
-            new URL(string)
-            return true
+            const parsed = new URL(raw)
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                return ''
+            }
+            return parsed.href
         } catch (_) {
-            return false
+            return ''
         }
+    }
+
+    const isUrl = (string) => {
+        return !!toSafeHttpUrl(string)
     }
 
     function pickCitationPayload(reference) {
@@ -291,7 +301,7 @@
         const { type, payload } = pickCitationPayload(reference)
 
         if (type === 'url_citation') {
-            const href = typeof payload.url === 'string' ? payload.url : ''
+            const href = toSafeHttpUrl(payload.url)
             const formattedTitle = formatReferenceListLabel(payload.title)
             const label = formattedTitle || (href || 'Reference')
             return { label, href }
@@ -302,7 +312,7 @@
             return { label: String(label), href: '' }
         }
 
-        const href = typeof payload.url === 'string' ? payload.url : ''
+        const href = toSafeHttpUrl(payload.url)
         const formattedTitle = formatReferenceListLabel(payload.title)
         const label = formattedTitle || (href || 'Reference')
         return { label, href }
@@ -360,6 +370,8 @@
 
 <template>
     <div v-show="props.sender !== 'assistant' || props.message.trim()" :class="['chat-message', props.sender]" :id="props.id">
+        <div class="focus-bar"></div>
+
         <div class="chat-content"
              v-html="renderedMessage"
              @click="onChatContentClick"
@@ -453,7 +465,7 @@
                         </template>
                     </button>
                     <button class="cancel-feedback-button" @click="feedbackDialogOpen = false">
-                        Annuller
+                        Annullér
                     </button>
                 </div>
             </div>  
@@ -467,6 +479,7 @@
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+        position: relative;
     }
     .chat-message:not(:last-of-type) {
         margin-bottom: 0.5rem;
@@ -554,9 +567,28 @@
             cursor: default;
             opacity: 0.8;
         }
+
+    .focus-bar {
+        position: absolute;
+        height: 100%;
+        width: 0.05rem;
+        background-color: transparent;
+        opacity: 0.5;
+    }
     .chat-content:focus {
-        outline: 2px dashed rgba(128, 128, 128, 0.156);
-        outline-offset: 2px;
+        outline: 0;
+    }
+    .chat-message.assistant:has(:focus) .focus-bar {
+        background-color: var(--color-text-faded);
+        left: -1rem;
+        right: auto;
+        height: calc(100% - 2rem);
+    }
+    .chat-message.user:has(:focus) .focus-bar {
+        background-color: var(--color-text-faded);
+        right: -1rem;
+        top: 0rem;
+        left: auto;
     }
 
     .fileUploads {

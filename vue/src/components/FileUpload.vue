@@ -294,6 +294,8 @@
         border: 0;
         color: var(--color-input-fileselect-button);
         transition: opacity 0.3s, color 0.2s ease;
+        border-top-left-radius: 2rem;
+        border-bottom-left-radius: 2rem;
     }
     .fileSelectButton:hover {
         color: var(--color-input-fileselect-button-hover);
