@@ -58,7 +58,7 @@
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
     const followStreamAutoScroll = ref(true)
-    const isProgrammaticStreamScroll = ref(false)
+    const isProgrammaticScroll = ref(false)
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -78,8 +78,16 @@
 
     function onWindowScroll() {
         if (!awaitingResponse.value) return
-        if (isProgrammaticStreamScroll.value) return
+        if (isProgrammaticScroll.value) return
         followStreamAutoScroll.value = false
+    }
+
+    function withProgrammaticScroll(callback) {
+        isProgrammaticScroll.value = true
+        callback()
+        requestAnimationFrame(() => {
+            isProgrammaticScroll.value = false
+        })
     }
 
     function adjustChatMessagesPaddingBottom() {
@@ -311,7 +319,7 @@
         clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         nextTick(() => {
-            scrollToBottom(false)
+            withProgrammaticScroll(() => scrollToBottom(false))
         })
 
         // Send message if no illegal content
@@ -384,11 +392,7 @@
                 requestAnimationFrame(() => {
                     scrollQueued = false
                     if (!followStreamAutoScroll.value) return
-                    isProgrammaticStreamScroll.value = true
-                    scrollToMessage(chatMessages.value.length - 1, false)
-                    requestAnimationFrame(() => {
-                        isProgrammaticStreamScroll.value = false
-                    })
+                    withProgrammaticScroll(() => scrollToMessage(chatMessages.value.length - 1, false))
                 })
             }
 
