@@ -35,11 +35,29 @@ ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').str
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Agent, this must be set
 ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', None)  # Second assistant ID for assistant toggle
+AGENT_ID = os.environ.get('AGENT_ID', ASSISTANT_ID)
+AGENT_ALT_ID = os.environ.get('AGENT_ALT_ID', ASSISTANT_ALT_ID)
 if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
-    ASSISTANT_ID = ASSISTANT_ID.strip()
+    if ASSISTANT_ID is not None:
+        ASSISTANT_ID = ASSISTANT_ID.strip()
+    if AGENT_ID is not None:
+        AGENT_ID = AGENT_ID.strip()
     if ASSISTANT_ALT_ID is not None:
         ASSISTANT_ALT_ID = ASSISTANT_ALT_ID.strip()
-SHOW_ASSISTANT_TOGGLE = bool(ASSISTANT_ALT_ID)
+    if AGENT_ALT_ID is not None:
+        AGENT_ALT_ID = AGENT_ALT_ID.strip()
+
+    # Keep legacy aliases synchronized while treating AGENT_* as primary.
+    if not AGENT_ID and ASSISTANT_ID:
+        AGENT_ID = ASSISTANT_ID
+    if not ASSISTANT_ID and AGENT_ID:
+        ASSISTANT_ID = AGENT_ID
+
+    if not AGENT_ALT_ID and ASSISTANT_ALT_ID:
+        AGENT_ALT_ID = ASSISTANT_ALT_ID
+    if not ASSISTANT_ALT_ID and AGENT_ALT_ID:
+        ASSISTANT_ALT_ID = AGENT_ALT_ID
+SHOW_ASSISTANT_TOGGLE = bool(AGENT_ALT_ID)
 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]

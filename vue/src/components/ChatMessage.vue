@@ -50,6 +50,11 @@
             type: Array,
             required: false,
             default: () => []
+        },
+        isStreaming: {
+            type: Boolean,
+            required: false,
+            default: false
         }
     })
 
@@ -68,7 +73,8 @@
 
     const copyTextToClipboard = async (text) => {
         try {
-            await writeTextToClipboard(text)
+            const formattedText = text.trim().replace(`<span class="inline-reference">`, '').replace(`</span>`, '')
+            await writeTextToClipboard(formattedText)
             recentlyCopied.value = true
             setTimeout(() => {
                 recentlyCopied.value = false
@@ -107,6 +113,35 @@
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+
+    function decodeReferenceTitle(value) {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+        try {
+            return decodeURIComponent(raw)
+        } catch (_) {
+            return raw.replace(/%20/g, ' ')
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+    }
+
+    function formatInlineReferenceLabel(value) {
+        const decoded = decodeReferenceTitle(value)
+        if (!decoded) return ''
+        return `<span class="inline-reference">[${escapeHtml(decoded)}]</span>`
+    }
+
+    function formatReferenceListLabel(value) {
+        return decodeReferenceTitle(value)
+    }
 
     function onFeedbackClick() {
         if (feedbackSent.value) return
@@ -155,13 +190,65 @@
     }
 
     const highlightedMessage = computed(() => {
-        let content = props.message
+        let content = transformedMessageWithCitations.value
         let uniqueWords = [...new Set(props.highlightedWords)]
         uniqueWords.forEach(word => {
             const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
             content = content.replace(regex, '<mark>$1</mark>')
         })
         return content
+    })
+
+    function mapInlineCitationsToTitles(message, references) {
+        let content = typeof message === 'string' ? message : ''
+        if (!content) return ''
+
+        const refs = Array.isArray(references) ? references : []
+        const indexedReplacements = []
+        const fallbackTitles = []
+
+        for (const reference of refs) {
+            const { type, payload } = pickCitationPayload(reference)
+            if (type !== 'url_citation') continue
+
+            const formattedTitle = formatInlineReferenceLabel(payload?.title)
+            if (!formattedTitle) continue
+
+            const start = Number(payload?.start_index)
+            const end = Number(payload?.end_index)
+
+            if (
+                Number.isInteger(start) &&
+                Number.isInteger(end) &&
+                start >= 0 &&
+                end > start &&
+                end <= content.length
+            ) {
+                indexedReplacements.push({ start, end, title: formattedTitle })
+            } else {
+                fallbackTitles.push(formattedTitle)
+            }
+        }
+
+        indexedReplacements
+            .sort((a, b) => b.start - a.start)
+            .forEach(({ start, end, title }) => {
+                content = `${content.slice(0, start)}${title}${content.slice(end)}`
+            })
+
+        if (fallbackTitles.length > 0) {
+                const inlineMarkerPattern = /【\d+:(\d+)†source】|cite(?:turn)?\d+:(\d+)(?:†source)?/g
+                content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
+                    const sourceIndex = Number(legacyIndex ?? foundryIndex)
+                    return fallbackTitles[sourceIndex] || ''
+            })
+        }
+
+        return content
+    }
+
+    const transformedMessageWithCitations = computed(() => {
+        return mapInlineCitationsToTitles(props.message, props.references)
     })
 
     const renderedMessage = computed(() => {
@@ -172,14 +259,69 @@
         )
     })
 
-    const isUrl = (string) => {
+    const toSafeHttpUrl = (value) => {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+
         try {
-            new URL(string)
-            return true
+            const parsed = new URL(raw)
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                return ''
+            }
+            return parsed.href
         } catch (_) {
-            return false
+            return ''
         }
     }
+
+    const isUrl = (string) => {
+        return !!toSafeHttpUrl(string)
+    }
+
+    function pickCitationPayload(reference) {
+        if (!reference || typeof reference !== 'object') {
+            return { type: '', payload: {} }
+        }
+
+        if (typeof reference.type === 'string' && reference.type.trim()) {
+            return { type: reference.type.trim(), payload: reference }
+        }
+
+        for (const key of ['url_citation', 'file_citation', 'container_file_citation', 'file_path']) {
+            const nested = reference[key]
+            if (nested && typeof nested === 'object') {
+                return { type: key, payload: nested }
+            }
+        }
+
+        return { type: '', payload: reference }
+    }
+
+    function toRenderedReference(reference) {
+        const { type, payload } = pickCitationPayload(reference)
+
+        if (type === 'url_citation') {
+            const href = toSafeHttpUrl(payload.url)
+            const formattedTitle = formatReferenceListLabel(payload.title)
+            const label = formattedTitle || (href || 'Reference')
+            return { label, href }
+        }
+
+        if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
+            const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
+            return { label: String(label), href: '' }
+        }
+
+        const href = toSafeHttpUrl(payload.url)
+        const formattedTitle = formatReferenceListLabel(payload.title)
+        const label = formattedTitle || (href || 'Reference')
+        return { label, href }
+    }
+
+    const renderedReferences = computed(() => {
+        const refs = Array.isArray(props.references) ? props.references : []
+        return refs.map(toRenderedReference).filter(ref => !!ref?.label)
+    })
 
     const resizeTextareaToFitContent = () => {
         if (!feedbackTextareaRef.value) return
@@ -191,7 +333,6 @@
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
-        console.log('Scrolling to feedback dialog for message id:', props.id)
         await nextTick()
         // Wait an extra frame so layout/positions are accurate.
         await new Promise((resolve) => requestAnimationFrame(resolve))
@@ -228,8 +369,15 @@
 </script>
 
 <template>
-    <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="renderedMessage" @click="onChatContentClick"></div>
+    <div v-show="props.sender !== 'assistant' || props.message.trim()" :class="['chat-message', props.sender]" :id="props.id">
+        <div class="focus-bar"></div>
+
+        <div class="chat-content"
+             v-html="renderedMessage"
+             @click="onChatContentClick"
+             aria-relevant="additions text"
+             :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent' : 'bruger')"
+             tabindex="0"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -246,26 +394,26 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div class="references" v-if="props.references.length > 0 || props.timeSpent">
+            <div class="references" v-if="renderedReferences.length > 0 || props.timeSpent">
                 <div
-                    v-if="props.references.length > 0"
-                    v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
+                    v-if="renderedReferences.length > 0"
+                    v-for="(ref, index) in renderedReferences.slice(0, showAllReferences ? renderedReferences.length : REFERENCE_DISPLAY_LIMIT)"
                     :key="index">
                     <a
-                        :href="isUrl(ref.link) ? ref.link : null"
+                        :href="isUrl(ref.href) ? ref.href : null"
                         target="_blank"
                         rel="noopener"
-                        :tabindex="isUrl(ref.link) ? 0 : -1"
-                        :aria-disabled="!isUrl(ref.link)"
-                        :class="{'disabled': !isUrl(ref.link)}"
+                        :tabindex="isUrl(ref.href) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.href)"
+                        :class="{'disabled': !isUrl(ref.href)}"
                     >
-                        {{ ref.title }}
+                        {{ ref.label }}
                     </a>
                 </div>
-                <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
+                <div v-if="renderedReferences.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
                         <template v-if="showAllReferences"><i class="fa-solid fa-arrow-left"></i></template>
-                        <template v-else><i class="fa-solid fa-plus"></i>{{ props.references.length - REFERENCE_DISPLAY_LIMIT }}</template>
+                        <template v-else><i class="fa-solid fa-plus"></i>{{ renderedReferences.length - REFERENCE_DISPLAY_LIMIT }}</template>
                     </a>
                 </div>
 
@@ -276,8 +424,8 @@
             </div>
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
-            <div class="options">
-                <div class="option" @click="copyTextToClipboard(props.message)">
+            <div class="options" v-if="!props.isStreaming">
+                <div class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
                     <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
                 </div>
@@ -294,7 +442,7 @@
                 </div>
             </div>
 
-            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen" tabindex="-1">
+            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen && !props.isStreaming" tabindex="-1">
                 <textarea
                     v-model="feedbackText"
                     ref="feedbackTextareaRef"
@@ -317,7 +465,7 @@
                         </template>
                     </button>
                     <button class="cancel-feedback-button" @click="feedbackDialogOpen = false">
-                        Annuller
+                        Annullér
                     </button>
                 </div>
             </div>  
@@ -331,6 +479,7 @@
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+        position: relative;
     }
     .chat-message:not(:last-of-type) {
         margin-bottom: 0.5rem;
@@ -368,7 +517,7 @@
             max-width: 100%;
             overflow: auto;
         }
-        :deep(.chat-content p > code) {
+        :deep(.chat-content p > code), :deep(.chat-content li > code) {
             white-space: pre-wrap;
             transform: translateY(0.5rem);
         }
@@ -418,6 +567,29 @@
             cursor: default;
             opacity: 0.8;
         }
+
+    .focus-bar {
+        position: absolute;
+        height: 100%;
+        width: 0.05rem;
+        background-color: transparent;
+        opacity: 0.5;
+    }
+    .chat-content:focus {
+        outline: 0;
+    }
+    .chat-message.assistant:has(:focus) .focus-bar {
+        background-color: rgba(145, 145, 145, 0.3);
+        left: -1rem;
+        right: auto;
+        height: calc(100% - 2rem);
+    }
+    .chat-message.user:has(:focus) .focus-bar {
+        background-color: rgba(145, 145, 145, 0.3);
+        right: -1rem;
+        top: 0rem;
+        left: auto;
+    }
 
     .fileUploads {
         padding-top: 0.3rem;
@@ -550,6 +722,10 @@
     }
     :deep(.code-copy-button > .tooltip) {
         bottom: -110%;
+    }
+    :deep(.inline-reference) {
+        color: var(--color-text-faded);
+        font-size: 0.8em;
     }
 
     .feedback-sent-message {

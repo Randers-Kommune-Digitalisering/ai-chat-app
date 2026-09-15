@@ -4,7 +4,7 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { startThread, sendThreadMessageStream, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
@@ -13,21 +13,26 @@
 
 
     class ChatMessage {
-        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
+        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0, isStreaming = false) {
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
-            this.redactedContents = illegalContents.slice() // Preserve original filtered content for later restoration when unfiltering assistant responses
+            this.redactedContents = Array.isArray(illegalContents) ? illegalContents.slice() : [] // Preserve original filtered content for later restoration when unfiltering assistant responses
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
+            this.isStreaming = isStreaming
         }
     }
-    class Reference {
-        constructor(title, link) {
-            this.title = title
-            this.link = link
-        }
+
+    function asCitationObject(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+        return value
+    }
+
+    function mapApiReferences(references) {
+        if (!Array.isArray(references)) return []
+        return references.map(ref => asCitationObject(ref)).filter(Boolean)
     }
 
     const isAgent = ref(false)
@@ -38,6 +43,7 @@
     const userFiles = ref([])
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
+    const responseStatus = ref('Assistenten tænker ...')
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
@@ -51,6 +57,8 @@
 
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
+    const followStreamAutoScroll = ref(true)
+    const isProgrammaticScroll = ref(false)
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -65,7 +73,22 @@
 
         adjustChatMessagesPaddingBottom()
         window.addEventListener('resize', onResize)
+        window.addEventListener('scroll', onWindowScroll, { passive: true })
     })
+
+    function onWindowScroll() {
+        if (!awaitingResponse.value) return
+        if (isProgrammaticScroll.value) return
+        followStreamAutoScroll.value = false
+    }
+
+    function withProgrammaticScroll(callback) {
+        isProgrammaticScroll.value = true
+        callback()
+        requestAnimationFrame(() => {
+            isProgrammaticScroll.value = false
+        })
+    }
 
     function adjustChatMessagesPaddingBottom() {
         nextTick(() => {
@@ -156,6 +179,7 @@
     
     onUnmounted(() => {
         window.removeEventListener('resize', onResize)
+        window.removeEventListener('scroll', onWindowScroll)
         if (resizeTimeoutId !== null) {
             clearTimeout(resizeTimeoutId)
             resizeTimeoutId = null
@@ -234,14 +258,14 @@
         }
         function mapReferences(msg) {
             // DB-backed references are shaped like {reference_type, reference_content}.
-            // reference_content is JSON stored by backend (see db_controller normalization).
+            // reference_content stores native citation JSON from backend.
             const raw = Array.isArray(msg?.references) ? msg.references : []
             return raw.map(ref => {
                     const content = ref?.reference_content
                     if (typeof content !== 'string') return null
                     try {
                         const parsed = JSON.parse(content)
-                        return new Reference(parsed.title ?? 'Reference', parsed.url ?? '')
+                        return asCitationObject(parsed)
                     } catch (_) {
                         return null
                     }
@@ -279,6 +303,15 @@
             illegalContents = await getIllegalContents(message)
         } catch (error) {
             console.error("Error filtering message:", error)
+            errorMessage.value = "Der opstod en fejl. Prøv venligst igen."
+            return
+        }
+
+        if (!Array.isArray(illegalContents) && typeof illegalContents === 'object' && illegalContents.success == false)
+        {
+            errorMessage.value = illegalContents.message || "Der opstod en fejl. Prøv venligst igen."
+            await undoAndEditMessage(new ChatMessage('user', message, [], [], [...userFiles.value]))
+            return
         }
 
         // Add user message to state (with all file info for display)
@@ -286,7 +319,7 @@
         clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         nextTick(() => {
-            scrollToMessage(chatMessages.value.length - 1)
+            withProgrammaticScroll(() => scrollToBottom(false))
         })
 
         // Send message if no illegal content
@@ -318,7 +351,10 @@
         awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
+        followStreamAutoScroll.value = true
+        responseStatus.value = 'Assistenten tænker ...'
         startTimer()
+        const isFirstMessageInConversation = chatMessages.value.length == 1
 
         // Prepare messages for chat mode
         let message = chatMessage.content
@@ -333,27 +369,116 @@
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
             threadId.value = await startThread()
-            console.log("Started new thread successfully")
+            console.debug("Started new thread successfully")
             if (!threadId.value) {
                 console.error("Failed to start new thread.")
+                stopTimer()
+                awaitingResponse.value = false
+                errorMessage.value = "Der opstod en fejl. Start en ny samtale eller prøv igen om lidt."
                 return
             }
         }
 
-        // Send message to backend
-        const result = isAgent.value ?
-            await sendThreadMessage(
+        if (isAgent.value) {
+            const assistantMessage = new ChatMessage('assistant', '', [], [], [], 0, true)
+            chatMessages.value.push(assistantMessage)
+
+            let streamedResponse = ''
+            let scrollQueued = false
+            const queueStreamScroll = () => {
+                if (!followStreamAutoScroll.value) return
+                if (scrollQueued) return
+                scrollQueued = true
+                requestAnimationFrame(() => {
+                    scrollQueued = false
+                    if (!followStreamAutoScroll.value) return
+                    withProgrammaticScroll(() => scrollToMessage(chatMessages.value.length - 1, false))
+                })
+            }
+
+            const result = await sendThreadMessageStream(
                 threadId.value,
                 activeConversationId.value,
                 message,
                 chatMessage.files.map(({ name, content }) => ({ name, content })),
                 useAltAssistant.value,
-                currentUserEmail.value
-            ) :
-            await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
+                currentUserEmail.value,
+                {
+                    onStart: (payload) => {
+                        if (payload?.conversation_id) {
+                            activeConversationId.value = payload.conversation_id
+                        }
+                    },
+                    onStatus: (payload) => {
+                        if (payload?.message) {
+                            responseStatus.value = payload.message
+                        }
+                    },
+                    onDelta: (delta) => {
+                        streamedResponse += delta
+                        assistantMessage.content = unfilterResponseContent(streamedResponse)
+                        queueStreamScroll()
+                    }
+                }
+            )
+
+            const { success, message: backendMessage, response, references, conversation_id, title } = result
+            console.debug('Agent stream result references from backend:', references || [])
+
+            if (success === false) {
+                stopTimer()
+                awaitingResponse.value = false
+
+                const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+                if (lastMessage === assistantMessage) {
+                    chatMessages.value.pop()
+                }
+
+                undoAndEditMessage(chatMessage)
+                errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+                return
+            }
+
+            activeConversationId.value = conversation_id
+
+            if (isFirstMessageInConversation)
+                notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
+
+            const spentTime = Number((stopTimer() / 1000).toFixed(2))
+            if (!awaitingResponse.value) {
+                console.warn("Response received but awaitingResponse is false. Ignoring response.")
+                return
+            }
+            awaitingResponse.value = false
+
+            assistantMessage.isStreaming = false
+            assistantMessage.timeSpent = spentTime
+            assistantMessage.references = mapApiReferences(references)
+            console.info('Agent stream mapped references for UI:', assistantMessage.references)
+
+            const finalResponse = response || streamedResponse
+            assistantMessage.content = unfilterResponseContent(finalResponse)
+            if (!assistantMessage.content || assistantMessage.content.trim() === "") {
+                assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
+            }
+
+            nextTick(() => {
+                const input = document.querySelector('.user-input')
+                if (input) input.focus()
+                if (followStreamAutoScroll.value) {
+                    scrollToMessage(chatMessages.value.length - 1)
+                }
+            })
+
+            return
+        }
+
+        // Send message to backend
+        const result = await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
+        console.info('Chat result references from backend:', references || [])
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
@@ -361,17 +486,12 @@
             awaitingResponse.value = false
             undoAndEditMessage(chatMessage)
             errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
-            nextTick(() => {
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
-            })
             return
         }
 
         activeConversationId.value = conversation_id
 
-        if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
+        if (isFirstMessageInConversation) // If first message - notify parent of new conversation
             notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
 
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
@@ -384,10 +504,11 @@
             'assistant',
             unfilterResponseContent(response),
             [],
-            (references || []).map(ref => new Reference(ref.title, ref.url)),
+            mapApiReferences(references),
             [],
             timeSpent
         )
+        console.info('Chat mapped references for UI:', assistantMessage.references)
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
             for (let file of chatMessage.files) {
@@ -457,6 +578,14 @@
     }
 
     // Scroll to specific message
+    function scrollToBottom(smoothScroll = true) {
+        window.scrollTo({
+            left: 0,
+            top: document.documentElement.scrollHeight,
+            behavior: smoothScroll ? 'smooth' : 'auto'
+        })
+    }
+
     function scrollToMessage(index, smoothScroll = true) {
         const item = document.getElementById('msg_' + index)
         if (item) {
@@ -520,7 +649,7 @@
         <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
-    <div id="chat-messages" ref="chatMessagesEl">
+    <div id="chat-messages" ref="chatMessagesEl" role="document" aria-live="assertive" :aria-atomic="true">
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
@@ -531,6 +660,7 @@
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
                 :chatHistory="chatMessages"
+                :isStreaming="msg.isStreaming"
             />
            
             <div v-if="msg.illegalContents.length > 0" class="alert-content-filter">
@@ -547,9 +677,9 @@
             </div>
         </template>
 
-        <div v-if="awaitingResponse" class="loading-indicator">
+        <div v-if="awaitingResponse" class="loading-indicator" role="status">
             <i class="fa-solid fa-rotate rotate"></i>
-            Assistenten tænker ...
+            <span aria-live="polite">{{ responseStatus }}</span>
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}

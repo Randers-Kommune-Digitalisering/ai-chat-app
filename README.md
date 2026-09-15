@@ -5,8 +5,8 @@ Løsningen kan fungere som chatvindue i [ai-chat-portal](https://github.com/Rand
 
 ## Features
 
-#### :robot: Chat med AI assistenter fra Azure (enten chat-completion assistenter eller agenter)
-Backend vælger mellem chat- og agent-flow via `ASSISTANT_TYPE` og tilbyder endpoints som `POST /api/chat/messages` og `POST /api/threads/<thread_id>/messages`.
+#### :robot: Chat med AI-assistenter fra Azure (ChatCompletions eller Agent)
+Backend vælger mellem den understøttede legacy ChatCompletions-klient og den nye AI Foundry Agent-klient via `ASSISTANT_TYPE`. Chat-kilder vises med navngivne inline-referencer på samme måde som Agent-kilder.
 
 #### :paperclip: Upload af filer i samtaler
 Frontend sender filer som base64 i request-body, backend dekoder til bytes og gemmer dem som attachments på beskeder, så konteksten kan genbruges ved fortsat chat.
@@ -43,82 +43,150 @@ Robust håndtering af Azure/OpenAI-fejl som en del af chat-flowet:
 
 
 ## Miljøvariabler
-Applikationen er afhængig af en række miljøvariabler. De nødvendige miljøvariabler afhænger af assistentens type, `ASSISTANT_TYPE`.
+Konfiguration indlæses fra miljøet og fra en lokal `.env`-fil. Gem ikke nøgler eller passwords i Git; injicér dem via den godkendte secret store i det relevante miljø.
 
-### Nødvendige miljøvariabler
-Disse skal altid være sat (uanset assistent-type), da de bruges uden sikre defaults.
+`ASSISTANT_TYPE` vælger klienten og bør sættes eksplicit til enten `Chat` eller `Agent`. Værdien har default `Chat`. Andre værdier behandles også som Chat, så brug det dokumenterede navn for at undgå fejlkonfiguration.
+
+### Nødvendige for begge typer
+
+Følgende værdier læses uden default og skal altid være sat. Deployment-navnet bruges også som fallback til automatisk titelgenerering.
+
+| Navn | Beskrivelse |
+|---|---|
+| `AZURE_OPENAI_KEY` | API-nøgle til Azure OpenAI. |
+| `AZURE_OPENAI_ENDPOINT` | Base-endpoint for Azure OpenAI-ressourcen. |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Deployment/model til Chat og fallback-model til titelgenerering. |
+
+### Chat
+
+Sæt `ASSISTANT_TYPE=Chat` for den understøttede legacy ChatCompletions-klient. Der kræves ingen yderligere værdier ud over de tre fælles værdier.
+
+Minimal konfiguration:
+
+```dotenv
+ASSISTANT_TYPE=Chat
+AZURE_OPENAI_KEY=<secret>
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT_NAME=<deployment>
+```
+
+Valgfrie Chat-indstillinger:
 
 | Navn | Default | Beskrivelse |
 |---|---:|---|
-| `ASSISTANT_TYPE` | `Chat` | Vælger kørselstype: `Agent`/`Assistant` eller `Chat`. |
+| `SYSTEM_PROMPT` | `Du er en hjælpsom AI-assistent.` | Systemprompt for Chat-klienten. |
+| `USE_GENERAL_KNOWLEDGE` | `True` | Om svar må bruge generel viden ud over søgeresultater. |
+| `EMPHASIZE_RECENT_CONTENT` | `True` | Tilføjer dags dato og instruktion om at prioritere ny information. |
+| `TOP_P_VALUE` | `0.8` | Sampling-parameteren `top_p`. |
+| `TEMPERATURE_VALUE` | `0.2` | Sampling-parameteren `temperature`. |
+| `MAX_TOKEN_LIMIT` | `1000000` | Maksimalt samlet antal tokens i systemprompt og samtalehistorik. |
+| `MAX_TOKEN_LIMIT_MESSAGE` | `129024` | Maksimalt antal tokens i den seneste besked inklusive udtrukket filtekst. |
+| `DEFAULT_TOKEN_ENCODING` | `cl100k_base` | Tokenizer-fallback, hvis deployment-navnet ikke genkendes af `tiktoken`. |
+
+Azure AI Search er valgfrit for Chat. Retrieval aktiveres kun, når både endpoint og index er sat:
+
+| Navn | Default | Krav/beskrivelse |
+|---|---:|---|
+| `AZURE_AISEARCH_ENDPOINT` | — | Påkrævet, når Azure AI Search anvendes. |
+| `AZURE_AISEARCH_INDEX_NAME` | — | Påkrævet, når Azure AI Search anvendes. |
+| `AZURE_AISEARCH_SEMANTIC_CONFIG` | `default-semantic-config` | Semantic configuration på indexet. |
+| `TOP_N_DOCUMENTS` | `10` | Maksimalt antal dokumenter fra retrieval. |
+| `SEARCH_STRICTNESS` | `3` | Stramhed for retrieval. |
+
+### Agent
+
+Sæt `ASSISTANT_TYPE=Agent` for AI Foundry Conversations/Responses-klienten. Agent-klienten bruger `DefaultAzureCredential`; den kørende identitet skal derfor have mindst mulige nødvendige rettigheder til det valgte Foundry-projekt.
+
+Ud over de fælles værdier kræves:
+
+| Navn | Beskrivelse |
+|---|---|
+| `AGENT_ID` | Navnet/id'et på AI Foundry-agenten. `ASSISTANT_ID` understøttes som legacy-alias. |
+| `AZURE_AIFOUNDRY_PROJECT_ENDPOINT` | Fuldt project endpoint. `FOUNDRY_PROJECT_ENDPOINT` understøttes som alias. Hvis ingen af dem sættes, er `AZURE_AIFOUNDRY_PROJECT_NAME` påkrævet. |
+
+Minimal konfiguration med fuldt endpoint:
+
+```dotenv
+ASSISTANT_TYPE=Agent
+AZURE_OPENAI_KEY=<secret>
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT_NAME=<deployment>
+AGENT_ID=<agent-name>
+AZURE_AIFOUNDRY_PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
+```
+
+Alternativt kan `AZURE_AIFOUNDRY_PROJECT_NAME=<project>` bruges i stedet for et fuldt project endpoint. I så fald bygger klienten endpointet efter løsningens eksisterende Randers-specifikke URL-format.
+
+Valgfrie Agent-indstillinger:
+
+| Navn | Default | Beskrivelse |
+|---|---:|---|
+| `FOUNDRY_AGENT_VERSION` | — | Version for den primære agent reference. |
+| `AGENT_ALT_ID` | — | Alternativ agent til UI-toggle. `ASSISTANT_ALT_ID` understøttes som legacy-alias. |
+| `FOUNDRY_AGENT_ALT_VERSION` | — | Version for den alternative agent reference. |
+| `MAX_MESSAGE_LENGTH` | `256000` | Maksimal længde af brugerens tekst i tegn. |
+| `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for agent-toggle. |
+| `ALT_ALERT_MSG` | — | Alert-tekst for den alternative agent. |
+| `ALT_ALERT_TYPE` | `info` | Alert-type: `info`, `warning` eller `danger`. |
+
+### Fælles valgfrie indstillinger
+
+| Navn | Default | Beskrivelse |
+|---|---:|---|
 | `ASSISTANT_NAME` | `AI Assistent` | Visningsnavn i UI. |
 | `ASSISTANT_NAME_ID` | `default-assistant` | ID som portalen bruger til at identificere assistenten. |
-| `PREDEFINED_QUESTIONS` | — | Semikolon-separeret liste af forslagsspørgsmål (fx `Spg1;Spg2`). |
-| `AZURE_OPENAI_KEY` | — | API-nøgle til Azure OpenAI. |
-| `AZURE_OPENAI_ENDPOINT` | — | Base endpoint for Azure OpenAI-ressourcen. |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | — | Deployment/model-navn der bruges til chat. |
-| `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version for OpenAI endpoints. |
-| `FEEDBACK_SMTP_SENDER_EMAIL` | — | Afsenderadresse for feedback (og evt. SMTP login). Hvis domæne mangler, tilføjes automatisk `@randers.dk` (fx `fornavn.efternavn` → `fornavn.efternavn@randers.dk`). |
-| `FEEDBACK_SMTP_SERVER` | — | SMTP server til feedback-mail (rk-digi EmailSender). |
-| `FEEDBACK_SMTP_PORT` | `25` | SMTP port. |
-| `FEEDBACK_MAIL_RECIPIENT` | — | Modtageradresse(r) for feedback (komma- eller semikolon-separeret). Hvis domæne mangler på en adresse, tilføjes automatisk `@randers.dk`. |
+| `ASSISTANT_DESCRIPTION` | — | Beskrivelse, der vises i UI. |
+| `PREDEFINED_QUESTIONS` | — | Semikolonseparerede forslagsspørgsmål, eksempelvis `Spørgsmål 1;Spørgsmål 2`. |
+| `ALLOW_FILE_UPLOAD` | `False` | Reserveret indstilling; er aktuelt ikke aktiv. |
+| `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version til Azure OpenAI. |
+| `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | `AZURE_OPENAI_DEPLOYMENT_NAME` | Separat deployment til automatisk titelgenerering. |
+| `TITLE_GENERATION_MAX_CONCURRENCY` | `100` | Maksimalt antal samtidige titelgenereringer pr. proces; minimum er `10`. |
+| `TITLE_GENERATION_REQUEST_TIMEOUT_S` | `8` | Timeout for kaldet til titelmodellen. |
+| `TITLE_GENERATION_JOIN_TIMEOUT_S` | `9` | Maksimal ventetid på titeltråden i request-flowet. |
+| `DEBUG` | `False` | Aktiverer backend-debug. |
+| `PORT` | `8080` | Backendens lytteport. |
+| `CSP_FRAME_ANCESTORS` | — | Begrænser hvilke origins der må embedde appen via CSP `frame-ancestors`. |
 
-### Chat-type miljøvariabler
-Skal sættes når `ASSISTANT_TYPE` er `Chat`.
+### Valgfrie integrationer
+
+Postgres er deaktiveret, medmindre alle forbindelsesværdier er sat. Brug en separat databasebruger med minimale rettigheder, TLS og kryptering ved lagring. Testmiljøer må ikke anvende produktionsdata.
+
+| Navn | Default | Krav/beskrivelse |
+|---|---:|---|
+| `POSTGRES_USER` | — | Påkrævet for databasepersistens. |
+| `POSTGRES_PASSWORD` | — | Påkrævet for databasepersistens; skal leveres som secret. |
+| `POSTGRES_HOST` | — | Påkrævet for databasepersistens. |
+| `POSTGRES_PORT` | `5432` | PostgreSQL-port. |
+| `POSTGRES_DB` | — | Påkrævet for databasepersistens. |
+
+Feedbackmail kræver SMTP-server og mindst én modtager. Afsenderfelter afhænger af SMTP-serverens krav.
+
+| Navn | Default | Krav/beskrivelse |
+|---|---:|---|
+| `FEEDBACK_SMTP_SERVER` | — | Påkrævet for feedbackmail. |
+| `FEEDBACK_MAIL_RECIPIENT` | — | Påkrævet for feedbackmail; flere adresser separeres med komma eller semikolon. |
+| `FEEDBACK_SMTP_PORT` | `25` | SMTP-port. |
+| `FEEDBACK_SMTP_SENDER_EMAIL` | — | Afsenderadresse og eventuelt SMTP-login. Manglende domæne suppleres med `@randers.dk`. |
+| `FEEDBACK_SMTP_SENDER_PASSWORD` | — | Valgfrit SMTP-password; skal leveres som secret. |
+| `FEEDBACK_SMTP_SENDER_NAME` | — | Valgfrit visningsnavn for afsenderen. |
+
+Portalens samtaleindlæsning kræver en offentlig RS256-nøgle. Uden nøglen kan load-permits ikke valideres.
+
+| Navn | Default | Krav/beskrivelse |
+|---|---:|---|
+| `CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM` | — | Påkrævet for permit-baseret samtaleindlæsning. |
+| `CONVERSATION_LOAD_PERMIT_ISSUER` | `gpt-dashboard-portal` | Forventet JWT issuer. |
+| `CONVERSATION_LOAD_PERMIT_AUDIENCE` | `chat-app` | Forventet JWT audience. |
+| `CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS` | — | Valgfri allow-list af JWT `kid`-værdier, separeret med komma eller semikolon. |
+
+### Metrics og runtime
 
 | Navn | Default | Beskrivelse |
 |---|---:|---|
-| `SYSTEM_PROMPT` | `Du er en hjælpsom AI-assistent.` | System prompt for chat. |
-| `USE_GENERAL_KNOWLEDGE` | `True` | Om assistenten må bruge generel viden ud over kilder/dokumenter. |
-| `EMPHASIZE_RECENT_CONTENT` | `True` | Om nyligt indhold vægtes højere i prompt-kontekst. |
-| `TOP_P_VALUE` | `0.8` | Sampling-parameter (top-p). |
-| `TEMPERATURE_VALUE` | `0.2` | Sampling-parameter (temperature). |
-
-### Agent-type miljøvariabler
-Skal sættes når `ASSISTANT_TYPE` er `Agent`.
-
-| Navn | Default | Beskrivelse |
-|---|---:|---|
-| `ASSISTANT_ID` | — | Azure agent-id. |
-| `AZURE_AIFOUNDRY_PROJECT_NAME` | — | Project-navn til Azure AI Foundry. |
-
-### Valgfrie miljøvariabler
-
-| Navn | Default | Beskrivelse |
-|---|---:|---|
-| `ASSISTANT_ALT_ID` | — | Sekundær assistant-id til assistent-toggle (sætter `SHOW_ASSISTANT_TOGGLE`), hvis `ASSISTANT_TYPE` er `agent`. |
-| `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for alternativ assistent-toggle i UI, hvis `ASSISTANT_ALT_ID` er sat. |
-| `ALT_ALERT_MSG` | — | Alert-tekst der kan vises ifm. alternativ assistent, hvis `ASSISTANT_ALT_ID` er sat. |
-| `ALT_ALERT_TYPE` | `info` | Alert-type for alternativ assistent (`info`, `warning`, `danger`), hvis `ALT_ALERT_MSG` er sat. |
-| `ALLOW_FILE_UPLOAD` | `False` | Slår fil-upload til/fra (*under udvikling - ikke aktiv*). |
-| `FEEDBACK_SMTP_SENDER_PASSWORD` | — | SMTP password (valgfrit, afhænger af SMTP server). |
-| `FEEDBACK_SMTP_SENDER_NAME` | — | Visningsnavn på afsender (valgfrit). |
-| `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | — | Alias: `AZURE_OPENAI_DEPLOYMENT_NAME`. Deployment/model-navn til automatisk titelgenerering. |
-| `TITLE_GENERATION_MAX_CONCURRENCY` | `100` | Maksimalt antal samtidige titel-genereringer pr. app-proces. Hvis grænsen nås, springes titelgenerering over, og fallback-titel bruges. Minimum håndhæves til `10`. |
-| `TITLE_GENERATION_REQUEST_TIMEOUT_S` | `8` | Timeout i sekunder for kaldet til title-generation modellen. Ved timeout anvendes fallback-titel. |
-| `TITLE_GENERATION_JOIN_TIMEOUT_S` | `9` | Maksimal ventetid i sekunder på title-generation tråden i request-flowet. Ved overskridelse anvendes fallback-titel, og request fortsætter. |
-| `AZURE_AISEARCH_INDEX_NAME` | — | Index-navn i Azure AI Search (hvis retrieval anvendes), kan kun anvendes hvis `ASSISTANT_TYPE` er `chat`. |
-| `AZURE_AISEARCH_ENDPOINT` | — | Endpoint for Azure AI Search, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `AZURE_AISEARCH_SEMANTIC_CONFIG` | `default-semantic-config` | Navn på semantic configuration i Azure AI Search, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `AZURE_API_VERSION_FILES` | `2024-10-21` | API-version for file endpoints, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `TOP_N_DOCUMENTS` | `10` | Antal dokumenter der hentes fra search/retrieval, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `SEARCH_STRICTNESS` | `3` | Stramhed for søgning/retrieval, hvis `AZURE_AISEARCH_INDEX_NAME` er sat. |
-| `POSTGRES_USER` | — | Postgres brugernavn (skal sættes for at DB er aktiv). |
-| `POSTGRES_PASSWORD` | — | Postgres password (skal sættes for at DB er aktiv). |
-| `POSTGRES_HOST` | — | Postgres host (skal sættes for at DB er aktiv). |
-| `POSTGRES_PORT` | `5432` | Postgres port. |
-| `POSTGRES_DB` | — | Postgres databasenavn (skal sættes for at DB er aktiv). |
-| `CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM` | — | RS256 public key (PEM) til validering af portalens load-permits. |
-| `CONVERSATION_LOAD_PERMIT_ISSUER` | `gpt-dashboard-portal` | Forventet JWT issuer for load-permit. |
-| `CONVERSATION_LOAD_PERMIT_AUDIENCE` | `chat-app` | Forventet JWT audience for load-permit. |
-| `CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS` | — | Liste af tilladte `kid` værdier fra JWT header (komma- eller semikolon-separeret). |
-| `CSP_FRAME_ANCESTORS` | — | Hvis sat, begrænser hvem der må embedde app’en (CSP `frame-ancestors`). |
-| `DEBUG` | `False` | Aktiverer debug-funktionalitet i backend. |
-| `PORT` | `8080` | Port som backend skal lytte på. |
-| `POD_NAME` | `pod_name_not_set` | Instance-navn (bruges bl.a. til metrik-labels). |
-| `METRICS_APP` | `ai-chat-app` | Prometheus label: applikationsnavn. |
-| `METRICS_DEPLOYMENT` | `unknown` | Alias: `DEPLOYMENT`. Prometheus label: deployment-miljø/navn. |
-| `METRICS_INSTANCE` | `POD_NAME` | Prometheus label: instans (typisk pod/container). |
+| `POD_NAME` | `pod_name_not_set` | Instance-navn og fallback til metrics-label. |
+| `METRICS_APP` | `ai-chat-app` | Prometheus-label for applikationen. |
+| `METRICS_DEPLOYMENT` | `unknown` | Prometheus-label for miljø/deployment; `DEPLOYMENT` er fallback. |
+| `METRICS_INSTANCE` | `POD_NAME` | Prometheus-label for instansen. |
 
 ## Metrics
 Brugsstatistik trackes og udstilles med følgende Prometheus-metrikker på `/metrics`:
@@ -149,13 +217,7 @@ Yderligere metrikker der primært bruges til debugging:
 	* Gauge for antal titelgenereringer, der er i gang lige nu.
 	* `mode` er `chat` eller `agent`.
 
-Metrikkerne er afhængige af følgende miljøvariabler:
-
-| Navn | Default | Beskrivelse |
-|---|---:|---|
-| `METRICS_APP` | `ai-chat-app` | Prometheus label: applikationsnavn. |
-| `METRICS_DEPLOYMENT` | `unknown` | Alias: `DEPLOYMENT`. Prometheus label: deployment-miljø/navn. |
-| `METRICS_INSTANCE` | `POD_NAME` | Alias: `POD_NAME`. |
+De tilhørende miljøvariabler er beskrevet under **Metrics og runtime** i miljøvariabelafsnittet.
 
 ## Udvikling
 
