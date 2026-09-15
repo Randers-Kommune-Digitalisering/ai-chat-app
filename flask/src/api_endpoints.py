@@ -405,7 +405,7 @@ def create_thread_message_stream(thread_id):
                     })
                 elif event_type == "references":
                     refs = (stream_event or {}).get("references") or []
-                    logger.info(
+                    logger.debug(
                         "Thread stream references event received (thread_id=%s count=%s): %s",
                         thread_id,
                         len(refs),
