@@ -477,7 +477,7 @@ def create_thread_message_stream(thread_id):
                     except Exception:
                         pass
 
-            logger.info(
+            logger.debug(
                 "Thread stream end sent references (thread_id=%s conversation_id=%s count=%s): %s",
                 thread_id,
                 local_conversation_id,

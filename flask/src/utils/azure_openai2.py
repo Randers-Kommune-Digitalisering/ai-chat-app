@@ -893,7 +893,7 @@ class Agent(AzureOpenAIClient):
                     response_chunks.append(stream_event.get("text", ""))
                 elif stream_event.get("type") == "references":
                     references = stream_event.get("references") or []
-                    logger.info(
+                    logger.debug(
                         "Agent fetch received references event (thread_id=%s count=%s): %s",
                         thread_id,
                         len(references),
@@ -904,7 +904,7 @@ class Agent(AzureOpenAIClient):
             if not assistant_response:
                 return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
 
-            logger.info(
+            logger.debug(
                 "Agent fetch completed with references (thread_id=%s count=%s): %s",
                 thread_id,
                 len(references),
@@ -977,7 +977,7 @@ class Agent(AzureOpenAIClient):
 
             if event_type in {"response.output_item.added", "response.output_item.done"}:
                 item = _get_field(event, "item")
-                logger.info(
+                logger.debug(
                     "Agent stream output item event (thread_id=%s event=%s summary=%s)",
                     thread_id,
                     event_type,
@@ -987,7 +987,7 @@ class Agent(AzureOpenAIClient):
             if event_type in {"response.content_part.added", "response.content_part.done"}:
                 part = _get_field(event, "part")
                 if _get_field(part, "type") == "output_text":
-                    logger.info(
+                    logger.debug(
                         "Agent stream content part event (thread_id=%s event=%s annotation_count=%s)",
                         thread_id,
                         event_type,
@@ -997,7 +997,7 @@ class Agent(AzureOpenAIClient):
             if event_type == "response.completed":
                 response = _get_field(event, "response")
                 output_items = list(_get_field(response, "output", []) or [])
-                logger.info(
+                logger.debug(
                     "Agent stream completed event summary (thread_id=%s output_items=%s summaries=%s)",
                     thread_id,
                     len(output_items),
@@ -1014,7 +1014,7 @@ class Agent(AzureOpenAIClient):
                 if isinstance(normalized, dict):
                     streamed_annotations.append(normalized)
                     latest_references = list(streamed_annotations)
-                    logger.info(
+                    logger.debug(
                         "Agent stream annotation added (thread_id=%s total=%s): %s",
                         thread_id,
                         len(latest_references),
@@ -1025,7 +1025,7 @@ class Agent(AzureOpenAIClient):
             extracted_references = _extract_native_annotations_from_stream_event(event=event)
             if extracted_references:
                 latest_references = extracted_references
-                logger.info(
+                logger.debug(
                     "Agent stream references extracted (thread_id=%s event=%s count=%s): %s",
                     thread_id,
                     event_type,
@@ -1033,7 +1033,7 @@ class Agent(AzureOpenAIClient):
                     latest_references,
                 )
                 if event_type == "response.completed":
-                    logger.info(
+                    logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
                         thread_id,
                         len(latest_references),
@@ -1045,7 +1045,7 @@ class Agent(AzureOpenAIClient):
             if event_type == "response.completed" and not references_emitted:
                 if not latest_references and streamed_annotations:
                     latest_references = list(streamed_annotations)
-                logger.info(
+                logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
                     thread_id,
                     len(latest_references),
@@ -1055,7 +1055,7 @@ class Agent(AzureOpenAIClient):
                 references_emitted = True
 
         if not references_emitted:
-            logger.info(
+            logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
                 thread_id,
                 len(latest_references),

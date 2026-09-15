@@ -175,7 +175,7 @@
 </script>
 
 <template>
-    <form class="user-input-form" @submit.prevent="onSubmit">
+    <form class="user-input-form" @submit.prevent="onSubmit" aria-label="Input">
         <textarea
             ref="textarea"
             :placeholder="placeholder"
@@ -186,13 +186,14 @@
             @keydown="handleKeydown"
             @input="emitTextareaResize"
         />
-        <button type="submit" :disabled="userInput.trim() === ''">
+        <button type="submit" :disabled="userInput.trim() === ''" aria-label="Send besked">
             <i class="fa-solid fa-paper-plane"></i>
         </button>
             
         <div v-if="props.showAssistantToggle" ref="altToggleEl"
-            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed }]">
-            <label class="switch" for="checkbox">
+            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed }]"
+            :aria-label="config.altToggleLabel">
+            <label class="switch" for="checkbox" :aria-label="config.altToggleLabel">
                 <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
                 <div class="slider round"></div>
             </label>

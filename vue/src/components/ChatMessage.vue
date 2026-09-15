@@ -360,7 +360,12 @@
 
 <template>
     <div v-show="props.sender !== 'assistant' || props.message.trim()" :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="renderedMessage" @click="onChatContentClick"></div>
+        <div class="chat-content"
+             v-html="renderedMessage"
+             @click="onChatContentClick"
+             aria-relevant="additions text"
+             :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent' : 'bruger')"
+             tabindex="0"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -549,6 +554,10 @@
             cursor: default;
             opacity: 0.8;
         }
+    .chat-content:focus {
+        outline: 2px dashed rgba(128, 128, 128, 0.156);
+        outline-offset: 2px;
+    }
 
     .fileUploads {
         padding-top: 0.3rem;

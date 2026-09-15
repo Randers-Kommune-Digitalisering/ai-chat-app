@@ -203,6 +203,7 @@
         :class="['fileSelectButton', { 'disabled': isDragging || fileDropped }]"
         :disabled="isDragging || fileDropped"
         @click="() => fileInputRef.click()"
+        aria-label="Upload filer"
     >
         <i class="fa-solid fa-plus"></i>
         <div class="tooltip">

@@ -41,7 +41,7 @@
 </script>
 
 <template>
-    <div class="alert-wrapper">
+    <div class="alert-wrapper" aria-live="polite" aria-atomic="true">
         <div :class="['alert', 'fade-in', typeClass, { 'alert--inline': props.inline }]">
             <i :class="`fa-solid fa-${icon}`"></i>
             <span class="alert-message" v-html="formattedMessage"></span>

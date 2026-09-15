@@ -645,7 +645,7 @@
         <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
-    <div id="chat-messages" ref="chatMessagesEl">
+    <div id="chat-messages" ref="chatMessagesEl" role="document" aria-live="assertive" :aria-atomic="true">
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
@@ -673,9 +673,9 @@
             </div>
         </template>
 
-        <div v-if="awaitingResponse" class="loading-indicator" role="status" aria-live="polite">
+        <div v-if="awaitingResponse" class="loading-indicator" role="status">
             <i class="fa-solid fa-rotate rotate"></i>
-            {{ responseStatus }}
+            <span aria-live="polite">{{ responseStatus }}</span>
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}
