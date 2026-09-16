@@ -686,6 +686,7 @@
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
         :message="altAssistantAlertMsg"
+        :sticky="true"
     />
     <Alert
         v-if="errorMessage"
@@ -850,6 +851,7 @@
 
     #chat-messages {
         padding-bottom: 1.5rem;
+        padding-top: 0.5rem;
     }
 
     .user-input-container {
