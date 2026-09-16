@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import html
 import logging
 import os
@@ -553,7 +553,7 @@ class Chat(AzureOpenAIClient):
         system_prompt = SYSTEM_PROMPT.strip()
         if self.emphasize_recent_content:
             weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lordag", "Sondag"]
-            now = datetime.datetime.now()
+            now = datetime.now()
             date = f"{weekdays_danish[now.weekday()]} d. {now.strftime('%d-%m-%Y')}"
             system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgaengelig."
         return system_prompt

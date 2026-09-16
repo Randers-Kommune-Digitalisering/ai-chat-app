@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 import base64
 import io
 from utils.azure_openai2 import get_chat_client, get_title_generator
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, title_generation_saturation_counter, title_generation_timeout_counter, title_generation_inflight_gauge, metrics_base_labels
@@ -179,7 +179,8 @@ def get_config():
         "showAssistantToggle": SHOW_ASSISTANT_TOGGLE,
         "altToggleLabel": ALT_TOGGLE_LABEL,
         "altAlertMsg": ALT_ALERT_MSG,
-        "altAlertType": ALT_ALERT_TYPE
+        "altAlertType": ALT_ALERT_TYPE,
+        "conversationLoadCutoffDate": CONVERSATION_LOAD_CUTOFF_DATE.isoformat() if CONVERSATION_LOAD_CUTOFF_DATE else None,
     }
     return jsonify(config)
 

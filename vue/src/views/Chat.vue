@@ -35,6 +35,14 @@
         return references.map(ref => asCitationObject(ref)).filter(Boolean)
     }
 
+    function parseDateValue(value) {
+        if (!value) return null
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime())) return null
+        return parsed
+    }
+
     const isAgent = ref(false)
     const threadId = ref(null)
     const activeConversationId = ref(null)
@@ -54,6 +62,7 @@
     const assistantDescription = ref('')
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
+    const conversationCutoffDate = ref(null)
 
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
@@ -70,6 +79,7 @@
         ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
         assistantName.value = config?.assistantName || ''
         assistantDescription.value = config?.description || ''
+        conversationCutoffDate.value = parseDateValue(config?.conversationLoadCutoffDate)
 
         adjustChatMessagesPaddingBottom()
         window.addEventListener('resize', onResize)
@@ -208,6 +218,8 @@
         activeConversationId.value = null
         useAltAssistant.value = false
         userInput.value.clearUserInput()
+        userInput.value.setInputVisibility(true)
+        fileUploader.value.setFileUploadVisibility(true)
         clearAllFiles()
         stopTimer()
         if (notifyParent) {
@@ -221,6 +233,8 @@
 
         if (data?.success === false) {
             console.error("Failed to load conversation:", data?.message)
+            errorMessage.value = data?.message
+            notifyParentLoaded()
             return
         }
 
@@ -233,12 +247,21 @@
         const loadedConversationId = data?.conversation?.id
         if (loadedConversationId) activeConversationId.value = loadedConversationId
 
+        // Extract and set user email and thread ID from the loaded conversation
         const loadedUserEmail = data?.conversation?.user_email
         if (loadedUserEmail) currentUserEmail.value = loadedUserEmail
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
             threadId.value = loadedThreadId
             portalDebugLog("Set thread ID successfully from loaded conversation")
+        }
+
+        // Disable chat input for conversations created before the cutoff date
+        const conversationCreatedAt = parseDateValue(data?.conversation?.created_at)
+        if (conversationCreatedAt && conversationCutoffDate.value && conversationCreatedAt < conversationCutoffDate.value) {
+            portalDebugLog("Disabling chat input due to conversation being created before cutoff date")
+            userInput.value.setInputVisibility(false)
+            fileUploader.value.setFileUploadVisibility(false)
         }
 
         function mapFiles(msg) {
@@ -272,6 +295,8 @@
                 })
                 .filter(Boolean)
         }
+
+        // Map and add each message from the loaded conversation to the chatMessages state
         for (let msg of data.conversation.messages) {
             const chatMsg = new ChatMessage(
                 msg.sender,
@@ -283,6 +308,8 @@
             )
             chatMessages.value.push(chatMsg)
         }
+
+        // Notify parent that the conversation has been loaded
         notifyParentLoaded()
         nextTick(() => {
             scrollToMessage(chatMessages.value.length - 1, false)

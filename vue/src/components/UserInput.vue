@@ -6,6 +6,7 @@
     const maxHeight = 258 // 190 for 7 lines
     const altToggleLabel = ref('')
     const altToggleEl = ref(null)
+    const isVisible = ref(true)
 
     const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({
@@ -55,10 +56,20 @@
         return Math.min(maxHeight, textarea.value.scrollHeight + 2)
     }
 
+    function setInputVisibility(visible) {
+        isVisible.value = visible
+        if (visible &&textarea.value) {
+            nextTick(() => {
+                emitTextareaResize()
+            })
+        }
+    }
+
     defineExpose({
         setUserInput,
         clearUserInput,
         getTextareaHeight,
+        setInputVisibility,
         altToggleEl
     })
 
@@ -175,7 +186,12 @@
 </script>
 
 <template>
-    <form class="user-input-form" @submit.prevent="onSubmit" aria-label="Input">
+    <form
+        class="user-input-form"
+        @submit.prevent="onSubmit"
+        aria-label="Input"
+        v-if="isVisible"
+    >
         <textarea
             ref="textarea"
             :placeholder="placeholder"
@@ -302,9 +318,6 @@
         padding-bottom: 0.5rem;
     }
 
-    /* .alt-assistant-toggle.landing-page.has-files {
-        transform: translate(-50%, 2rem);
-    } */
     .alt-assistant-toggle:not(.landing-page) {
         top: -3.5rem;
         bottom: auto;
