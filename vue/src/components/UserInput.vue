@@ -6,6 +6,7 @@
     const maxHeight = 258 // 190 for 7 lines
     const altToggleLabel = ref('')
     const altToggleEl = ref(null)
+    const isVisible = ref(true)
 
     const emit = defineEmits(['send', 'adjust-css', 'toggle-alt-assistant'])
     const props = defineProps({
@@ -55,10 +56,20 @@
         return Math.min(maxHeight, textarea.value.scrollHeight + 2)
     }
 
+    function setInputVisibility(visible) {
+        isVisible.value = visible
+        if (visible &&textarea.value) {
+            nextTick(() => {
+                emitTextareaResize()
+            })
+        }
+    }
+
     defineExpose({
         setUserInput,
         clearUserInput,
         getTextareaHeight,
+        setInputVisibility,
         altToggleEl
     })
 
@@ -175,30 +186,40 @@
 </script>
 
 <template>
-    <form class="user-input-form" @submit.prevent="onSubmit">
+    <form
+        class="user-input-form"
+        @submit.prevent="onSubmit"
+        aria-label="Input"
+        v-if="isVisible"
+    >
         <textarea
             ref="textarea"
             :placeholder="placeholder"
             v-model="userInput"
-            :disabled="props.disabled"
+            :readonly="props.disabled"
+            :aria-disabled="props.disabled"
             class="user-input"
             rows="1"
             @keydown="handleKeydown"
             @input="emitTextareaResize"
         />
-        <button type="submit" :disabled="userInput.trim() === ''">
+        <button type="submit" :disabled="props.disabled || userInput.trim() === ''" aria-label="Send besked">
             <i class="fa-solid fa-paper-plane"></i>
         </button>
-            
+
         <div v-if="props.showAssistantToggle" ref="altToggleEl"
-            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed }]">
-            <label class="switch" for="checkbox">
-                <input type="checkbox" id="checkbox" v-model="useAltAssistant"  />
+            :class="['alt-assistant-toggle', { 'landing-page': !props.fixed }]"
+            :aria-label="$config.altToggleLabel">
+            <label class="switch" for="checkbox" :aria-label="$config.altToggleLabel">
+                <input type="checkbox" id="checkbox" v-model="useAltAssistant" />
                 <div class="slider round"></div>
             </label>
             <div>{{ $config.altToggleLabel }}</div>
         </div>
     </form>
+    <div v-else class="input-hidden-info">
+        Det er ikke muligt at fortsætte denne samtale.
+    </div>
 
 </template>
 
@@ -301,9 +322,6 @@
         padding-bottom: 0.5rem;
     }
 
-    /* .alt-assistant-toggle.landing-page.has-files {
-        transform: translate(-50%, 2rem);
-    } */
     .alt-assistant-toggle:not(.landing-page) {
         top: -3.5rem;
         bottom: auto;
@@ -317,7 +335,20 @@
         width: 3.75rem; /* 60px */
     }
     .switch input {
-        display: none;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
+    }
+    .switch input:focus-visible + .slider {
+        outline: 0.1rem solid var(--color-text-faded);
+        outline-offset: 0.15rem;
     }
     .slider {
         background-color: var(--color-input-background);
@@ -355,5 +386,18 @@
     }
     .slider.round:before {
         border-radius: 50%;
+    }
+
+    .input-hidden-info {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 1.05rem;
+        font-size: 0.9rem;
+        color: var(--color-text-faded);
+        background-color: var(--color-background-primary);
+        border: 0.05rem solid var(--color-input-border);
+        border-radius: 2rem;
+        margin-top: 1rem;
     }
 </style>

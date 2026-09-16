@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,6 +64,32 @@ def _post_thread_message(
         json=payload,
         headers={"X-User-Email": user_email} if user_email else {},
     )
+
+
+def test_thread_message_stream_forwards_status_separately_from_text(client):
+    stream_events = iter([
+        {"type": "status", "status": "thinking", "message": "Assistenten tænker ..."},
+        {"type": "delta", "text": "Et svar"},
+        {"type": "references", "references": []},
+    ])
+
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: stream_events),
+    ):
+        response = client.post(
+            "/api/threads/conv_status/messages/stream",
+            json={"message": "Hej", "files": [], "use_alt": False},
+        )
+        body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "event: status\ndata: {\"status\": \"thinking\", \"message\": \"Assistenten tænker ...\"}" in body
+    assert "event: delta\ndata: {\"text\": \"Et svar\"}" in body
+    assert body.index("event: status") < body.index("event: delta") < body.index("event: end")
 
 
 def test_thread_messages_db_unavailable_still_returns_success(client):

@@ -2,6 +2,7 @@
 
     import { ref, onMounted, onUnmounted } from 'vue'
 
+    const showFileUpload = ref(true)
     const fileTypesAccepted = [
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
@@ -166,6 +167,10 @@
         }
     }
 
+    function setFileUploadVisibility(isVisible) {
+        showFileUpload.value = isVisible
+    }
+
     onMounted(() => {
         window.addEventListener('dragenter', handleWindowDragEnter)
         window.addEventListener('dragleave', handleWindowDragLeave)
@@ -180,10 +185,18 @@
         window.removeEventListener('dragover', preventWindowDragOver)
         document.body.removeEventListener('drop', preventWindowDrop)
     })
+
+    defineExpose({
+        setFileUploadVisibility
+    })
 </script>
 
 <template>
-    <div :class="['fileUploads', { 'with-assistant-toggle-padding': showAssistantTogglePadding }]" id="file-uploads">
+    <div
+        v-if="showFileUpload"
+        :class="['fileUploads', { 'with-assistant-toggle-padding': showAssistantTogglePadding }]"
+        id="file-uploads"
+    >
         <div
             v-for="(file, index) in files"
             :key="index"
@@ -199,10 +212,12 @@
     </div>
 
     <button
+        v-if="showFileUpload"
         type="button"
         :class="['fileSelectButton', { 'disabled': isDragging || fileDropped }]"
         :disabled="isDragging || fileDropped"
         @click="() => fileInputRef.click()"
+        aria-label="Upload filer"
     >
         <i class="fa-solid fa-plus"></i>
         <div class="tooltip">
@@ -212,6 +227,7 @@
     </button>
 
     <input
+        v-if="showFileUpload"
         ref="fileInputRef"
         type="file"
         multiple
@@ -225,6 +241,7 @@
     />
 
     <div
+        v-if="showFileUpload"
         @drop.prevent="onDrop"
         @dragover="handleOverlayDragOver"
         @dragenter="onDropZoneDragEnter"
@@ -234,6 +251,7 @@
     ></div>
 
     <div
+        v-if="showFileUpload"
         class="dropOverlay"
         @dragover="handleOverlayDragOver"
         @drop.prevent="onDrop"
@@ -293,6 +311,8 @@
         border: 0;
         color: var(--color-input-fileselect-button);
         transition: opacity 0.3s, color 0.2s ease;
+        border-top-left-radius: 2rem;
+        border-bottom-left-radius: 2rem;
     }
     .fileSelectButton:hover {
         color: var(--color-input-fileselect-button-hover);
