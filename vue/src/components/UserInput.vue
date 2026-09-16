@@ -217,6 +217,9 @@
             <div>{{ $config.altToggleLabel }}</div>
         </div>
     </form>
+    <div v-else class="input-hidden-info">
+        Det er ikke muligt at fortsætte denne samtale.
+    </div>
 
 </template>
 
@@ -383,5 +386,18 @@
     }
     .slider.round:before {
         border-radius: 50%;
+    }
+
+    .input-hidden-info {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 1.05rem;
+        font-size: 0.9rem;
+        color: var(--color-text-faded);
+        background-color: var(--color-background-primary);
+        border: 0.05rem solid var(--color-input-border);
+        border-radius: 2rem;
+        margin-top: 1rem;
     }
 </style>
