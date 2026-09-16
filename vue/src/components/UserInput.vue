@@ -196,13 +196,14 @@
             ref="textarea"
             :placeholder="placeholder"
             v-model="userInput"
-            :disabled="props.disabled"
+            :readonly="props.disabled"
+            :aria-disabled="props.disabled"
             class="user-input"
             rows="1"
             @keydown="handleKeydown"
             @input="emitTextareaResize"
         />
-        <button type="submit" :disabled="userInput.trim() === ''" aria-label="Send besked">
+        <button type="submit" :disabled="props.disabled || userInput.trim() === ''" aria-label="Send besked">
             <i class="fa-solid fa-paper-plane"></i>
         </button>
 

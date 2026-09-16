@@ -251,11 +251,10 @@ def create_thread_message(thread_id):
         else:
             response, refs, error_message = azure_result
             azure_status = None
-        logger.info(
-            "Thread message references from azure_client (thread_id=%s count=%s): %s",
+        logger.debug(
+            "Thread message references from azure_client (thread_id=%s count=%s)",
             thread_id,
-            len(refs or []),
-            refs or [],
+            len(refs or [])
         )
         if not response:
             return (
@@ -494,7 +493,7 @@ def create_thread_message_stream(thread_id):
             })
 
         except GeneratorExit:
-            logger.info("Client disconnected from SSE stream (thread_id=%s)", thread_id)
+            logger.debug("Client disconnected from SSE stream (thread_id=%s)", thread_id)
             return
         except Exception as e:
             logger.error(f"Error in stream endpoint: {e}", exc_info=True)
@@ -566,11 +565,10 @@ def create_chat_message():
         else:
             response, refs, error_message = azure_result
             azure_status = None
-        logger.info(
-            "Chat message references from azure_client (conversation_id=%s count=%s): %s",
+        logger.debug(
+            "Chat message references from azure_client (conversation_id=%s count=%s)",
             conversation_id,
-            len(refs or []),
-            refs or [],
+            len(refs or [])
         )
         if not response:
             return (

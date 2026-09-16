@@ -68,6 +68,8 @@
     const fileUploadRootEl = ref(null)
     const followStreamAutoScroll = ref(true)
     const isProgrammaticScroll = ref(false)
+    const liveRegionText = ref('')
+    const completedMessageLiveText = ref('')
 
     onMounted(() => {
         const instance = getCurrentInstance()
@@ -212,6 +214,8 @@
         const previousConversationId = activeConversationId.value
         // Clear UI state
         chatMessages.value = []
+        liveRegionText.value = ''
+        completedMessageLiveText.value = ''
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
@@ -380,6 +384,8 @@
         awaitingResponse.value = true
         followStreamAutoScroll.value = true
         responseStatus.value = 'Assistenten tænker ...'
+        completedMessageLiveText.value = ''
+        liveRegionText.value = responseStatus.value.slice(0, -4)
         startTimer()
         const isFirstMessageInConversation = chatMessages.value.length == 1
 
@@ -402,6 +408,7 @@
                 stopTimer()
                 awaitingResponse.value = false
                 errorMessage.value = "Der opstod en fejl. Start en ny samtale eller prøv igen om lidt."
+                liveRegionText.value = errorMessage.value
                 return
             }
         }
@@ -439,11 +446,15 @@
                     onStatus: (payload) => {
                         if (payload?.message) {
                             responseStatus.value = payload.message
+                            liveRegionText.value = payload.message
                         }
                     },
                     onDelta: (delta) => {
                         streamedResponse += delta
                         assistantMessage.content = unfilterResponseContent(streamedResponse)
+                        if (typeof delta === 'string' && delta.trim() !== '') {
+                            liveRegionText.value = delta
+                        }
                         queueStreamScroll()
                     }
                 }
@@ -463,6 +474,7 @@
 
                 undoAndEditMessage(chatMessage)
                 errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+                liveRegionText.value = errorMessage.value
                 return
             }
 
@@ -488,13 +500,14 @@
             if (!assistantMessage.content || assistantMessage.content.trim() === "") {
                 assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
             }
+            completedMessageLiveText.value = assistantMessage.content
+            liveRegionText.value = ''
 
             nextTick(() => {
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
                 if (followStreamAutoScroll.value) {
                     scrollToMessage(chatMessages.value.length - 1)
                 }
+                focusUserInput()
             })
 
             return
@@ -513,6 +526,7 @@
             awaitingResponse.value = false
             undoAndEditMessage(chatMessage)
             errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+            liveRegionText.value = errorMessage.value
             return
         }
 
@@ -544,12 +558,13 @@
             assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
         }
         chatMessages.value.push(assistantMessage)
+        completedMessageLiveText.value = assistantMessage.content
+        liveRegionText.value = ''
 
         // Update UI
         nextTick(() => {
-            const input = document.querySelector('.user-input')
-            if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
+            focusUserInput()
         })
     }
 
@@ -645,6 +660,15 @@
         timeSpent.value = 0
         return elapsed
     }
+
+    function focusUserInput() {
+        const input = document.querySelector('.user-input')
+        if (!input) return
+        if (document.activeElement === input) return
+        if (typeof input.focus === 'function') {
+            input.focus({ preventScroll: true })
+        }
+    }
 </script>
 
 <template>
@@ -676,7 +700,7 @@
         <div class="assistant-description" style="white-space: pre-line;">{{ assistantDescription }}</div>
     </div>
 
-    <div id="chat-messages" ref="chatMessagesEl" role="document" aria-live="assertive" :aria-atomic="true">
+    <div id="chat-messages" ref="chatMessagesEl">
         <template v-for="(msg, index) in chatMessages" :key="index">
             <ChatMessageItem
                 :id="'msg_' + index"
@@ -704,15 +728,18 @@
             </div>
         </template>
 
-        <div v-if="awaitingResponse" class="loading-indicator" role="status">
+        <div v-if="awaitingResponse" class="loading-indicator">
             <i class="fa-solid fa-rotate rotate"></i>
-            <span aria-live="polite">{{ responseStatus }}</span>
+            <span>{{ responseStatus }}</span>
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}
             </span>
         </div>
     </div>
+
+    <div class="sr-only-live" aria-live="polite" :aria-atomic="false" aria-relevant="additions text">{{ liveRegionText }}</div>
+    <div class="sr-only-live" aria-live="polite" :aria-atomic="true" aria-relevant="additions text">{{ completedMessageLiveText }}</div>
 
     <div :class="['user-input-container', { 'landing-page': chatMessages.length == 0 }]" ref="userInputContainer">
         <UserInput
@@ -807,6 +834,18 @@
     }
     @keyframes l24 {
         100% {transform: rotate(1turn)}
+    }
+
+    .sr-only-live {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 
     #chat-messages {

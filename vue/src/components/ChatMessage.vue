@@ -1,5 +1,5 @@
 <script setup>
-    import { nextTick, ref, computed } from 'vue'
+    import { nextTick, ref, computed, watch, onMounted } from 'vue'
     import { marked } from 'marked'
     import { sendFeedback, sendLikeFeedback } from '../services/backend-service.js'
 
@@ -86,10 +86,7 @@
         }
     }
 
-    async function onChatContentClick(event) {
-        const button = event?.target?.closest?.('.code-copy-button')
-        if (!button) return
-
+    async function onCodeCopyButtonClick(button) {
         const codeElement = button.parentElement?.querySelector('pre > code')
         if (!codeElement) return
 
@@ -107,12 +104,26 @@
         }
     }
 
+    async function bindCodeCopyButtons() {
+        await nextTick()
+        const container = chatContentEl.value
+        if (!container) return
+
+        const buttons = container.querySelectorAll('.code-copy-button')
+        buttons.forEach((button) => {
+            button.type = 'button'
+            button.setAttribute('aria-label', 'Kopiér kodeblok')
+            button.onclick = () => onCodeCopyButtonClick(button)
+        })
+    }
+
     const feedbackLiked = ref(false)
     const feedbackDialogOpen = ref(false)
     const feedbackIsSubmitting = ref(false)
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+    const chatContentEl = ref(null)
 
     function decodeReferenceTitle(value) {
         const raw = typeof value === 'string' ? value.trim() : ''
@@ -255,8 +266,16 @@
         const html = marked(highlightedMessage.value)
         return html.replace(
             /<pre><code([\s\S]*?)>([\s\S]*?)<\/code><\/pre>/g,
-            '<div class="code-block"><div type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></div><pre><code$1>$2</code></pre></div>'
+            '<div class="code-block"><button type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></button><pre><code$1>$2</code></pre></div>'
         )
+    })
+
+    watch(renderedMessage, () => {
+        bindCodeCopyButtons()
+    })
+
+    onMounted(() => {
+        bindCodeCopyButtons()
     })
 
     const toSafeHttpUrl = (value) => {
@@ -369,15 +388,18 @@
 </script>
 
 <template>
-    <div v-show="props.sender !== 'assistant' || props.message.trim()" :class="['chat-message', props.sender]" :id="props.id">
+    <div
+        v-show="props.sender !== 'assistant' || props.message.trim()"
+        :class="['chat-message', props.sender]"
+        :id="props.id"
+        tabindex="0"
+        :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
+    >
         <div class="focus-bar"></div>
 
         <div class="chat-content"
-             v-html="renderedMessage"
-             @click="onChatContentClick"
-             aria-relevant="additions text"
-             :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent' : 'bruger')"
-             tabindex="0"></div>
+             ref="chatContentEl"
+             v-html="renderedMessage"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -398,7 +420,8 @@
                 <div
                     v-if="renderedReferences.length > 0"
                     v-for="(ref, index) in renderedReferences.slice(0, showAllReferences ? renderedReferences.length : REFERENCE_DISPLAY_LIMIT)"
-                    :key="index">
+                    :key="index"
+                    aria-label="Reference.">
                     <a
                         :href="isUrl(ref.href) ? ref.href : null"
                         target="_blank"
@@ -425,18 +448,18 @@
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
             <div class="options" v-if="!props.isStreaming">
-                <div class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
+                <button type="button" class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
                     <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
-                </div>
-                <div :class="['option', { disabled: feedbackLiked }]" @click="onThumbsUpClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackLiked" @click="onThumbsUpClick">
                     <i :class="[feedbackLiked ? 'fa-solid' : 'fa-regular', 'fa-thumbs-up']"></i>
                     <div class="tooltip">Synes godt om</div>
-                </div>
-                <div :class="['option', { disabled: feedbackSent }]" @click="onFeedbackClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackSent" @click="onFeedbackClick">
                     <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
-                </div>
+                </button>
                 <div v-if="feedbackSent" class="feedback-sent-message">
                     Tak for din feedback!
                 </div>
@@ -551,13 +574,15 @@
             border: 0.05rem solid var(--color-code-border);
             background-color: var(--color-code-background);
             color: var(--color-text-primary);
-            /* border-radius: 0.3rem;
-            padding: 0.4rem 0.5rem; */
+            height: 1.88rem;
             font-size: 0.8rem;
             cursor: pointer;
             display: none;
         }
         :deep(.chat-content .code-block:hover .code-copy-button) {
+            display: block;
+        }
+        :deep(.chat-content .code-block:focus-within .code-copy-button) {
             display: block;
         }
         :deep(.chat-content .code-copy-button:hover:not(:disabled)) {
@@ -575,15 +600,17 @@
         background-color: transparent;
         opacity: 0.5;
     }
-    .chat-content:focus {
+    .chat-message:focus {
         outline: 0;
     }
+    .chat-message.assistant:focus .focus-bar,
     .chat-message.assistant:has(:focus) .focus-bar {
         background-color: rgba(145, 145, 145, 0.3);
         left: -1rem;
         right: auto;
         height: calc(100% - 2rem);
     }
+    .chat-message.user:focus .focus-bar,
     .chat-message.user:has(:focus) .focus-bar {
         background-color: rgba(145, 145, 145, 0.3);
         right: -1rem;
@@ -691,9 +718,15 @@
         padding: 0.3rem 0.6rem;
         border-radius: 0.4rem;
     }
-        .option.disabled {
+        .option {
+            border: 0;
+            color: inherit;
+            font: inherit;
+        }
+        .option:disabled {
             pointer-events: none;
             color: var(--color-options-text-selected);
+            cursor: default;
         }
         .option:hover {
             cursor: pointer;
