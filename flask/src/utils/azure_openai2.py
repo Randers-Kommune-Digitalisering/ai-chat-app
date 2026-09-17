@@ -229,6 +229,7 @@ def _status_for_stream_event(event: Any) -> dict[str, str] | None:
         item_type = _get_field(_get_field(event, "item"), "type")
         statuses = {
             "reasoning": ("thinking", "Assistenten tænker ..."),
+            "azure_ai_search_call": ("ai_search", "Assistenten søger i interne kilder ..."),
             "web_search_call": ("web_search", "Assistenten søger på nettet ..."),
             "bing_grounding_call": ("web_search", "Assistenten søger på nettet ..."),
             "file_search_call": ("file_search", "Assistenten søger i filer ..."),
@@ -863,7 +864,7 @@ class Agent(AzureOpenAIClient):
             return (
                 None,
                 [],
-                "Der opstod en fejl med samtalen. Prov at genindlaese siden, eller start en ny samtale.",
+                "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale.",
                 400,
             )
 
@@ -875,7 +876,7 @@ class Agent(AzureOpenAIClient):
                 [],
                 (
                     f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                    f"Reducer laengden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prov igen."
+                    f"Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen."
                 ),
                 400,
             )
@@ -902,7 +903,7 @@ class Agent(AzureOpenAIClient):
 
             assistant_response = "".join(response_chunks).strip()
             if not assistant_response:
-                return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+                return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.", 502
 
             logger.debug(
                 "Agent fetch completed with references (thread_id=%s count=%s): %s",
