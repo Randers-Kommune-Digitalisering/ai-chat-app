@@ -821,3 +821,31 @@ def test_stream_does_not_apply_ai_search_marker_fallback_when_web_search_is_pres
     emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_mixed_search"))
 
     assert emitted[-1] == {"type": "references", "references": []}
+
+
+def test_build_ai_search_references_from_text_supports_bracket_marker_without_turn_index(monkeypatch):
+    get_urls = [
+        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_0?api-version=2024-07-01",
+    ]
+    answer = "Se kilden her 【0†source】."
+
+    monkeypatch.setattr(
+        azure_openai2,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: {
+            "title": "Regler",
+            "url": "https://www.randers.dk/regler",
+        },
+    )
+
+    references = azure_openai2._build_ai_search_references_from_text(answer, get_urls)
+
+    assert references == [
+        {
+            "type": "url_citation",
+            "start_index": answer.index("【"),
+            "end_index": answer.index("】") + 1,
+            "title": "Regler",
+            "url": "https://www.randers.dk/regler",
+        }
+    ]

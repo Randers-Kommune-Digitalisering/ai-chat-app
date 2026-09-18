@@ -101,7 +101,7 @@
             }, totalUploadTime + 2000)
 
         } else {
-            console.log("File type not accepted")
+            console.warn("File type not accepted")
             // Show error notification for 2 seconds
             fileNotAccepted.value = true
             setTimeout(() => {

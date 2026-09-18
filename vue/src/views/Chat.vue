@@ -503,7 +503,6 @@
             assistantMessage.isStreaming = false
             assistantMessage.timeSpent = spentTime
             assistantMessage.references = mapApiReferences(references)
-            console.info('Agent stream mapped references for UI:', assistantMessage.references)
 
             const finalResponse = response || streamedResponse
             assistantMessage.content = unfilterResponseContent(finalResponse)
@@ -528,7 +527,6 @@
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
-        console.info('Chat result references from backend:', references || [])
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
@@ -559,7 +557,6 @@
             [],
             timeSpent
         )
-        console.info('Chat mapped references for UI:', assistantMessage.references)
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
             for (let file of chatMessage.files) {

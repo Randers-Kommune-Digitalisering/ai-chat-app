@@ -355,8 +355,8 @@ def _build_ai_search_references_from_text(answer_text: str, ai_search_get_urls: 
         return []
 
     marker_pattern = re.compile(
-        r"【\d+:(?P<legacy_index>\d+)†source】"
-        r"|cite(?:turn)?\d+:(?P<foundry_index>\d+)(?:†source)?"
+        r"【(?:\d+:)?(?P<legacy_index>\d+)†source】"
+        r"|cite(?:(?:turn)?\d+:)?(?P<foundry_index>\d+)(?:†source)?"
     )
     metadata_by_index: dict[int, tuple[str, str]] = {}
     references: list[dict] = []
