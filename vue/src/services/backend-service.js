@@ -199,7 +199,7 @@ export async function sendThreadMessageStream(threadId, conversationId, message,
         if (errorPayload) {
             return {
                 success: false,
-                message: errorPayload.message || 'Assistenten havde en midlertidig fejl. Prøv igen om lidt.',
+                message: errorPayload.message || 'Assistenten havde en midlertidig fejl. Genindlæs siden eller prøv igen senere.',
             };
         }
 
@@ -231,7 +231,7 @@ export async function sendChatMessage(conversationId, messages, userEmail = null
         }
     } catch (error) {
         console.error("Error sending chat message:", error?.response?.data || error);
-        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl med forbindelsen til serveren. Genindlæs siden eller prøv igen senere.' };
     }
 }
 
@@ -245,7 +245,7 @@ export async function sendFeedback(feedback, responseIndex, chatHistory) {
         return result.data;
     } catch (error) {
         console.error("Error sending feedback:", error?.response?.data || error);
-        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke sendt. Prøv igen senere.' };
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke sendt. Genindlæs siden eller prøv igen senere.' };
     }
 }
 
@@ -257,7 +257,7 @@ export async function sendLikeFeedback(responseIndex) {
         return result.data;
     } catch (error) {
         console.error("Error sending like feedback:", error?.response?.data || error);
-        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke registreret. Prøv igen senere.' };
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl, og din feedback blev ikke registreret. Genindlæs siden eller prøv igen senere.' };
     }
 }
 
@@ -267,6 +267,6 @@ export async function getIllegalContents(message) {
         return result.data.filtered_content || [];
     } catch (error) {
         console.error("Error filtering message:", error?.response?.data || error);
-        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl under filtrering af beskeden. Prøv igen senere.' };
+        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl med forbindelsen til serveren. Genindlæs siden eller prøv igen senere.' };
     }
 }

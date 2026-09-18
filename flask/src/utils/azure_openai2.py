@@ -709,18 +709,18 @@ def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
     status_code = _safe_status_code(exc=exc)
 
     if status_code == 429:
-        return "Assistenten er travl lige nu. Prov igen om lidt.", 429
+        return "Assistenten er travl lige nu. Prøv igen senere.", 429
     if status_code in (401, 403):
-        return "Assistenten er ikke korrekt konfigureret. Prov igen senere.", 503
+        return "Assistenten er ikke korrekt konfigureret. Prøv igen senere.", 503
     if status_code == 404:
-        return "Der opstod en fejl med samtalen. Start en ny samtale og prov igen.", 400
+        return "Der opstod en fejl med samtalen. Start en ny samtale og prøv igen.", 400
     if status_code is not None and 400 <= status_code < 500:
-        return "Der opstod en fejl i foresporgslen. Genindlaes siden eller prov igen senere.", 400
+        return "Der opstod en fejl i forespørgslen. Genindlæs siden eller prøv igen senere.", 400
 
     if _is_retryable_exception(exc=exc):
-        return "Assistenten havde en midlertidig fejl. Prov igen om lidt.", 503
+        return "Assistenten havde en midlertidig fejl. Prøv igen senere.", 503
 
-    return "Assistenten havde en midlertidig fejl. Prov igen om lidt.", 500
+    return "Assistenten havde en midlertidig fejl. Prøv igen senere.", 500
 
 
 def _call_with_retries(*, operation: str, func, max_retries: int = 1, base_delay_s: float = 0.4):
@@ -924,7 +924,7 @@ class Chat(AzureOpenAIClient):
                 None,
                 [],
                 f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                f"Reducer laengden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prov igen.",
+                f"Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
                 400,
             )
 
@@ -939,7 +939,7 @@ class Chat(AzureOpenAIClient):
                 None,
                 [],
                 f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                "Overvej at starte en ny samtale.",
+                f"Overvej at starte en ny samtale og prøv igen.",
                 400,
             )
 
@@ -959,13 +959,13 @@ class Chat(AzureOpenAIClient):
             return None, [], message, status
 
         if not response or not getattr(response, "choices", None):
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
 
         choice = response.choices[0]
         response_message = getattr(choice, "message", None)
         assistant_response = getattr(response_message, "content", None)
         if assistant_response is None:
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
 
         citation_refs = [int(ref) for ref in re.findall(r"\[(?:doc)?(\d{1,2})\]", assistant_response)]
         unique_refs = sorted(set(citation_refs))
@@ -1196,7 +1196,7 @@ class Agent(AzureOpenAIClient):
 
             assistant_response = "".join(response_chunks).strip()
             if not assistant_response:
-                return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.", 502
+                return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
             logger.debug(
                 "Agent fetch completed with references (thread_id=%s count=%s): %s",

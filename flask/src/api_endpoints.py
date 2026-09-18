@@ -200,7 +200,7 @@ def create_thread():
         return (
             jsonify({
                 "success": False,
-                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen senere.",
             }),
             503,
         )
@@ -258,13 +258,13 @@ def create_thread_message(thread_id):
         )
         if not response:
             return (
-                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
                 int(azure_status or 500),
             )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
-            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
             503,
         )
 
@@ -415,7 +415,7 @@ def create_thread_message_stream(thread_id):
             response = "".join(response_chunks).strip()
             if not response:
                 yield _sse_event("error", {
-                    "message": "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.",
+                    "message": "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.",
                     "status": 502,
                 })
                 return
@@ -498,7 +498,7 @@ def create_thread_message_stream(thread_id):
         except Exception as e:
             logger.error(f"Error in stream endpoint: {e}", exc_info=True)
             yield _sse_event("error", {
-                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen senere.",
                 "status": 503,
             })
 
@@ -572,13 +572,13 @@ def create_chat_message():
         )
         if not response:
             return (
-                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
                 int(azure_status or 500),
             )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
-            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
             503,
         )
 
