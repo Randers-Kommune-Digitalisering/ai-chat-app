@@ -325,23 +325,42 @@
             const href = toSafeHttpUrl(payload.url)
             const formattedTitle = formatReferenceListLabel(payload.title)
             const label = formattedTitle || (href || 'Reference')
-            return { label, href }
+            return { type, label, href }
         }
 
         if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
             const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
-            return { label: String(label), href: '' }
+            return { type, label: String(label), href: '' }
         }
 
         const href = toSafeHttpUrl(payload.url)
         const formattedTitle = formatReferenceListLabel(payload.title)
         const label = formattedTitle || (href || 'Reference')
-        return { label, href }
+        return { type, label, href }
     }
 
     const renderedReferences = computed(() => {
         const refs = Array.isArray(props.references) ? props.references : []
-        return refs.map(toRenderedReference).filter(ref => !!ref?.label)
+        const seenUrlTitlePairs = new Set()
+        const uniqueRefs = []
+
+        for (const reference of refs) {
+            const renderedReference = toRenderedReference(reference)
+            if (!renderedReference?.label) continue
+
+            if (renderedReference.type === 'url_citation') {
+                const dedupeKey = `${renderedReference.label}||${renderedReference.href}`
+
+                if (seenUrlTitlePairs.has(dedupeKey)) {
+                    continue
+                }
+                seenUrlTitlePairs.add(dedupeKey)
+            }
+
+            uniqueRefs.push(renderedReference)
+        }
+
+        return uniqueRefs
     })
 
     const resizeTextareaToFitContent = () => {
@@ -351,6 +370,7 @@
         let height = Math.min(maxHeight, feedbackTextareaRef.value.scrollHeight + 2) + 'px'
         feedbackTextareaRef.value.style.height = height
     }
+
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
@@ -386,7 +406,6 @@
         const textarea = document.getElementById('feedback_textarea_' + props.id)
         if (textarea?.focus) textarea.focus({ preventScroll: true })
     }
-
 </script>
 
 <template>
