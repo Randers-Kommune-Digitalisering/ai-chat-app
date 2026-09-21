@@ -325,12 +325,13 @@
             const href = toSafeHttpUrl(payload.url)
             const formattedTitle = formatReferenceListLabel(payload.title)
             const label = formattedTitle || (href || 'Reference')
-            return { type, label, href }
+            return { type, label, href, dedupeKey: `${label}||${href}` }
         }
 
         if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
             const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
-            return { type, label: String(label), href: '' }
+            const fileId = String(payload.file_id || '')
+            return { type, label: String(label), href: '', dedupeKey: `${label}||${fileId}` }
         }
 
         const href = toSafeHttpUrl(payload.url)
@@ -341,20 +342,19 @@
 
     const renderedReferences = computed(() => {
         const refs = Array.isArray(props.references) ? props.references : []
-        const seenUrlTitlePairs = new Set()
+        const seenReferenceKeys = new Set()
         const uniqueRefs = []
 
         for (const reference of refs) {
             const renderedReference = toRenderedReference(reference)
             if (!renderedReference?.label) continue
 
-            if (renderedReference.type === 'url_citation') {
-                const dedupeKey = `${renderedReference.label}||${renderedReference.href}`
-
-                if (seenUrlTitlePairs.has(dedupeKey)) {
+            if (renderedReference.dedupeKey) {
+                const dedupeKey = `${renderedReference.type}||${renderedReference.dedupeKey}`
+                if (seenReferenceKeys.has(dedupeKey)) {
                     continue
                 }
-                seenUrlTitlePairs.add(dedupeKey)
+                seenReferenceKeys.add(dedupeKey)
             }
 
             uniqueRefs.push(renderedReference)
