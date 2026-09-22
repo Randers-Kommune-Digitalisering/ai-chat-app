@@ -1,6 +1,7 @@
 from datetime import datetime
 import html
 import logging
+import mimetypes
 import os
 import random
 import re
@@ -18,7 +19,6 @@ from openai import AzureOpenAI
 
 from utils.config import (
     AGENT_ALT_ID,
-    AGENT_FILE_EXPIRY_DAYS,
     AGENT_ID,
     ASSISTANT_ALT_ID,
     ASSISTANT_NAME,
@@ -51,7 +51,6 @@ from utils.extract_filedata import extract_text_from_file
 logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-_SECONDS_PER_DAY = 86400
 
 
 def _get_token_encoding(deployment_name: str):
@@ -1187,10 +1186,6 @@ class Agent(AzureOpenAIClient):
                     return self.client.files.create(
                         purpose="assistants",
                         file=(n, f),
-                        expires_after={
-                            "anchor": "created_at",
-                            "seconds": AGENT_FILE_EXPIRY_DAYS * _SECONDS_PER_DAY,
-                        },
                     )
 
                 uploaded = _call_with_retries(
@@ -1201,7 +1196,14 @@ class Agent(AzureOpenAIClient):
                 if not file_id:
                     raise ValueError("File upload completed without file id")
 
-                content.append({"type": "input_file", "file_id": file_id})
+                mime_type = mimetypes.guess_type(filename)[0] or ""
+                input_type = "input_image" if mime_type in {
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp",
+                    "image/gif",
+                } else "input_file"
+                content.append({"type": input_type, "file_id": file_id})
 
         return [{"role": "user", "content": content}]
 

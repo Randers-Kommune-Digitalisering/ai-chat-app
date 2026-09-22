@@ -10,8 +10,14 @@
         'text/markdown', // .md
         'text/x-markdown', // .md (alternative MIME type)
         'text/plain', // .txt + .text
+        'text/csv', // .csv
+        'application/csv', // .csv (alternative MIME type)
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-excel' // .xls + .xlsm + .xlt + .xltm
+        'application/vnd.ms-excel', // .xls + .xlsm + .xlt + .xltm
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif'
     ]
     const emit = defineEmits(['remove-file', 'add-file', 'clear-files'])
 

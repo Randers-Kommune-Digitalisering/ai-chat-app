@@ -61,14 +61,6 @@ if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
         ASSISTANT_ALT_ID = AGENT_ALT_ID
 SHOW_ASSISTANT_TOGGLE = bool(AGENT_ALT_ID)
 
-try:
-    AGENT_FILE_EXPIRY_DAYS = int(os.environ.get('AGENT_FILE_EXPIRY_DAYS', '30'))
-except ValueError:
-    AGENT_FILE_EXPIRY_DAYS = 30
-
-if AGENT_FILE_EXPIRY_DAYS <= 0:
-    AGENT_FILE_EXPIRY_DAYS = 30
-
 AGENT_FILE_METADATA_ONLY = os.environ.get('AGENT_FILE_METADATA_ONLY', 'True') in ['True', 'true']
 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
