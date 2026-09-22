@@ -200,6 +200,74 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
     db_session.close.assert_called_once()
 
 
+def test_thread_messages_persists_only_file_metadata_when_enabled(client):
+    db_session = MagicMock()
+
+    with patch(
+        "api_endpoints.AGENT_FILE_METADATA_ONLY",
+        True,
+    ), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ) as mock_add_msg:
+        res = _post_thread_message(
+            client,
+            thread_id="thr_metadata",
+            message="Hi",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+            conversation_id=123,
+        )
+
+    assert res.status_code == 200
+    assert mock_add_msg.call_args_list[0].kwargs["file_content"] == [{
+        "file_name": "doc.txt",
+        "file_type": "text/plain",
+        "file_size": 3,
+    }]
+
+
+def test_thread_messages_persists_file_content_when_metadata_only_disabled(client):
+    db_session = MagicMock()
+
+    with patch(
+        "api_endpoints.AGENT_FILE_METADATA_ONLY",
+        False,
+    ), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ) as mock_add_msg:
+        res = _post_thread_message(
+            client,
+            thread_id="thr_content",
+            message="Hi",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+            conversation_id=123,
+        )
+
+    assert res.status_code == 200
+    stored_file = mock_add_msg.call_args_list[0].kwargs["file_content"][0]
+    assert stored_file.filename == "doc.txt"
+    assert stored_file.getvalue() == b"Hej"
+
+
 def test_thread_messages_create_conversation_fails_still_returns_success_with_title(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}

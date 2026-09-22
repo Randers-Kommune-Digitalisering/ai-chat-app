@@ -69,6 +69,8 @@ except ValueError:
 if AGENT_FILE_EXPIRY_DAYS <= 0:
     AGENT_FILE_EXPIRY_DAYS = 30
 
+AGENT_FILE_METADATA_ONLY = os.environ.get('AGENT_FILE_METADATA_ONLY', 'True') in ['True', 'true']
+
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
 ASSISTANT_DESCRIPTION = os.environ.get('ASSISTANT_DESCRIPTION', '').strip()

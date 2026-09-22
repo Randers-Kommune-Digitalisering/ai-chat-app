@@ -125,6 +125,7 @@ Valgfrie Agent-indstillinger:
 | `FOUNDRY_AGENT_ALT_VERSION` | — | Version for den alternative agent reference. |
 | `MAX_MESSAGE_LENGTH` | `256000` | Maksimal længde af brugerens tekst i tegn. |
 | `AGENT_FILE_EXPIRY_DAYS` | `30` | Antal dage før uploadede Agent-filer udløber og automatisk slettes af Files API (ankret på `created_at`). |
+| `AGENT_FILE_METADATA_ONLY` | `True` | Gem kun filnavn, MIME-type og størrelse i den lokale database for Agent-uploads. Sæt til `False` for også at gemme base64-kodet filindhold. Påvirker ikke upload til Foundry. |
 | `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for agent-toggle. |
 | `ALT_ALERT_MSG` | — | Alert-tekst for den alternative agent. |
 | `ALT_ALERT_TYPE` | `info` | Alert-type: `info`, `warning` eller `danger`. |

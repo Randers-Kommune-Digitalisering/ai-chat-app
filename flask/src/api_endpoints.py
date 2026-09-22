@@ -2,11 +2,12 @@ import logging
 import threading
 import atexit
 import json
+import mimetypes
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 import base64
 import io
 from utils.azure_openai2 import get_chat_client, get_title_generator, count_tokens
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, MAX_TOKEN_LIMIT_MESSAGE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
+from utils.config import AGENT_FILE_METADATA_ONLY, ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, MAX_TOKEN_LIMIT_MESSAGE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, title_generation_saturation_counter, title_generation_timeout_counter, title_generation_inflight_gauge, metrics_base_labels
@@ -65,6 +66,23 @@ def _decode_uploaded_files(files_data: list) -> list:
         except Exception as e:
             logger.warning(f"Failed to decode file {name}: {e}")
     return files
+
+
+def _agent_files_for_db(files: list) -> list:
+    """Return agent attachments as metadata only when configured."""
+    if not AGENT_FILE_METADATA_ONLY:
+        return files
+
+    return [
+        {
+            "file_name": getattr(file, "filename", None) or getattr(file, "name", None) or "unknown",
+            "file_type": mimetypes.guess_type(
+                getattr(file, "filename", None) or getattr(file, "name", None) or "unknown"
+            )[0] or "application/octet-stream",
+            "file_size": len(file.getvalue()) if hasattr(file, "getvalue") else 0,
+        }
+        for file in files
+    ]
 
 
 def _close_azure_client() -> None:
@@ -311,7 +329,7 @@ def create_thread_message(thread_id):
                 conversation_id=conversation_id,
                 message_content=message,
                 sender='user',
-                file_content=files
+                file_content=_agent_files_for_db(files)
             )
             if not updated:
                 logger.error("Failed to add user message to conversation in DB")
@@ -360,7 +378,7 @@ def create_thread_message_stream(thread_id):
         return jsonify({"success": False, "message": "Der opstod en fejl. Start en ny samtale, genindlæs siden eller prøv igen senere."}), 400
     if not message:
         return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
- 
+
     if conversation_id in ("", None):
         conversation_id = None
     else:
@@ -463,7 +481,7 @@ def create_thread_message_stream(thread_id):
                                 conversation_id=local_conversation_id,
                                 message_content=message,
                                 sender='user',
-                                file_content=files
+                                file_content=_agent_files_for_db(files)
                             )
                             if not updated:
                                 logger.error("Failed to add user message to conversation in DB")
