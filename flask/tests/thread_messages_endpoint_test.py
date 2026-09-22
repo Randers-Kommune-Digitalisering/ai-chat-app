@@ -92,6 +92,29 @@ def test_thread_message_stream_forwards_status_separately_from_text(client):
     assert body.index("event: status") < body.index("event: delta") < body.index("event: end")
 
 
+def test_thread_message_stream_rejects_token_overflow_before_stream(client):
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.count_tokens",
+        return_value=10**9,
+    ):
+        response = client.post(
+            "/api/threads/conv_overflow/messages/stream",
+            json={
+                "message": "Hej",
+                "files": [{"name": "doc.txt", "content": "SGVq"}],
+                "use_alt": False,
+            },
+        )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["success"] is False
+    assert "for lang" in body["message"]
+
+
 def test_thread_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}

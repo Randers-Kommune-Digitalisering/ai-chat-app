@@ -125,7 +125,7 @@ except ValueError:
 try:
     MAX_TOKEN_LIMIT_MESSAGE = int(os.environ.get('MAX_TOKEN_LIMIT_MESSAGE', 129024))
 except ValueError:
-    MAX_TOKEN_LIMIT_MESSAGE = 129024
+    MAX_TOKEN_LIMIT_MESSAGE = 98304
 
 DEFAULT_TOKEN_ENCODING = os.environ.get('DEFAULT_TOKEN_ENCODING', 'cl100k_base').strip()  # Used for token counting, e.g. with tiktoken
 
