@@ -1163,14 +1163,10 @@ class Agent(AzureOpenAIClient):
 
         message_text = chat_message or ""
         if len(message_text) > MAX_MESSAGE_LENGTH:
-            has_files = bool(files)
             return (
                 None,
                 [],
-                (
-                    f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                    f"Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen."
-                ),
+                "Din besked er for lang. Reducer længden af din besked og prøv igen.",
                 400,
             )
 

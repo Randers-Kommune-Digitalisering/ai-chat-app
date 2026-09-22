@@ -109,7 +109,7 @@ FEEDBACK_MAIL_RECIPIENT = [
     if s.strip()
 ]
 
-# Max length of the user message when using Agent-mode (currently including any appended document content)
+# Max length of the user message when using Agent-mode (not including any appended document content)
 try:
     MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 256000))
 except ValueError:
