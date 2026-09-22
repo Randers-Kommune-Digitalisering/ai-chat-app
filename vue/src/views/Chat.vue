@@ -65,6 +65,7 @@
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
     const conversationCutoffDate = ref(null)
+    const responseGeneration = ref(0)
 
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
@@ -214,6 +215,7 @@
     async function clearChat(options = {}) {
         const { notifyParent = true } = options
         const previousConversationId = activeConversationId.value
+        responseGeneration.value += 1
         // Clear UI state
         chatMessages.value = []
         liveRegionText.value = ''
@@ -393,6 +395,9 @@
     }
 
     const sendMessage = async (chatMessage) => {
+        const generation = responseGeneration.value + 1
+        responseGeneration.value = generation
+
         // Update state
         awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
@@ -458,17 +463,20 @@
                 currentUserEmail.value,
                 {
                     onStart: (payload) => {
+                        if (generation !== responseGeneration.value) return
                         if (payload?.conversation_id) {
                             activeConversationId.value = payload.conversation_id
                         }
                     },
                     onStatus: (payload) => {
+                        if (generation !== responseGeneration.value) return
                         if (payload?.message) {
                             responseStatus.value = payload.message
                             liveRegionText.value = payload.message
                         }
                     },
                     onDelta: (delta) => {
+                        if (generation !== responseGeneration.value) return
                         streamedResponse += delta
                         assistantMessage.content = unfilterResponseContent(streamedResponse)
                         if (typeof delta === 'string' && delta.trim() !== '') {
@@ -481,6 +489,9 @@
 
             const { success, message: backendMessage, response, references, conversation_id, title } = result
             console.debug('Agent stream result references from backend:', references || [])
+
+            if (generation !== responseGeneration.value)
+                return  // Ignore outdated generation
 
             if (success === false) {
                 stopTimer()
@@ -531,6 +542,10 @@
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
+
+        if (generation !== responseGeneration.value) {
+            return
+        }
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
