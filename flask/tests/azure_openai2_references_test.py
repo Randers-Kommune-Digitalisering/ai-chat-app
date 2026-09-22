@@ -849,3 +849,31 @@ def test_build_ai_search_references_from_text_supports_bracket_marker_without_tu
             "url": "https://www.randers.dk/regler",
         }
     ]
+
+
+def test_extract_ai_search_citation_markers_supports_malformed_foundry_variants():
+    cases = [
+        ("Svar turn7search3", [3]),
+        ("Svar 15:015:1", [0, 1]),
+        ("Svar turn7:3turn7:4", [3, 4]),
+    ]
+
+    for answer, expected_indices in cases:
+        markers = azure_openai2._extract_ai_search_citation_markers(answer, source_count=5)
+
+        assert len(markers) == 1
+        assert markers[0][2] == expected_indices
+
+
+def test_extract_ai_search_citation_markers_only_infers_indexless_marker_for_one_source():
+    answers = [
+        "Svar. cite? no, must use Azure citation format.",
+        "Svar. turn7source",
+    ]
+
+    for answer in answers:
+        marker_start = answer.index("cite") if "cite" in answer else answer.index("turn7")
+        assert azure_openai2._extract_ai_search_citation_markers(answer, source_count=5) == []
+        assert azure_openai2._extract_ai_search_citation_markers(answer, source_count=1) == [
+            (marker_start, len(answer), [0])
+        ]

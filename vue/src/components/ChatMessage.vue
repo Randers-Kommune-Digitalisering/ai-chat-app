@@ -247,7 +247,7 @@
                 content = `${content.slice(0, start)}${title}${content.slice(end)}`
             })
 
-        const inlineMarkerPattern = /【(?:\d+:)?(\d+)†source】|cite(?:(?:turn)?\d+:)?(\d+)(?:†source)?|cite/g
+        const inlineMarkerPattern = /【(?:\d+:)?(\d+)†source】|cite(?:(?:turn)?\d+:)?(\d+)(?:†source)?|(?:turn)?\d+search\d+|(?:turn)?\d+search\d+|\b(?:turn)?\d+:\d+(?:(?:turn)?\d+:\d+)*|(?:turn)?\d+source|cite\?\s*no,\s*must use Azure citation format\.?|cite/gi
         content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
             const indexRaw = legacyIndex ?? foundryIndex
             const sourceIndex = Number(indexRaw)

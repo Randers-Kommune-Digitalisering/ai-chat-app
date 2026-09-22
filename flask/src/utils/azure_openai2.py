@@ -360,6 +360,36 @@ def _python_index_to_utf16(value: str, index: int) -> int:
     return len(value[:index].encode("utf-16-le")) // 2
 
 
+def _extract_ai_search_citation_markers(answer_text: str, source_count: int) -> list[tuple[int, int, list[int]]]:
+    """Extract canonical and malformed Foundry citation markers with source indices."""
+    marker_patterns = [
+        re.compile(r"【(?:\d+:)?(?P<indices>\d+)†source】"),
+        re.compile(r"cite(?:turn)?\d+:(?P<indices>\d+)(?:†source)?"),
+        re.compile(r"(?:turn)?\d+search(?P<indices>\d+)"),
+        re.compile(r"(?<![\w:])(?:turn)?\d+:(?P<indices>\d+(?:(?:turn)?\d+:\d+)*)"),
+    ]
+    markers: list[tuple[int, int, list[int]]] = []
+
+    for pattern in marker_patterns:
+        for match in pattern.finditer(answer_text):
+            if any(start <= match.start() < end for start, end, _ in markers):
+                continue
+            indices = [int(value) for value in re.findall(r"(?:^|:)\s*(\d+)", match.group("indices"))]
+            valid_indices = [index for index in indices if 0 <= index < source_count]
+            if valid_indices:
+                markers.append((match.start(), match.end(), valid_indices))
+
+    malformed_without_index = re.compile(
+        r"cite\?\s*no,\s*must use Azure citation format\.?|(?:turn)?\d+source",
+        re.IGNORECASE,
+    )
+    if source_count == 1:
+        for match in malformed_without_index.finditer(answer_text):
+            markers.append((match.start(), match.end(), [0]))
+
+    return sorted(markers, key=lambda marker: marker[0])
+
+
 def _build_ai_search_references_from_text(answer_text: str, ai_search_get_urls: list[str]) -> list[dict]:
     """
     Reconstruct AI Search citations when Foundry emits markers without annotations.
@@ -371,41 +401,38 @@ def _build_ai_search_references_from_text(answer_text: str, ai_search_get_urls: 
     if not answer_text or not ai_search_get_urls:
         return []
 
-    marker_pattern = re.compile(
-        r"【(?:\d+:)?(?P<legacy_index>\d+)†source】"
-        r"|cite(?:(?:turn)?\d+:)?(?P<foundry_index>\d+)(?:†source)?"
-    )
     metadata_by_index: dict[int, tuple[str, str]] = {}
     references: list[dict] = []
 
-    for match in marker_pattern.finditer(answer_text):
-        index_value = match.group("legacy_index") or match.group("foundry_index")
-        source_index = int(index_value)
-        if source_index < 0 or source_index >= len(ai_search_get_urls):
-            continue
+    markers = _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
+    for marker_start, marker_end, source_indices in markers:
+        for position, source_index in enumerate(source_indices):
+            if source_index not in metadata_by_index:
+                metadata = _fetch_ai_search_document_metadata(
+                    get_url=ai_search_get_urls[source_index],
+                )
+                if isinstance(metadata, dict):
+                    public_url = _extract_public_url_from_metadata(metadata)
+                    title = str(metadata.get("title") or "").strip()
+                    metadata_by_index[source_index] = (title, public_url)
+                else:
+                    metadata_by_index[source_index] = ("", "")
 
-        if source_index not in metadata_by_index:
-            metadata = _fetch_ai_search_document_metadata(
-                get_url=ai_search_get_urls[source_index],
-            )
-            if isinstance(metadata, dict):
-                public_url = _extract_public_url_from_metadata(metadata)
-                title = str(metadata.get("title") or "").strip()
-                metadata_by_index[source_index] = (title, public_url)
-            else:
-                metadata_by_index[source_index] = ("", "")
+            title, public_url = metadata_by_index[source_index]
+            if not public_url:
+                continue
 
-        title, public_url = metadata_by_index[source_index]
-        if not public_url:
-            continue
-
-        references.append({
-            "type": "url_citation",
-            "start_index": _python_index_to_utf16(answer_text, match.start()),
-            "end_index": _python_index_to_utf16(answer_text, match.end()),
-            "title": title or public_url,
-            "url": public_url,
-        })
+            reference = {
+                "type": "url_citation",
+                "title": title or public_url,
+                "url": public_url,
+            }
+            if position == 0:
+                reference.update({
+                    "start_index": _python_index_to_utf16(answer_text, marker_start),
+                    "end_index": _python_index_to_utf16(answer_text, marker_end),
+                })
+            references.append(reference)
 
     return references
 
