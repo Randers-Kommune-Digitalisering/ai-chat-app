@@ -99,9 +99,9 @@ def test_get_chat_client_selects_legacy_chat(monkeypatch):
 def test_agent_file_upload_rewinds_stream_before_retry(monkeypatch):
     attempts = []
 
-    def create_file(*, purpose, file):
+    def create_file(*, purpose, file, **kwargs):
         filename, stream = file
-        attempts.append((purpose, filename, stream.tell(), stream.read()))
+        attempts.append((purpose, filename, stream.tell(), stream.read(), kwargs.get("expires_after")))
         if len(attempts) == 1:
             raise TimeoutError("temporary upload failure")
         return SimpleNamespace(id="file-123")
@@ -115,8 +115,20 @@ def test_agent_file_upload_rewinds_stream_before_retry(monkeypatch):
     response_input = agent._prepare_response_input(chat_message="Read this", files=[upload])
 
     assert attempts == [
-        ("assistants", "document.txt", 0, b"complete document"),
-        ("assistants", "document.txt", 0, b"complete document"),
+        (
+            "assistants",
+            "document.txt",
+            0,
+            b"complete document",
+            {"anchor": "created_at", "seconds": azure_openai2.AGENT_FILE_EXPIRY_DAYS * 86400},
+        ),
+        (
+            "assistants",
+            "document.txt",
+            0,
+            b"complete document",
+            {"anchor": "created_at", "seconds": azure_openai2.AGENT_FILE_EXPIRY_DAYS * 86400},
+        ),
     ]
     assert response_input[0]["content"][-1] == {
         "type": "input_file",
