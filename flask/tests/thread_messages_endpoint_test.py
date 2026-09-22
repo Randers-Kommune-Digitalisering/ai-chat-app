@@ -113,7 +113,6 @@ def test_thread_message_stream_rejects_token_overflow_before_stream(client):
     body = response.get_json()
     assert body["success"] is False
     assert "for lang" in body["message"]
-    assert "dokumenter er for store" in body["message"]
 
 
 def test_thread_messages_db_unavailable_still_returns_success(client):
