@@ -80,7 +80,6 @@ Valgfrie Chat-indstillinger:
 | `TOP_P_VALUE` | `0.8` | Sampling-parameteren `top_p`. |
 | `TEMPERATURE_VALUE` | `0.2` | Sampling-parameteren `temperature`. |
 | `MAX_TOKEN_LIMIT` | `1000000` | Maksimalt samlet antal tokens i systemprompt og samtalehistorik. |
-| `MAX_TOKEN_LIMIT_MESSAGE` | `129024` | Maksimalt antal tokens i den seneste besked inklusive udtrukket filtekst. |
 | `DEFAULT_TOKEN_ENCODING` | `cl100k_base` | Tokenizer-fallback, hvis deployment-navnet ikke genkendes af `tiktoken`. |
 
 Azure AI Search er valgfrit for Chat. Retrieval aktiveres kun, når både endpoint og index er sat:
@@ -138,6 +137,7 @@ Valgfrie Agent-indstillinger:
 | `ASSISTANT_DESCRIPTION` | — | Beskrivelse, der vises i UI. |
 | `PREDEFINED_QUESTIONS` | — | Semikolonseparerede forslagsspørgsmål, eksempelvis `Spørgsmål 1;Spørgsmål 2`. |
 | `ALLOW_FILE_UPLOAD` | `False` | Reserveret indstilling; er aktuelt ikke aktiv. |
+| `MAX_TOKEN_LIMIT_MESSAGE` | `98304` | Maksimalt antal tokens for enkelt besked (inklusiv filer for Chat, eklsusiv for Agent) |
 | `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version til Azure OpenAI. |
 | `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | `AZURE_OPENAI_DEPLOYMENT_NAME` | Separat deployment til automatisk titelgenerering. |
 | `TITLE_GENERATION_MAX_CONCURRENCY` | `100` | Maksimalt antal samtidige titelgenereringer pr. proces; minimum er `10`. |

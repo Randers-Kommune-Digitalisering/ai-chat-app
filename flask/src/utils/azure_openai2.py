@@ -34,7 +34,6 @@ from utils.config import (
     AZURE_OPENAI_KEY,
     DEFAULT_TOKEN_ENCODING,
     EMPHASIZE_RECENT_CONTENT,
-    MAX_MESSAGE_LENGTH,
     MAX_TOKEN_LIMIT_HISTORY,
     MAX_TOKEN_LIMIT_MESSAGE,
     SEARCH_STRICTNESS,
@@ -61,6 +60,24 @@ def _get_token_encoding(deployment_name: str):
         return tiktoken.encoding_for_model(deployment_name)
     except KeyError:
         return tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
+
+
+def count_tokens(text: str, encoding_name: str | None = None) -> int:
+    """
+    Count tokens in text using a named tokenizer encoding.
+
+    :param text: Input text to tokenize.
+    :param encoding_name: Optional tokenizer encoding name. Defaults to DEFAULT_TOKEN_ENCODING.
+    :return: Number of tokens.
+    """
+    import tiktoken
+
+    resolved_encoding = (encoding_name or DEFAULT_TOKEN_ENCODING).strip() or DEFAULT_TOKEN_ENCODING
+    try:
+        encoding = tiktoken.get_encoding(resolved_encoding)
+    except KeyError:
+        encoding = tiktoken.get_encoding(DEFAULT_TOKEN_ENCODING)
+    return len(encoding.encode(text or ""))
 
 
 def _get_field(obj: Any, name: str, default: Any = None) -> Any:
@@ -939,7 +956,7 @@ class Chat(AzureOpenAIClient):
                 None,
                 [],
                 f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                f"Overvej at starte en ny samtale og prøv igen.",
+                f"Overvej at starte en ny samtale.",
                 400,
             )
 
@@ -1162,7 +1179,7 @@ class Agent(AzureOpenAIClient):
             )
 
         message_text = chat_message or ""
-        if len(message_text) > MAX_MESSAGE_LENGTH:
+        if count_tokens(message_text) > MAX_TOKEN_LIMIT_MESSAGE:
             return (
                 None,
                 [],
