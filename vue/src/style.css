@@ -165,7 +165,7 @@ main, #app {
       max-width: 56rem;
   }
 }
-#app > * {
+#app > :not(.sr-only-live) {
   width: 100%;
 }
 
