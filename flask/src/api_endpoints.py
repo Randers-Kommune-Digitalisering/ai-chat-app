@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 import base64
 import io
 from utils.azure_openai2 import get_chat_client, get_title_generator
-from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
+from utils.config import ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, MAX_MESSAGE_LENGTH, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, title_generation_saturation_counter, title_generation_timeout_counter, title_generation_inflight_gauge, metrics_base_labels
@@ -200,7 +200,7 @@ def create_thread():
         return (
             jsonify({
                 "success": False,
-                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen senere.",
             }),
             503,
         )
@@ -258,13 +258,13 @@ def create_thread_message(thread_id):
         )
         if not response:
             return (
-                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
                 int(azure_status or 500),
             )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
-            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
             503,
         )
 
@@ -360,7 +360,7 @@ def create_thread_message_stream(thread_id):
         return jsonify({"success": False, "message": "Der opstod en fejl. Start en ny samtale, genindlæs siden eller prøv igen senere."}), 400
     if not message:
         return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
-
+ 
     if conversation_id in ("", None):
         conversation_id = None
     else:
@@ -369,8 +369,18 @@ def create_thread_message_stream(thread_id):
         except (TypeError, ValueError):
             return jsonify({"success": False, "message": "Der opstod en fejl. Genindlæs siden eller prøv igen senere."}), 400
 
-    chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
     message = redact_content(text=message)
+
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return (
+            jsonify({
+                "success": False,
+                "message": "Din besked er for lang. Reducer længden af din besked og prøv igen.",
+            }),
+            400,
+        )
+
+    chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
     files = _decode_uploaded_files(files_data)
 
     @stream_with_context
@@ -415,7 +425,7 @@ def create_thread_message_stream(thread_id):
             response = "".join(response_chunks).strip()
             if not response:
                 yield _sse_event("error", {
-                    "message": "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen om lidt.",
+                    "message": "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.",
                     "status": 502,
                 })
                 return
@@ -498,7 +508,7 @@ def create_thread_message_stream(thread_id):
         except Exception as e:
             logger.error(f"Error in stream endpoint: {e}", exc_info=True)
             yield _sse_event("error", {
-                "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt.",
+                "message": "Assistenten havde en midlertidig fejl. Prøv igen senere.",
                 "status": 503,
             })
 
@@ -572,13 +582,13 @@ def create_chat_message():
         )
         if not response:
             return (
-                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+                jsonify({"success": False, "message": error_message or "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
                 int(azure_status or 500),
             )
     except Exception as e:
         logger.error(f"Error fetching chat response: {e}")
         return (
-            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen om lidt."}),
+            jsonify({"success": False, "message": "Assistenten havde en midlertidig fejl. Prøv igen senere."}),
             503,
         )
 

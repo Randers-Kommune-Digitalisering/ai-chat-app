@@ -273,7 +273,7 @@ def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client)
         side_effect=lambda *, text: text,
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen om lidt.", 429),
+        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen senere.", 429),
     ):
         res = _post_thread_message(client, thread_id="thr_rate", message="Hi")
 

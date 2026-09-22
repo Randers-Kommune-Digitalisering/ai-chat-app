@@ -11,6 +11,8 @@
         userEmail: { type: String, default: null }
     })
 
+    const _DEFAULT_ERROR_MESSAGE = "Beklager, der opstod en fejl. Prøv venligst igen."
+
 
     class ChatMessage {
         constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0, isStreaming = false) {
@@ -334,13 +336,13 @@
             illegalContents = await getIllegalContents(message)
         } catch (error) {
             console.error("Error filtering message:", error)
-            errorMessage.value = "Der opstod en fejl. Prøv venligst igen."
+            errorMessage.value = _DEFAULT_ERROR_MESSAGE
             return
         }
 
         if (!Array.isArray(illegalContents) && typeof illegalContents === 'object' && illegalContents.success == false)
         {
-            errorMessage.value = illegalContents.message || "Der opstod en fejl. Prøv venligst igen."
+            errorMessage.value = illegalContents.message || _DEFAULT_ERROR_MESSAGE
             await undoAndEditMessage(new ChatMessage('user', message, [], [], [...userFiles.value]))
             return
         }
@@ -361,18 +363,31 @@
     }
 
     const undoAndEditMessage = async (chatMessage) => {
+        // Remove the transient empty assistant shell message (stream mode) if it is still last.
+        const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+        if (lastMessage?.sender === 'assistant' && (!lastMessage.content || lastMessage.content.trim() === '')) {
+            chatMessages.value.pop()
+        }
+
         awaitingUserInput.value = false
+
         // Re-add user files to state
-        for (let file of chatMessage.files) {
+        for (let file of (chatMessage.files || [])) {
             addFile(file)
         }
+
         // Remove last user message
-        chatMessages.value.pop()
+        const messageIndex = chatMessages.value.lastIndexOf(chatMessage)
+        if (messageIndex >= 0) {
+            chatMessages.value.splice(messageIndex, 1)
+        }
+
         nextTick(() => {
             const input = document.querySelector('.user-input')
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
+
         // Set user input to previous message content
         userInput.value.setUserInput(chatMessage.content)
     }
@@ -407,7 +422,7 @@
                 console.error("Failed to start new thread.")
                 stopTimer()
                 awaitingResponse.value = false
-                errorMessage.value = "Der opstod en fejl. Start en ny samtale eller prøv igen om lidt."
+                errorMessage.value = _DEFAULT_ERROR_MESSAGE
                 liveRegionText.value = errorMessage.value
                 return
             }
@@ -467,13 +482,8 @@
                 stopTimer()
                 awaitingResponse.value = false
 
-                const lastMessage = chatMessages.value[chatMessages.value.length - 1]
-                if (lastMessage === assistantMessage) {
-                    chatMessages.value.pop()
-                }
-
                 undoAndEditMessage(chatMessage)
-                errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+                errorMessage.value = backendMessage || _DEFAULT_ERROR_MESSAGE
                 liveRegionText.value = errorMessage.value
                 return
             }
@@ -493,12 +503,11 @@
             assistantMessage.isStreaming = false
             assistantMessage.timeSpent = spentTime
             assistantMessage.references = mapApiReferences(references)
-            console.info('Agent stream mapped references for UI:', assistantMessage.references)
 
             const finalResponse = response || streamedResponse
             assistantMessage.content = unfilterResponseContent(finalResponse)
             if (!assistantMessage.content || assistantMessage.content.trim() === "") {
-                assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
+                assistantMessage.content = backendMessage || _DEFAULT_ERROR_MESSAGE
             }
             completedMessageLiveText.value = assistantMessage.content
             liveRegionText.value = ''
@@ -518,14 +527,13 @@
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
-        console.info('Chat result references from backend:', references || [])
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
             stopTimer()
             awaitingResponse.value = false
             undoAndEditMessage(chatMessage)
-            errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
+            errorMessage.value = backendMessage || _DEFAULT_ERROR_MESSAGE
             liveRegionText.value = errorMessage.value
             return
         }
@@ -549,13 +557,12 @@
             [],
             timeSpent
         )
-        console.info('Chat mapped references for UI:', assistantMessage.references)
         if (!response || response.trim() === "") {  // No response
             // Re-add user files to state
             for (let file of chatMessage.files) {
                 addFile(file)
             }
-            assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
+            assistantMessage.content = backendMessage || _DEFAULT_ERROR_MESSAGE
         }
         chatMessages.value.push(assistantMessage)
         completedMessageLiveText.value = assistantMessage.content
@@ -686,12 +693,13 @@
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
         :message="altAssistantAlertMsg"
-        :sticky="true"
+        :sticky="!errorMessage"
     />
     <Alert
         v-if="errorMessage"
         type="error"
         :message="errorMessage"
+        :sticky="true"
     />
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->

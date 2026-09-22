@@ -26,6 +26,7 @@ if not AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION:
 AZURE_AISEARCH_ENDPOINT = os.environ.get('AZURE_AISEARCH_ENDPOINT', '').strip()
 AZURE_AISEARCH_INDEX_NAME = os.environ.get('AZURE_AISEARCH_INDEX_NAME', '').strip()
 AZURE_AISEARCH_SEMANTIC_CONFIG = os.environ.get('AZURE_AISEARCH_SEMANTIC_CONFIG', 'default-semantic-config').strip()
+AZURE_AISEARCH_API_KEY = os.environ.get('AZURE_AISEARCH_API_KEY', '').strip()
 AZURE_AIFOUNDRY_PROJECT_NAME = os.environ.get('AZURE_AIFOUNDRY_PROJECT_NAME', '').strip()  # Used for Agents only
 AZURE_API_VERSION_OPENAI = os.environ.get('AZURE_API_VERSION_OPENAI', '2024-12-01-preview').strip()
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
@@ -108,7 +109,7 @@ FEEDBACK_MAIL_RECIPIENT = [
     if s.strip()
 ]
 
-# Max length of the user message when using Agent-mode (currently including any appended document content)
+# Max length of the user message when using Agent-mode (not including any appended document content)
 try:
     MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 256000))
 except ValueError:

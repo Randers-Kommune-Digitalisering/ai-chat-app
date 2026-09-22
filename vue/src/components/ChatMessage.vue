@@ -247,13 +247,15 @@
                 content = `${content.slice(0, start)}${title}${content.slice(end)}`
             })
 
-        if (fallbackTitles.length > 0) {
-                const inlineMarkerPattern = /【\d+:(\d+)†source】|cite(?:turn)?\d+:(\d+)(?:†source)?/g
-                content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
-                    const sourceIndex = Number(legacyIndex ?? foundryIndex)
-                    return fallbackTitles[sourceIndex] || ''
-            })
-        }
+        const inlineMarkerPattern = /【(?:\d+:)?(\d+)†source】|cite(?:(?:turn)?\d+:)?(\d+)(?:†source)?|cite/g
+        content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
+            const indexRaw = legacyIndex ?? foundryIndex
+            const sourceIndex = Number(indexRaw)
+            if (Number.isInteger(sourceIndex) && sourceIndex >= 0) {
+                return fallbackTitles[sourceIndex] || ''
+            }
+            return ''
+        })
 
         return content
     }
@@ -323,23 +325,42 @@
             const href = toSafeHttpUrl(payload.url)
             const formattedTitle = formatReferenceListLabel(payload.title)
             const label = formattedTitle || (href || 'Reference')
-            return { label, href }
+            return { type, label, href, dedupeKey: `${label}||${href}` }
         }
 
         if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
             const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
-            return { label: String(label), href: '' }
+            const fileId = String(payload.file_id || '')
+            return { type, label: String(label), href: '', dedupeKey: `${label}||${fileId}` }
         }
 
         const href = toSafeHttpUrl(payload.url)
         const formattedTitle = formatReferenceListLabel(payload.title)
         const label = formattedTitle || (href || 'Reference')
-        return { label, href }
+        return { type, label, href }
     }
 
     const renderedReferences = computed(() => {
         const refs = Array.isArray(props.references) ? props.references : []
-        return refs.map(toRenderedReference).filter(ref => !!ref?.label)
+        const seenReferenceKeys = new Set()
+        const uniqueRefs = []
+
+        for (const reference of refs) {
+            const renderedReference = toRenderedReference(reference)
+            if (!renderedReference?.label) continue
+
+            if (renderedReference.dedupeKey) {
+                const dedupeKey = `${renderedReference.type}||${renderedReference.dedupeKey}`
+                if (seenReferenceKeys.has(dedupeKey)) {
+                    continue
+                }
+                seenReferenceKeys.add(dedupeKey)
+            }
+
+            uniqueRefs.push(renderedReference)
+        }
+
+        return uniqueRefs
     })
 
     const resizeTextareaToFitContent = () => {
@@ -349,6 +370,7 @@
         let height = Math.min(maxHeight, feedbackTextareaRef.value.scrollHeight + 2) + 'px'
         feedbackTextareaRef.value.style.height = height
     }
+
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
@@ -384,7 +406,6 @@
         const textarea = document.getElementById('feedback_textarea_' + props.id)
         if (textarea?.focus) textarea.focus({ preventScroll: true })
     }
-
 </script>
 
 <template>

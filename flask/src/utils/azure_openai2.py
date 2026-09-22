@@ -6,6 +6,7 @@ import random
 import re
 import time
 import urllib.parse
+from urllib.request import Request, urlopen
 from abc import abstractmethod
 from json import JSONDecodeError, loads
 from typing import Any
@@ -21,6 +22,7 @@ from utils.config import (
     ASSISTANT_ALT_ID,
     ASSISTANT_NAME,
     ASSISTANT_TYPE,
+    AZURE_AISEARCH_API_KEY,
     AZURE_AISEARCH_ENDPOINT,
     AZURE_AISEARCH_INDEX_NAME,
     AZURE_AISEARCH_SEMANTIC_CONFIG,
@@ -190,6 +192,297 @@ def _extract_bing_grounding_url_citations(output_items: list[Any]) -> list[dict]
     return references
 
 
+def _is_internal_ai_search_url(url: str) -> bool:
+    """Return True when URL points to an Azure AI Search service host."""
+    parsed = urllib.parse.urlparse(url or "")
+    host = (parsed.netloc or "").lower()
+    return parsed.scheme in {"http", "https"} and host.endswith(".search.windows.net")
+
+
+def _normalize_ai_search_get_url(get_url: str) -> str:
+    """
+    Ensure AI Search document endpoint requests include the fields needed for remapping.
+
+    :param get_url: Source URL from AI Search tool output.
+    :return: Normalized URL with $select=title,url.
+    """
+    parsed = urllib.parse.urlparse(get_url or "")
+    if not parsed.scheme or not parsed.netloc:
+        return get_url
+
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    query["$select"] = ["title,url"]
+
+    if "api-version" not in query:
+        query["api-version"] = ["2024-07-01"]
+
+    return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(query, doseq=True)))
+
+
+def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
+    """
+    Extract AI Search get_urls endpoints from one output item.
+
+    :param item: Response output item.
+    :return: Ordered list of get_urls values.
+    """
+    if _get_field(item, "type") != "azure_ai_search_call_output":
+        return []
+
+    seen: set[str] = set()
+    get_urls: list[str] = []
+
+    def visit(value: Any) -> None:
+        normalized = _to_jsonable(value)
+        if isinstance(normalized, str):
+            try:
+                normalized = loads(normalized)
+            except (JSONDecodeError, TypeError):
+                return
+
+        if isinstance(normalized, list):
+            for entry in normalized:
+                visit(entry)
+            return
+
+        if not isinstance(normalized, dict):
+            return
+
+        raw_urls = normalized.get("get_urls")
+        if isinstance(raw_urls, (list, tuple)):
+            for candidate in raw_urls:
+                candidate_url = str(candidate or "").strip()
+                if not candidate_url or candidate_url in seen:
+                    continue
+                seen.add(candidate_url)
+                get_urls.append(candidate_url)
+
+        for nested in normalized.values():
+            if isinstance(nested, (dict, list, tuple)):
+                visit(nested)
+
+    visit(_get_field(item, "output"))
+    return get_urls
+
+
+def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
+    """
+    Extract AI Search get_urls values from a stream event.
+
+    :param event: Stream event.
+    :return: Ordered list of get_urls values.
+    """
+    event_type = _get_field(event, "type")
+
+    if event_type in {"response.output_item.added", "response.output_item.done"}:
+        return _extract_ai_search_get_urls_from_item(_get_field(event, "item"))
+
+    if event_type == "response.completed":
+        response = _get_field(event, "response")
+        output_items = list(_get_field(response, "output", []) or [])
+        seen: set[str] = set()
+        merged: list[str] = []
+        for output_item in output_items:
+            for get_url in _extract_ai_search_get_urls_from_item(output_item):
+                if get_url in seen:
+                    continue
+                seen.add(get_url)
+                merged.append(get_url)
+        return merged
+
+    return []
+
+
+def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> dict | None:
+    """
+    Fetch AI Search document metadata for one get_url endpoint.
+
+    :param get_url: Source URL from get_urls.
+    :param timeout_s: Network timeout in seconds.
+    :return: Parsed metadata object or None.
+    """
+    if not AZURE_AISEARCH_API_KEY:
+        return None
+
+    request_url = _normalize_ai_search_get_url(get_url)
+
+    try:
+        request = Request(
+            url=request_url,
+            headers={
+                "api-key": AZURE_AISEARCH_API_KEY,
+                "Accept": "application/json",
+            },
+        )
+        with urlopen(request, timeout=timeout_s) as response:
+            payload = loads(response.read().decode("utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception as exc:
+        logger.debug("AI Search metadata fetch failed for get_url %s: %s", request_url, exc)
+
+    return None
+
+
+def _extract_public_url_from_metadata(metadata: dict) -> str:
+    """Extract and decode the public URL from AI Search document metadata."""
+    url_value = str(metadata.get("url") or "").strip()
+    if not url_value:
+        return ""
+
+    decoded_url = urllib.parse.unquote(url_value).strip()
+    if decoded_url.startswith(("https://", "http://")):
+        return decoded_url
+    if url_value.startswith(("https://", "http://")):
+        return url_value
+    return ""
+
+
+def _python_index_to_utf16(value: str, index: int) -> int:
+    """Convert a Python string index to the UTF-16 offset used by the browser."""
+    return len(value[:index].encode("utf-16-le")) // 2
+
+
+def _build_ai_search_references_from_text(answer_text: str, ai_search_get_urls: list[str]) -> list[dict]:
+    """
+    Reconstruct AI Search citations when Foundry emits markers without annotations.
+
+    :param answer_text: Complete streamed assistant response.
+    :param ai_search_get_urls: AI Search document endpoints ordered by result index.
+    :return: URL citations for markers whose source metadata can be resolved.
+    """
+    if not answer_text or not ai_search_get_urls:
+        return []
+
+    marker_pattern = re.compile(
+        r"【(?:\d+:)?(?P<legacy_index>\d+)†source】"
+        r"|cite(?:(?:turn)?\d+:)?(?P<foundry_index>\d+)(?:†source)?"
+    )
+    metadata_by_index: dict[int, tuple[str, str]] = {}
+    references: list[dict] = []
+
+    for match in marker_pattern.finditer(answer_text):
+        index_value = match.group("legacy_index") or match.group("foundry_index")
+        source_index = int(index_value)
+        if source_index < 0 or source_index >= len(ai_search_get_urls):
+            continue
+
+        if source_index not in metadata_by_index:
+            metadata = _fetch_ai_search_document_metadata(
+                get_url=ai_search_get_urls[source_index],
+            )
+            if isinstance(metadata, dict):
+                public_url = _extract_public_url_from_metadata(metadata)
+                title = str(metadata.get("title") or "").strip()
+                metadata_by_index[source_index] = (title, public_url)
+            else:
+                metadata_by_index[source_index] = ("", "")
+
+        title, public_url = metadata_by_index[source_index]
+        if not public_url:
+            continue
+
+        references.append({
+            "type": "url_citation",
+            "start_index": _python_index_to_utf16(answer_text, match.start()),
+            "end_index": _python_index_to_utf16(answer_text, match.end()),
+            "title": title or public_url,
+            "url": public_url,
+        })
+
+    return references
+
+
+def _normalize_title_key(value: Any) -> str:
+    """Build a stable comparison key for citation titles."""
+    title = str(value or "").strip()
+    if not title:
+        return ""
+    return re.sub(r"\s+", " ", urllib.parse.unquote(title)).strip().casefold()
+
+
+def _get_url_citation_container(reference: Any) -> dict | None:
+    """Return the mutable url_citation dict from either supported annotation shape."""
+    if not isinstance(reference, dict):
+        return None
+
+    if reference.get("type") == "url_citation":
+        return reference
+
+    nested = reference.get("url_citation")
+    if isinstance(nested, dict):
+        return nested
+
+    return None
+
+
+def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: list[str]) -> list[dict]:
+    """
+    Replace internal search.windows.net citation URLs using AI Search metadata lookups.
+
+    :param references: Extracted reference annotations.
+    :param ai_search_get_urls: URLs from AI Search get_urls output.
+    :return: References with internal AI Search URLs replaced when metadata is available.
+    """
+    if not references or not ai_search_get_urls:
+        return references
+
+    internal_citations: list[dict] = []
+    for reference in references:
+        citation = _get_url_citation_container(reference)
+        if not citation:
+            continue
+        citation_url = str(citation.get("url") or "").strip()
+        if _is_internal_ai_search_url(citation_url):
+            internal_citations.append(citation)
+
+    if not internal_citations:
+        return references
+
+    metadata_entries: list[dict] = []
+    seen_metadata_urls: set[str] = set()
+    for get_url in ai_search_get_urls:
+        metadata = _fetch_ai_search_document_metadata(get_url=get_url)
+        if not isinstance(metadata, dict):
+            continue
+
+        public_url = _extract_public_url_from_metadata(metadata=metadata)
+        if not public_url:
+            continue
+        if public_url in seen_metadata_urls:
+            continue
+
+        seen_metadata_urls.add(public_url)
+        metadata_entries.append({
+            "url": public_url,
+            "title": str(metadata.get("title") or "").strip(),
+        })
+
+    if not metadata_entries:
+        return references
+
+    title_to_url: dict[str, str] = {}
+    ordered_urls: list[str] = []
+    for entry in metadata_entries:
+        url = entry["url"]
+        ordered_urls.append(url)
+        title_key = _normalize_title_key(entry.get("title"))
+        if title_key and title_key not in title_to_url:
+            title_to_url[title_key] = url
+
+    fallback_index = 0
+    for citation in internal_citations:
+        replacement_url = title_to_url.get(_normalize_title_key(citation.get("title")))
+        if not replacement_url and fallback_index < len(ordered_urls):
+            replacement_url = ordered_urls[fallback_index]
+            fallback_index += 1
+
+        if replacement_url:
+            citation["url"] = replacement_url
+
+    return references
+
+
 def _summarize_output_item_for_logs(item: Any) -> dict:
     """
     Build a compact structural summary for one response output item.
@@ -229,6 +522,7 @@ def _status_for_stream_event(event: Any) -> dict[str, str] | None:
         item_type = _get_field(_get_field(event, "item"), "type")
         statuses = {
             "reasoning": ("thinking", "Assistenten tænker ..."),
+            "azure_ai_search_call": ("ai_search", "Assistenten søger i interne kilder ..."),
             "web_search_call": ("web_search", "Assistenten søger på nettet ..."),
             "bing_grounding_call": ("web_search", "Assistenten søger på nettet ..."),
             "file_search_call": ("file_search", "Assistenten søger i filer ..."),
@@ -415,18 +709,18 @@ def _error_to_user_message_and_status(exc: Exception) -> tuple[str, int]:
     status_code = _safe_status_code(exc=exc)
 
     if status_code == 429:
-        return "Assistenten er travl lige nu. Prov igen om lidt.", 429
+        return "Assistenten er travl lige nu. Prøv igen senere.", 429
     if status_code in (401, 403):
-        return "Assistenten er ikke korrekt konfigureret. Prov igen senere.", 503
+        return "Assistenten er ikke korrekt konfigureret. Prøv igen senere.", 503
     if status_code == 404:
-        return "Der opstod en fejl med samtalen. Start en ny samtale og prov igen.", 400
+        return "Der opstod en fejl med samtalen. Start en ny samtale og prøv igen.", 400
     if status_code is not None and 400 <= status_code < 500:
-        return "Der opstod en fejl i foresporgslen. Genindlaes siden eller prov igen senere.", 400
+        return "Der opstod en fejl i forespørgslen. Genindlæs siden eller prøv igen senere.", 400
 
     if _is_retryable_exception(exc=exc):
-        return "Assistenten havde en midlertidig fejl. Prov igen om lidt.", 503
+        return "Assistenten havde en midlertidig fejl. Prøv igen senere.", 503
 
-    return "Assistenten havde en midlertidig fejl. Prov igen om lidt.", 500
+    return "Assistenten havde en midlertidig fejl. Prøv igen senere.", 500
 
 
 def _call_with_retries(*, operation: str, func, max_retries: int = 1, base_delay_s: float = 0.4):
@@ -630,7 +924,7 @@ class Chat(AzureOpenAIClient):
                 None,
                 [],
                 f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                f"Reducer laengden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prov igen.",
+                f"Reducer længden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prøv igen.",
                 400,
             )
 
@@ -645,7 +939,7 @@ class Chat(AzureOpenAIClient):
                 None,
                 [],
                 f"Din samtale er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                "Overvej at starte en ny samtale.",
+                f"Overvej at starte en ny samtale og prøv igen.",
                 400,
             )
 
@@ -665,13 +959,13 @@ class Chat(AzureOpenAIClient):
             return None, [], message, status
 
         if not response or not getattr(response, "choices", None):
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
 
         choice = response.choices[0]
         response_message = getattr(choice, "message", None)
         assistant_response = getattr(response_message, "content", None)
         if assistant_response is None:
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
 
         citation_refs = [int(ref) for ref in re.findall(r"\[(?:doc)?(\d{1,2})\]", assistant_response)]
         unique_refs = sorted(set(citation_refs))
@@ -863,20 +1157,16 @@ class Agent(AzureOpenAIClient):
             return (
                 None,
                 [],
-                "Der opstod en fejl med samtalen. Prov at genindlaese siden, eller start en ny samtale.",
+                "Der opstod en fejl med samtalen. Prøv at genindlæse siden, eller start en ny samtale.",
                 400,
             )
 
         message_text = chat_message or ""
         if len(message_text) > MAX_MESSAGE_LENGTH:
-            has_files = bool(files)
             return (
                 None,
                 [],
-                (
-                    f"Din besked er for lang{', eller dine dokumenter er for store.' if has_files else '.'} "
-                    f"Reducer laengden af din besked{', eller fjern nogle dokumenter' if has_files else ''} og prov igen."
-                ),
+                "Din besked er for lang. Reducer længden af din besked og prøv igen.",
                 400,
             )
 
@@ -902,7 +1192,7 @@ class Agent(AzureOpenAIClient):
 
             assistant_response = "".join(response_chunks).strip()
             if not assistant_response:
-                return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prov igen om lidt.", 502
+                return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
             logger.debug(
                 "Agent fetch completed with references (thread_id=%s count=%s): %s",
@@ -966,6 +1256,9 @@ class Agent(AzureOpenAIClient):
         streamed_annotations: list[Any] = []
         references_emitted = False
         last_status = None
+        ai_search_get_urls: list[str] = []
+        response_text_parts: list[str] = []
+        web_search_seen = False
 
         for event in stream:
             event_type = getattr(event, "type", None)
@@ -977,6 +1270,12 @@ class Agent(AzureOpenAIClient):
 
             if event_type in {"response.output_item.added", "response.output_item.done"}:
                 item = _get_field(event, "item")
+                if _get_field(item, "type") in {
+                    "web_search_call",
+                    "bing_grounding_call",
+                    "bing_grounding_call_output",
+                }:
+                    web_search_seen = True
                 logger.debug(
                     "Agent stream output item event (thread_id=%s event=%s summary=%s)",
                     thread_id,
@@ -997,6 +1296,15 @@ class Agent(AzureOpenAIClient):
             if event_type == "response.completed":
                 response = _get_field(event, "response")
                 output_items = list(_get_field(response, "output", []) or [])
+                if any(
+                    _get_field(item, "type") in {
+                        "web_search_call",
+                        "bing_grounding_call",
+                        "bing_grounding_call_output",
+                    }
+                    for item in output_items
+                ):
+                    web_search_seen = True
                 logger.debug(
                     "Agent stream completed event summary (thread_id=%s output_items=%s summaries=%s)",
                     thread_id,
@@ -1005,7 +1313,19 @@ class Agent(AzureOpenAIClient):
                 )
 
             if event_type == "response.output_text.delta" and getattr(event, "delta", None):
+                response_text_parts.append(event.delta)
                 yield {"type": "delta", "text": event.delta}
+
+            extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
+            if extracted_get_urls:
+                for get_url in extracted_get_urls:
+                    if get_url not in ai_search_get_urls:
+                        ai_search_get_urls.append(get_url)
+                logger.debug(
+                    "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
+                    thread_id,
+                    len(ai_search_get_urls),
+                )
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":
@@ -1033,6 +1353,10 @@ class Agent(AzureOpenAIClient):
                     latest_references,
                 )
                 if event_type == "response.completed":
+                    latest_references = _remap_ai_search_reference_urls(
+                        references=latest_references,
+                        ai_search_get_urls=ai_search_get_urls,
+                    )
                     logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
                         thread_id,
@@ -1045,6 +1369,22 @@ class Agent(AzureOpenAIClient):
             if event_type == "response.completed" and not references_emitted:
                 if not latest_references and streamed_annotations:
                     latest_references = list(streamed_annotations)
+                if not latest_references and not web_search_seen:
+                    latest_references = _build_ai_search_references_from_text(
+                        answer_text="".join(response_text_parts),
+                        ai_search_get_urls=ai_search_get_urls,
+                    )
+                    if latest_references:
+                        logger.debug(
+                            "Agent stream reconstructed ai_search references from markers "
+                            "(thread_id=%s count=%s)",
+                            thread_id,
+                            len(latest_references),
+                        )
+                latest_references = _remap_ai_search_reference_urls(
+                    references=latest_references,
+                    ai_search_get_urls=ai_search_get_urls,
+                )
                 logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
                     thread_id,
@@ -1055,6 +1395,22 @@ class Agent(AzureOpenAIClient):
                 references_emitted = True
 
         if not references_emitted:
+            if not latest_references and not web_search_seen:
+                latest_references = _build_ai_search_references_from_text(
+                    answer_text="".join(response_text_parts),
+                    ai_search_get_urls=ai_search_get_urls,
+                )
+                if latest_references:
+                    logger.debug(
+                        "Agent stream reconstructed ai_search references from markers at end of stream "
+                        "(thread_id=%s count=%s)",
+                        thread_id,
+                        len(latest_references),
+                    )
+            latest_references = _remap_ai_search_reference_urls(
+                references=latest_references,
+                ai_search_get_urls=ai_search_get_urls,
+            )
             logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
                 thread_id,
