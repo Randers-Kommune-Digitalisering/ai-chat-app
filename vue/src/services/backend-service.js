@@ -27,13 +27,13 @@ export async function fetchConversationByPermit(permit) {
 export async function startThread() {
     try {
         const result = await axios.post('/api/threads');
-        if (!result.data.thread_id) {
+        if (typeof result?.data?.thread_id !== 'string' || result.data.thread_id.trim() === '') {
             throw new Error("No thread_id returned from backend");
         }
         return result.data.thread_id;
     } catch (error) {
         console.error("Error starting thread:", error?.response?.data || error);
-        return error?.response?.data || { 'success': false, 'message': 'Der opstod en fejl. Prøv at genindlæse siden.' };
+        return null;
     }
 }
 

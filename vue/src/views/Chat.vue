@@ -416,9 +416,13 @@
         }
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
-            threadId.value = await startThread()
-            console.debug("Started new thread successfully")
-            if (!threadId.value) {
+            const startedThreadId = await startThread()
+            if (typeof startedThreadId === 'string' && startedThreadId.trim() !== '') {
+                threadId.value = startedThreadId
+                console.debug("Started new thread successfully")
+            }
+
+            if (typeof threadId.value !== 'string' || threadId.value.trim() === '') {
                 console.error("Failed to start new thread.")
                 stopTimer()
                 awaitingResponse.value = false
