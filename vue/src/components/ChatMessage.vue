@@ -550,6 +550,37 @@
             margin-bottom: 0;
             margin-block-end: 0rem;
         }
+        :deep(.chat-content table) {
+            max-width: 100%;
+            overflow: auto;
+            display: block;
+            white-space: nowrap;
+        }
+        :deep(.chat-content tr) {
+            display: table-row;
+        }
+        :deep(.chat-content thead) {
+            display: table-header-group;
+            font-weight: bold;
+            text-align: left;
+        }
+        :deep(.chat-content thead tr) {
+            position: relative;
+        }
+        :deep(.chat-content thead tr::after) {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-bottom: 0.05rem solid var(--color-toolbar-border);
+            pointer-events: none;
+        }
+        :deep(.chat-content th), :deep(.chat-content td) {
+            display: table-cell;
+            padding: 0.4rem 1rem;
+            /* border: 0.05rem solid var(--color-table-border); */
+        }
         :deep(.chat-content code) {
             display: inline-block;
             background-color: var(--color-code-background);
