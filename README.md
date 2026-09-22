@@ -124,6 +124,7 @@ Valgfrie Agent-indstillinger:
 | `AGENT_ALT_ID` | — | Alternativ agent til UI-toggle. `ASSISTANT_ALT_ID` understøttes som legacy-alias. |
 | `FOUNDRY_AGENT_ALT_VERSION` | — | Version for den alternative agent reference. |
 | `MAX_MESSAGE_LENGTH` | `256000` | Maksimal længde af brugerens tekst i tegn. |
+| `AGENT_FILE_EXPIRY_DAYS` | `30` | Antal dage før uploadede Agent-filer udløber og automatisk slettes af Files API (ankret på `created_at`). |
 | `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for agent-toggle. |
 | `ALT_ALERT_MSG` | — | Alert-tekst for den alternative agent. |
 | `ALT_ALERT_TYPE` | `info` | Alert-type: `info`, `warning` eller `danger`. |
