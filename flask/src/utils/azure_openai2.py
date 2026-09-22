@@ -702,6 +702,15 @@ def _extract_native_annotations_from_stream_event(event: Any) -> list[dict] | No
     return None
 
 
+def _merge_references(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Merge citation annotations in first-seen order without duplicates."""
+    merged = list(existing)
+    for reference in incoming:
+        if reference not in merged:
+            merged.append(reference)
+    return merged
+
+
 def _safe_status_code(exc: Exception) -> int | None:
     """
     Safely extract the status code from an exception.
@@ -1376,8 +1385,8 @@ class Agent(AzureOpenAIClient):
                 annotation = _get_field(event, "annotation")
                 normalized = _to_jsonable(annotation)
                 if isinstance(normalized, dict):
-                    streamed_annotations.append(normalized)
-                    latest_references = list(streamed_annotations)
+                    streamed_annotations = _merge_references(streamed_annotations, [normalized])
+                    latest_references = _merge_references(latest_references, [normalized])
                     logger.debug(
                         "Agent stream annotation added (thread_id=%s total=%s): %s",
                         thread_id,
@@ -1388,7 +1397,7 @@ class Agent(AzureOpenAIClient):
 
             extracted_references = _extract_native_annotations_from_stream_event(event=event)
             if extracted_references:
-                latest_references = extracted_references
+                latest_references = _merge_references(latest_references, extracted_references)
                 logger.debug(
                     "Agent stream references extracted (thread_id=%s event=%s count=%s): %s",
                     thread_id,

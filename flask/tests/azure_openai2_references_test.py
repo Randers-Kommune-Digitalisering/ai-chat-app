@@ -196,6 +196,47 @@ def test_stream_chat_response_with_metadata_uses_streamed_annotations_when_compl
     ]
 
 
+def test_stream_chat_response_with_metadata_keeps_annotations_missing_from_partial_snapshot():
+    first_reference = {
+        "type": "url_citation",
+        "title": "Randers Wiki",
+        "url": "https://da.wikipedia.org/wiki/Randers",
+    }
+    second_reference = {
+        "type": "url_citation",
+        "title": "Kommune",
+        "url": "https://www.randers.dk",
+    }
+    events = [
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=first_reference),
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=second_reference),
+        SimpleNamespace(
+            type="response.content_part.done",
+            part=SimpleNamespace(type="output_text", annotations=[second_reference]),
+        ),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(output=[]),
+        ),
+    ]
+
+    class _FakeResponses:
+        def create(self, **kwargs):
+            return iter(events)
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=_FakeResponses())
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_partial_snapshot"))
+
+    assert emitted[-1] == {
+        "type": "references",
+        "references": [first_reference, second_reference],
+    }
+
+
 def test_extract_native_annotations_from_response_completed_uses_web_search_sources_when_no_annotations():
     event = SimpleNamespace(
         type="response.completed",
