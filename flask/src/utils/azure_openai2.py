@@ -1177,16 +1177,19 @@ class Agent(AzureOpenAIClient):
                     filename = getattr(file, "name", None)
                 if not filename:
                     filename = f"upload_{index + 1}.bin"
-                seek_fn = getattr(file, "seek", None)
-                if callable(seek_fn):
-                    seek_fn(0)
+
+                def upload_file(f=file, n=filename):
+                    seek_fn = getattr(f, "seek", None)
+                    if callable(seek_fn):
+                        seek_fn(0)
+                    return self.client.files.create(
+                        purpose="assistants",
+                        file=(n, f),
+                    )
 
                 uploaded = _call_with_retries(
                     operation="openai.files.create",
-                    func=lambda f=file, n=filename: self.client.files.create(
-                        purpose="assistants",
-                        file=(n, f),
-                    ),
+                    func=upload_file,
                 )
                 file_id = getattr(uploaded, "id", None)
                 if not file_id:

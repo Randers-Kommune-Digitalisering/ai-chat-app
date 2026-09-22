@@ -1,3 +1,4 @@
+from io import BytesIO
 from types import SimpleNamespace
 
 import utils.azure_openai2 as azure_openai2
@@ -93,3 +94,31 @@ def test_get_chat_client_selects_legacy_chat(monkeypatch):
     monkeypatch.setattr(azure_openai2, "Chat", lambda: expected)
 
     assert azure_openai2.get_chat_client() is expected
+
+
+def test_agent_file_upload_rewinds_stream_before_retry(monkeypatch):
+    attempts = []
+
+    def create_file(*, purpose, file):
+        filename, stream = file
+        attempts.append((purpose, filename, stream.tell(), stream.read()))
+        if len(attempts) == 1:
+            raise TimeoutError("temporary upload failure")
+        return SimpleNamespace(id="file-123")
+
+    agent = azure_openai2.Agent.__new__(azure_openai2.Agent)
+    agent.client = SimpleNamespace(files=SimpleNamespace(create=create_file))
+    upload = BytesIO(b"complete document")
+    upload.filename = "document.txt"
+    monkeypatch.setattr(azure_openai2.time, "sleep", lambda _delay: None)
+
+    response_input = agent._prepare_response_input(chat_message="Read this", files=[upload])
+
+    assert attempts == [
+        ("assistants", "document.txt", 0, b"complete document"),
+        ("assistants", "document.txt", 0, b"complete document"),
+    ]
+    assert response_input[0]["content"][-1] == {
+        "type": "input_file",
+        "file_id": "file-123",
+    }
