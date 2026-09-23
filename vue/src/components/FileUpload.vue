@@ -1,46 +1,69 @@
 <script setup>
 
-    import { ref, onMounted, onUnmounted } from 'vue'
+    import { ref, computed, onMounted, onUnmounted } from 'vue'
 
     const showFileUpload = ref(true)
-    const acceptedFileTypes = {
-        '.c': ['text/x-c', 'text/plain'],
-        '.cpp': ['text/x-c++', 'text/plain'],
-        '.css': ['text/css'],
-        '.csv': ['text/csv', 'application/csv'],
-        '.pdf': ['application/pdf'],
-        '.doc': ['application/msword'],
-        '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-        '.gif': ['image/gif'],
-        '.go': ['text/x-go', 'text/plain'],
-        '.html': ['text/html'],
-        '.java': ['text/x-java-source', 'text/plain'],
-        '.jpeg': ['image/jpeg'],
-        '.jpg': ['image/jpeg'],
-        '.js': ['text/javascript', 'application/javascript'],
-        '.json': ['application/json'],
-        '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
-        '.php': ['application/x-httpd-php', 'text/x-php', 'text/plain'],
-        '.pkl': ['application/octet-stream'],
-        '.png': ['image/png'],
-        '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-        '.py': ['text/x-python', 'text/plain'],
-        '.rb': ['text/x-ruby', 'text/plain'],
-        '.tar': ['application/x-tar'],
-        '.tex': ['application/x-tex', 'text/x-tex', 'text/plain'],
-        '.ts': ['text/typescript', 'application/typescript', 'video/mp2t', 'text/plain'],
-        '.txt': ['text/plain'],
-        '.webp': ['image/webp'],
-        '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-        '.xml': ['application/xml', 'text/xml']
+    const acceptedFileTypesByAssistant = {
+        chat: {
+            '.csv': ['text/csv', 'application/csv'],
+            '.pdf': ['application/pdf'],
+            '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            '.txt': ['text/plain'],
+            '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+            '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            '.xls': ['application/vnd.ms-excel'],
+            '.xlsm': ['application/vnd.ms-excel.sheet.macroenabled.12'],
+            '.xlt': ['application/vnd.ms-excel'],
+            '.xltm': ['application/vnd.ms-excel.template.macroenabled.12']
+        },
+        agent: {
+            '.c': ['text/x-c', 'text/plain'],
+            '.cpp': ['text/x-c++', 'text/plain'],
+            '.css': ['text/css'],
+            '.csv': ['text/csv', 'application/csv'],
+            '.pdf': ['application/pdf'],
+            '.doc': ['application/msword'],
+            '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            '.gif': ['image/gif'],
+            '.go': ['text/x-go', 'text/plain'],
+            '.html': ['text/html'],
+            '.java': ['text/x-java-source', 'text/plain'],
+            '.jpeg': ['image/jpeg'],
+            '.jpg': ['image/jpeg'],
+            '.js': ['text/javascript', 'application/javascript'],
+            '.json': ['application/json'],
+            '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+            '.php': ['application/x-httpd-php', 'text/x-php', 'text/plain'],
+            '.pkl': ['application/octet-stream'],
+            '.png': ['image/png'],
+            '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+            '.py': ['text/x-python', 'text/plain'],
+            '.rb': ['text/x-ruby', 'text/plain'],
+            '.tar': ['application/x-tar'],
+            '.tex': ['application/x-tex', 'text/x-tex', 'text/plain'],
+            '.ts': ['text/typescript', 'application/typescript', 'video/mp2t', 'text/plain'],
+            '.txt': ['text/plain'],
+            '.webp': ['image/webp'],
+            '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            '.xml': ['application/xml', 'text/xml']
+        }
     }
-    const acceptedFileExtensions = Object.keys(acceptedFileTypes)
+    const acceptedFileTypesStringByAssistant = {
+        chat: "PDF, Word, Regneark (.xlsx, .csv)",
+        agent: "PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif, .webp)"
+    }
+
     const emit = defineEmits(['remove-file', 'add-file', 'clear-files'])
 
     const props = defineProps({
         files: {
             type: Array,
             required: true
+        },
+        assistantType: {
+            type: String,
+            required: false,
+            default: 'chat'
         },
         maxFileSizeBytes: {
             type: Number,
@@ -62,6 +85,15 @@
     const fileInputRef = ref(null)
     const fileNotAccepted = ref(false)
     const uploadErrorMessage = ref('')
+    const activeAcceptedFileTypes = computed(() => {
+        const type = (props.assistantType || 'chat').toLowerCase()
+        return acceptedFileTypesByAssistant[type] || acceptedFileTypesByAssistant.chat
+    })
+    const acceptedFileExtensionsString = computed(() => {
+        const type = (props.assistantType || 'chat').toLowerCase()
+        return acceptedFileTypesStringByAssistant[type] || acceptedFileTypesStringByAssistant.chat
+    })
+    const acceptedFileExtensions = computed(() => Object.keys(activeAcceptedFileTypes.value))
 
     function showUploadError(message) {
         uploadErrorMessage.value = message
@@ -85,7 +117,7 @@
     function isAcceptedFile(file) {
         const extensionIndex = file.name.lastIndexOf('.')
         const extension = extensionIndex >= 0 ? file.name.slice(extensionIndex).toLowerCase() : ''
-        const acceptedMimeTypes = acceptedFileTypes[extension]
+        const acceptedMimeTypes = activeAcceptedFileTypes.value[extension]
         return Boolean(acceptedMimeTypes) && (!file.type || acceptedMimeTypes.includes(file.type))
     }
 
@@ -281,7 +313,7 @@
         <div class="tooltip">
             <span class="tooltip-text">Tilføj fil til samtale</span>
             <i class="fa-regular fa-file"></i>
-            <div class="file-types">PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif, .webp)</div>
+            <div class="file-types">{{ acceptedFileExtensionsString}}</div>
         </div>
     </button>
 

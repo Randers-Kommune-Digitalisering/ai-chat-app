@@ -62,6 +62,7 @@
     const ASSISTANT_NAME_ID = ref('')
     const assistantName = ref('')
     const assistantDescription = ref('')
+    const assistantType = ref('chat')
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
     const conversationCutoffDate = ref(null)
@@ -78,7 +79,8 @@
     onMounted(() => {
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
-        isAgent.value = !!config?.isAgent
+        assistantType.value = (config?.assistantType || (config?.isAgent ? 'agent' : 'chat')).toLowerCase()
+        isAgent.value = assistantType.value === 'agent'
         showAssistantToggle.value = !!config?.showAssistantToggle
         altAssistantAlertMsg.value = config?.altAlertMsg
         altAssistantAlertType.value = config?.altAlertType
@@ -788,6 +790,7 @@
             <FileUpload
                 ref="fileUploader"
                 :files="userFiles"
+                :assistantType="assistantType"
                 :maxFileSizeBytes="agentFileSizeLimit"
                 :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
                 @add-file="addFile"

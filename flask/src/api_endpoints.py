@@ -201,6 +201,7 @@ def get_config():
     config = {
         "assistantName": ASSISTANT_NAME,
         "assistantNameId": ASSISTANT_NAME_ID,
+        "assistantType": ASSISTANT_TYPE.lower(),
         "isAgent": ASSISTANT_TYPE.lower() == "agent",
         "predefinedQuestions": PREDEFINED_QUESTIONS,
         "description": ASSISTANT_DESCRIPTION,
