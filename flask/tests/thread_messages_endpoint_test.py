@@ -135,12 +135,18 @@ def test_thread_message_rejects_file_over_size_limit_before_azure(client):
 
 
 def test_thread_message_stream_rejects_file_over_size_limit_before_azure(client):
+    mock_azure_client = MagicMock()
+
     with patch("api_endpoints.AGENT_FILE_SIZE_LIMIT", 2), patch(
         "api_endpoints.redact_content",
         side_effect=lambda *, text: text,
     ), patch(
-        "api_endpoints.azure_client.stream_chat_response_with_metadata",
-    ) as mock_stream:
+        "api_endpoints.count_tokens",
+        return_value=1,
+    ), patch(
+        "api_endpoints.azure_client",
+        mock_azure_client,
+    ):
         response = client.post(
             "/api/threads/conv_stream_file_limit/messages/stream",
             json={
@@ -152,7 +158,7 @@ def test_thread_message_stream_rejects_file_over_size_limit_before_azure(client)
 
     assert response.status_code == 413
     assert response.get_json()["success"] is False
-    mock_stream.assert_not_called()
+    mock_azure_client.stream_chat_response_with_metadata.assert_not_called()
 
 
 def test_thread_messages_db_unavailable_still_returns_success(client):
