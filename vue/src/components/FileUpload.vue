@@ -261,7 +261,7 @@
         <div class="tooltip">
             <span class="tooltip-text">Tilføj fil til samtale</span>
             <i class="fa-regular fa-file"></i>
-            <div class="file-types">PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif)</div>
+            <div class="file-types">PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif, .webp)</div>
         </div>
     </button>
 
