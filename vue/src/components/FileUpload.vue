@@ -383,10 +383,12 @@
         opacity: 0;
     }
     .fileSelectButton .tooltip {
-        max-width: calc(100dvw -10rem) !important;
-        overflow: hidden;
-        bottom: 50%;
+        position: absolute;
         left: 2.5rem;
+        right: auto;
+        width: calc(min(56rem, 100dvw) - 8rem) !important;
+        white-space: normal;
+        bottom: 50%;
         background-color: var(--color-input-background);
         font-size: 1em;
         pointer-events: none;
