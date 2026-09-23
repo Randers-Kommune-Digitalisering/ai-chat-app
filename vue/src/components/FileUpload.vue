@@ -3,25 +3,38 @@
     import { ref, onMounted, onUnmounted } from 'vue'
 
     const showFileUpload = ref(true)
-    const fileTypesAccepted = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-        'application/msword', // .doc + .dot
-        'text/markdown', // .md
-        'text/x-markdown', // .md (alternative MIME type)
-        'text/plain', // .txt + .text
-        'text/csv', // .csv
-        'application/csv', // .csv (alternative MIME type),
-        'application/json', // .json
-        // 'application/vnd.ms-excel', // .xls + .xlsm + .xlt + .xltm,
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        // 'application/vnd.ms-powerpoint', // .ppt + .pptx
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-        'image/png',
-        'image/jpeg',
-        'image/webp',
-        'image/gif'
-    ]
+    const acceptedFileTypes = {
+        '.c': ['text/x-c', 'text/plain'],
+        '.cpp': ['text/x-c++', 'text/plain'],
+        '.css': ['text/css'],
+        '.csv': ['text/csv', 'application/csv'],
+        '.pdf': ['application/pdf'],
+        '.doc': ['application/msword'],
+        '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        '.gif': ['image/gif'],
+        '.go': ['text/x-go', 'text/plain'],
+        '.html': ['text/html'],
+        '.java': ['text/x-java-source', 'text/plain'],
+        '.jpeg': ['image/jpeg'],
+        '.jpg': ['image/jpeg'],
+        '.js': ['text/javascript', 'application/javascript'],
+        '.json': ['application/json'],
+        '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+        '.php': ['application/x-httpd-php', 'text/x-php', 'text/plain'],
+        '.pkl': ['application/octet-stream'],
+        '.png': ['image/png'],
+        '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+        '.py': ['text/x-python', 'text/plain'],
+        '.rb': ['text/x-ruby', 'text/plain'],
+        '.tar': ['application/x-tar'],
+        '.tex': ['application/x-tex', 'text/x-tex', 'text/plain'],
+        '.ts': ['text/typescript', 'application/typescript', 'video/mp2t', 'text/plain'],
+        '.txt': ['text/plain'],
+        '.webp': ['image/webp'],
+        '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        '.xml': ['application/xml', 'text/xml']
+    }
+    const acceptedFileExtensions = Object.keys(acceptedFileTypes)
     const emit = defineEmits(['remove-file', 'add-file', 'clear-files'])
 
     const props = defineProps({
@@ -69,6 +82,13 @@
         return `${bytes} bytes`
     }
 
+    function isAcceptedFile(file) {
+        const extensionIndex = file.name.lastIndexOf('.')
+        const extension = extensionIndex >= 0 ? file.name.slice(extensionIndex).toLowerCase() : ''
+        const acceptedMimeTypes = acceptedFileTypes[extension]
+        return Boolean(acceptedMimeTypes) && (!file.type || acceptedMimeTypes.includes(file.type))
+    }
+
     function onDrop(e) {
         e.preventDefault()
         isDragging.value = false
@@ -92,7 +112,7 @@
     }
 
     async function uploadFiles(files, simulateDrop = true) {
-        const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
+        const acceptedFiles = files.filter(isAcceptedFile)
         if (acceptedFiles.length === 0) {
             console.warn("File type not accepted")
             showUploadError('Ugyldig filtype')
@@ -276,7 +296,7 @@
             uploadFiles(files, true)
             e.target.value = ''
         }"
-        :accept="fileTypesAccepted.join(', ')"
+        :accept="acceptedFileExtensions.join(',')"
     />
 
     <div
@@ -363,6 +383,8 @@
         opacity: 0;
     }
     .fileSelectButton .tooltip {
+        max-width: calc(100dvw -10rem) !important;
+        overflow: hidden;
         bottom: 50%;
         left: 2.5rem;
         background-color: var(--color-input-background);
