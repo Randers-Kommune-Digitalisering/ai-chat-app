@@ -11,9 +11,12 @@
         'text/x-markdown', // .md (alternative MIME type)
         'text/plain', // .txt + .text
         'text/csv', // .csv
-        'application/csv', // .csv (alternative MIME type)
+        'application/csv', // .csv (alternative MIME type),
+        'application/json', // .json
+        // 'application/vnd.ms-excel', // .xls + .xlsm + .xlt + .xltm,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-excel', // .xls + .xlsm + .xlt + .xltm
+        // 'application/vnd.ms-powerpoint', // .ppt + .pptx
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
         'image/png',
         'image/jpeg',
         'image/webp',
@@ -256,8 +259,9 @@
     >
         <i class="fa-solid fa-plus"></i>
         <div class="tooltip">
-            Upload dokument
+            <span class="tooltip-text">Tilføj fil til samtale</span>
             <i class="fa-regular fa-file"></i>
+            <div class="file-types">PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif)</div>
         </div>
     </button>
 
@@ -295,7 +299,7 @@
         <div :class="{ 'over-zone': isOverDropZone }">
 
             <template v-if="isOverDropZone">
-                Slip filen her ...
+                Slip filen nu
             </template>
 
             <template v-else>
@@ -322,7 +326,7 @@
                 </template>
 
                 <template v-if="!fileUploaded && !fileDropped && !fileNotAccepted">
-                    <span>Træk og slip filen her for at uploade</span>
+                    <span>Træk filen hertil for at tilføje til samtalen</span>
                 </template>
 
             </template>
@@ -367,10 +371,20 @@
         transform: translateY(50%);
         padding: 0.5rem 0.8rem;
         color: inherit;
+        text-align: left;
+    }
+    .tooltip-text {
+        letter-spacing: 0.03rem;
     }
     .fileSelectButton .tooltip i {
         margin-left: 0.4rem;
         font-size: 0.8em;
+    }
+    .file-types {
+        margin-top: 0.3rem;
+        margin-left: 0.05rem;
+        font-size: 0.8em;
+        color: var(--color-text-faded);
     }
 
     .dropZone {
