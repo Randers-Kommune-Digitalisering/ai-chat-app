@@ -15,6 +15,7 @@
 
     --color-text: #444d54;
     --color-text-dark: #373d43;
+    --color-text-faded: #7a7a7a;
 
     --color-green: rgb(35, 176, 106);
     --color-green-light: rgb(99, 181, 140);
@@ -418,6 +419,7 @@ button.randers:hover, input[type='submit'].randers:hover
 
     --color-text: #bababa;
     --color-text-dark: #f8f8f8;
+    --color-text-faded: #7a7a7a;
 
     --color-border: #2b2b2b;
     --color-border-dark: #4e4e4e;

@@ -67,5 +67,7 @@ def extract_text_from_file(file: UploadedFile) -> str:
         return extract_text_from_txt(file=file)
     elif filename.endswith('.xlsx') or filename.endswith('.xls') or filename.endswith('.xlsm') or filename.endswith('.xlt') or filename.endswith('.xltm'):
         return extract_text_from_xlsx(file=file)
+    elif filename.endswith('.csv'):
+        return extract_text_from_txt(file=file)
     else:
         raise ValueError("Unsupported file type. Only PDF, DOCX, TXT/MD, and Excel (XLSX/XLS) are supported.")

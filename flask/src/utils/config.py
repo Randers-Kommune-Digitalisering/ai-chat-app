@@ -1,4 +1,6 @@
+from datetime import datetime
 import os
+import re
 from dotenv import load_dotenv
 
 
@@ -25,6 +27,7 @@ if not AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION:
 AZURE_AISEARCH_ENDPOINT = os.environ.get('AZURE_AISEARCH_ENDPOINT', '').strip()
 AZURE_AISEARCH_INDEX_NAME = os.environ.get('AZURE_AISEARCH_INDEX_NAME', '').strip()
 AZURE_AISEARCH_SEMANTIC_CONFIG = os.environ.get('AZURE_AISEARCH_SEMANTIC_CONFIG', 'default-semantic-config').strip()
+AZURE_AISEARCH_API_KEY = os.environ.get('AZURE_AISEARCH_API_KEY', '').strip()
 AZURE_AIFOUNDRY_PROJECT_NAME = os.environ.get('AZURE_AIFOUNDRY_PROJECT_NAME', '').strip()  # Used for Agents only
 AZURE_API_VERSION_OPENAI = os.environ.get('AZURE_API_VERSION_OPENAI', '2024-12-01-preview').strip()
 AZURE_API_VERSION_FILES = os.environ.get('AZURE_API_VERSION_FILES', '2024-10-21').strip()
@@ -35,11 +38,52 @@ ASSISTANT_NAME_ID = os.environ.get('ASSISTANT_NAME_ID', 'default-assistant').str
 ASSISTANT_TYPE = os.environ.get('ASSISTANT_TYPE', 'Chat').strip()  # Enum: Agent or Chat
 ASSISTANT_ID = os.environ.get('ASSISTANT_ID')  # If type is Agent, this must be set
 ASSISTANT_ALT_ID = os.environ.get('ASSISTANT_ALT_ID', None)  # Second assistant ID for assistant toggle
+AGENT_ID = os.environ.get('AGENT_ID', ASSISTANT_ID)
+AGENT_ALT_ID = os.environ.get('AGENT_ALT_ID', ASSISTANT_ALT_ID)
 if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
-    ASSISTANT_ID = ASSISTANT_ID.strip()
+    if ASSISTANT_ID is not None:
+        ASSISTANT_ID = ASSISTANT_ID.strip()
+    if AGENT_ID is not None:
+        AGENT_ID = AGENT_ID.strip()
     if ASSISTANT_ALT_ID is not None:
         ASSISTANT_ALT_ID = ASSISTANT_ALT_ID.strip()
-SHOW_ASSISTANT_TOGGLE = bool(ASSISTANT_ALT_ID)
+    if AGENT_ALT_ID is not None:
+        AGENT_ALT_ID = AGENT_ALT_ID.strip()
+
+    # Keep legacy aliases synchronized while treating AGENT_* as primary.
+    if not AGENT_ID and ASSISTANT_ID:
+        AGENT_ID = ASSISTANT_ID
+    if not ASSISTANT_ID and AGENT_ID:
+        ASSISTANT_ID = AGENT_ID
+
+    if not AGENT_ALT_ID and ASSISTANT_ALT_ID:
+        AGENT_ALT_ID = ASSISTANT_ALT_ID
+    if not ASSISTANT_ALT_ID and AGENT_ALT_ID:
+        ASSISTANT_ALT_ID = AGENT_ALT_ID
+SHOW_ASSISTANT_TOGGLE = bool(AGENT_ALT_ID)
+
+AGENT_FILE_METADATA_ONLY = os.environ.get('AGENT_FILE_METADATA_ONLY', 'True') in ['True', 'true']
+
+
+def _parse_file_size(value: str, default: int = 10 * 1024 * 1024) -> int:
+    """Parse a positive file size such as 100MB into bytes."""
+    match = re.fullmatch(r'\s*(\d+)\s*(B|KB|MB|GB)?\s*', str(value), re.IGNORECASE)
+    if not match:
+        return default
+
+    amount = int(match.group(1))
+    unit = (match.group(2) or 'B').upper()
+    multiplier = {
+        'B': 1,
+        'KB': 1024,
+        'MB': 1024 ** 2,
+        'GB': 1024 ** 3,
+    }[unit]
+    parsed = amount * multiplier
+    return parsed if parsed > 0 else default
+
+
+AGENT_FILE_SIZE_LIMIT = _parse_file_size(os.environ.get('AGENT_FILE_SIZE_LIMIT', '100MB'))
 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]
@@ -89,7 +133,7 @@ FEEDBACK_MAIL_RECIPIENT = [
     if s.strip()
 ]
 
-# Max length of the user message when using Agent-mode (currently including any appended document content)
+# Max length of the user message when using Agent-mode (not including any appended document content)
 try:
     MAX_MESSAGE_LENGTH = int(os.environ.get('MAX_MESSAGE_LENGTH', 256000))
 except ValueError:
@@ -105,7 +149,7 @@ except ValueError:
 try:
     MAX_TOKEN_LIMIT_MESSAGE = int(os.environ.get('MAX_TOKEN_LIMIT_MESSAGE', 129024))
 except ValueError:
-    MAX_TOKEN_LIMIT_MESSAGE = 129024
+    MAX_TOKEN_LIMIT_MESSAGE = 98304
 
 DEFAULT_TOKEN_ENCODING = os.environ.get('DEFAULT_TOKEN_ENCODING', 'cl100k_base').strip()  # Used for token counting, e.g. with tiktoken
 
@@ -147,6 +191,14 @@ USE_DB = all([POSTGRES_DB, POSTGRES_USER, POSTGRES_PASS, POSTGRES_HOST, POSTGRES
 CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM = os.environ.get('CONVERSATION_LOAD_PERMIT_RS_PUBLIC_KEY_PEM', '').strip()
 CONVERSATION_LOAD_PERMIT_ISSUER = os.environ.get('CONVERSATION_LOAD_PERMIT_ISSUER', 'gpt-dashboard-portal').strip()
 CONVERSATION_LOAD_PERMIT_AUDIENCE = os.environ.get('CONVERSATION_LOAD_PERMIT_AUDIENCE', 'chat-app').strip()
+_DEFAULT_CONVERSATION_LOAD_CUTOFF_DATE = '2026-09-15'
+CONVERSATION_LOAD_CUTOFF_DATE = os.environ.get('CONVERSATION_LOAD_CUTOFF_DATE', _DEFAULT_CONVERSATION_LOAD_CUTOFF_DATE).strip()
+if not CONVERSATION_LOAD_CUTOFF_DATE:
+    CONVERSATION_LOAD_CUTOFF_DATE = _DEFAULT_CONVERSATION_LOAD_CUTOFF_DATE
+try:
+    CONVERSATION_LOAD_CUTOFF_DATE = datetime.fromisoformat(CONVERSATION_LOAD_CUTOFF_DATE)
+except ValueError:
+    CONVERSATION_LOAD_CUTOFF_DATE = datetime.fromisoformat(_DEFAULT_CONVERSATION_LOAD_CUTOFF_DATE)
 
 # Optional: comma-separated list of allowed JWT header kid values.
 CONVERSATION_LOAD_PERMIT_ALLOWED_KIDS = [
