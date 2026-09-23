@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import re
 from dotenv import load_dotenv
 
 
@@ -62,6 +63,27 @@ if str(ASSISTANT_TYPE).lower() in ['agent', 'assistant']:
 SHOW_ASSISTANT_TOGGLE = bool(AGENT_ALT_ID)
 
 AGENT_FILE_METADATA_ONLY = os.environ.get('AGENT_FILE_METADATA_ONLY', 'True') in ['True', 'true']
+
+
+def _parse_file_size(value: str, default: int = 10 * 1024 * 1024) -> int:
+    """Parse a positive file size such as 100MB into bytes."""
+    match = re.fullmatch(r'\s*(\d+)\s*(B|KB|MB|GB)?\s*', str(value), re.IGNORECASE)
+    if not match:
+        return default
+
+    amount = int(match.group(1))
+    unit = (match.group(2) or 'B').upper()
+    multiplier = {
+        'B': 1,
+        'KB': 1024,
+        'MB': 1024 ** 2,
+        'GB': 1024 ** 3,
+    }[unit]
+    parsed = amount * multiplier
+    return parsed if parsed > 0 else default
+
+
+AGENT_FILE_SIZE_LIMIT = _parse_file_size(os.environ.get('AGENT_FILE_SIZE_LIMIT', '100MB'))
 
 SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "Du er en hjælpsom AI-assistent.").strip()
 PREDEFINED_QUESTIONS = [q for q in os.getenv("PREDEFINED_QUESTIONS", "").split(";") if q.strip()]

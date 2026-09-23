@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 import base64
 import io
 from utils.azure_openai2 import get_chat_client, get_title_generator, count_tokens
-from utils.config import AGENT_FILE_METADATA_ONLY, ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, MAX_TOKEN_LIMIT_MESSAGE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
+from utils.config import AGENT_FILE_METADATA_ONLY, AGENT_FILE_SIZE_LIMIT, ASSISTANT_TYPE, ASSISTANT_NAME, ASSISTANT_NAME_ID, CONVERSATION_LOAD_CUTOFF_DATE, PREDEFINED_QUESTIONS, SHOW_ASSISTANT_TOGGLE, ASSISTANT_DESCRIPTION, ALT_TOGGLE_LABEL, ALT_ALERT_MSG, ALT_ALERT_TYPE, MAX_TOKEN_LIMIT_MESSAGE, USE_DB, TITLE_GENERATION_JOIN_TIMEOUT_S, TITLE_GENERATION_MAX_CONCURRENCY
 from utils.mail_client import send_user_feedback
 from utils.input_filter import redact_content, get_filter_content
 from utils.logging import chat_messages_counter, chat_feedback_counter, chat_conversations_counter, title_generation_saturation_counter, title_generation_timeout_counter, title_generation_inflight_gauge, metrics_base_labels
@@ -45,7 +45,11 @@ def _sse_event(event_name: str, payload: dict) -> str:
     return f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _decode_uploaded_files(files_data: list) -> list:
+class FileSizeLimitError(ValueError):
+    pass
+
+
+def _decode_uploaded_files(files_data: list, max_size_bytes: int | None = None) -> list:
     """
     Decode base64 file payloads from request JSON into file-like objects.
 
@@ -60,9 +64,13 @@ def _decode_uploaded_files(files_data: list) -> list:
             continue
         try:
             file_bytes = base64.b64decode(content_b64)
+            if max_size_bytes is not None and len(file_bytes) > max_size_bytes:
+                raise FileSizeLimitError(name)
             file_obj = io.BytesIO(file_bytes)
             file_obj.filename = name
             files.append(file_obj)
+        except FileSizeLimitError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to decode file {name}: {e}")
     return files
@@ -198,6 +206,7 @@ def get_config():
         "altToggleLabel": ALT_TOGGLE_LABEL,
         "altAlertMsg": ALT_ALERT_MSG,
         "altAlertType": ALT_ALERT_TYPE,
+        "agentFileSizeLimit": AGENT_FILE_SIZE_LIMIT,
         "conversationLoadCutoffDate": CONVERSATION_LOAD_CUTOFF_DATE.isoformat() if CONVERSATION_LOAD_CUTOFF_DATE else None,
     }
     return jsonify(config)
@@ -259,7 +268,13 @@ def create_thread_message(thread_id):
 
     conversation_title = None
 
-    files = _decode_uploaded_files(files_data)
+    try:
+        files = _decode_uploaded_files(files_data, max_size_bytes=AGENT_FILE_SIZE_LIMIT)
+    except FileSizeLimitError:
+        return jsonify({
+            "success": False,
+            "message": "En eller flere filer overskrider den tilladte filstørrelse.",
+        }), 413
 
     # Get response from Azure
     try:
@@ -399,7 +414,13 @@ def create_thread_message_stream(thread_id):
         )
 
     chat_messages_counter.labels(**metrics_base_labels(), mode='agent').inc()
-    files = _decode_uploaded_files(files_data)
+    try:
+        files = _decode_uploaded_files(files_data, max_size_bytes=AGENT_FILE_SIZE_LIMIT)
+    except FileSizeLimitError:
+        return jsonify({
+            "success": False,
+            "message": "En eller flere filer overskrider den tilladte filstørrelse.",
+        }), 413
 
     @stream_with_context
     def generate_events():

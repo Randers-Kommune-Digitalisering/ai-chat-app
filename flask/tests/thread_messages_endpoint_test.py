@@ -115,6 +115,46 @@ def test_thread_message_stream_rejects_token_overflow_before_stream(client):
     assert "for lang" in body["message"]
 
 
+def test_thread_message_rejects_file_over_size_limit_before_azure(client):
+    with patch("api_endpoints.AGENT_FILE_SIZE_LIMIT", 2), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+    ) as mock_fetch:
+        response = _post_thread_message(
+            client,
+            thread_id="conv_file_limit",
+            message="Hej",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+        )
+
+    assert response.status_code == 413
+    assert response.get_json()["success"] is False
+    mock_fetch.assert_not_called()
+
+
+def test_thread_message_stream_rejects_file_over_size_limit_before_azure(client):
+    with patch("api_endpoints.AGENT_FILE_SIZE_LIMIT", 2), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.stream_chat_response_with_metadata",
+    ) as mock_stream:
+        response = client.post(
+            "/api/threads/conv_stream_file_limit/messages/stream",
+            json={
+                "message": "Hej",
+                "files": [{"name": "doc.txt", "content": "SGVq"}],
+                "use_alt": False,
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.get_json()["success"] is False
+    mock_stream.assert_not_called()
+
+
 def test_thread_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}

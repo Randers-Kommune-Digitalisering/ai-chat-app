@@ -26,6 +26,11 @@
             type: Array,
             required: true
         },
+        maxFileSizeBytes: {
+            type: Number,
+            required: false,
+            default: 10 * 1024 * 1024
+        },
         showAssistantTogglePadding: {
             type: Boolean,
             required: false,
@@ -40,6 +45,26 @@
     const fileUploaded = ref(false)
     const fileInputRef = ref(null)
     const fileNotAccepted = ref(false)
+    const uploadErrorMessage = ref('')
+
+    function showUploadError(message) {
+        uploadErrorMessage.value = message
+        fileNotAccepted.value = true
+        fileDropped.value = true
+        setTimeout(() => {
+            fileDropped.value = false
+        }, 2000)
+        setTimeout(() => {
+            fileNotAccepted.value = false
+            uploadErrorMessage.value = ''
+        }, 3500)
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`
+        if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+        return `${bytes} bytes`
+    }
 
     function onDrop(e) {
         e.preventDefault()
@@ -65,6 +90,17 @@
 
     async function uploadFiles(files, simulateDrop = true) {
         const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
+        if (acceptedFiles.length === 0) {
+            console.warn("File type not accepted")
+            showUploadError('Ugyldig filtype')
+            return
+        }
+
+        if (acceptedFiles.some(file => file.size > props.maxFileSizeBytes)) {
+            showUploadError(`Filen må højst fylde ${formatFileSize(props.maxFileSizeBytes)}`)
+            return
+        }
+
         filesAwaitingUpload.value = filesTotalToUpload.value = acceptedFiles.length
         fileDropped.value = true
         if (acceptedFiles.length > 0) {
@@ -108,14 +144,7 @@
 
         } else {
             console.warn("File type not accepted")
-            // Show error notification for 2 seconds
-            fileNotAccepted.value = true
-            setTimeout(() => {
-                fileDropped.value = false
-            }, 2000)
-            setTimeout(() => {
-                fileNotAccepted.value = false
-            }, 2500)
+            showUploadError('Ugyldig filtype')
         }
     }
 
@@ -284,7 +313,7 @@
 
                 <template v-if="fileNotAccepted">
                     <i class="fa-solid fa-circle-exclamation"></i>
-                    <span>Ugyldig filtype</span>
+                    <span>{{ uploadErrorMessage }}</span>
                 </template>
 
                 <template v-if="fileUploaded">
@@ -435,7 +464,7 @@
         padding-top: 0;
         top: auto;
         bottom: 0;
-        transform: translateY(100%);
+        transform: translateY(calc(100% - 1rem));
         padding-bottom: 0;
         flex-wrap: wrap;
     }

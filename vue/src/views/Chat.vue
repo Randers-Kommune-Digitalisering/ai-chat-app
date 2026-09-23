@@ -65,6 +65,7 @@
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
     const conversationCutoffDate = ref(null)
+    const agentFileSizeLimit = ref(10 * 1024 * 1024)
     const responseGeneration = ref(0)
 
     const chatMessagesEl = ref(null)
@@ -85,6 +86,7 @@
         assistantName.value = config?.assistantName || ''
         assistantDescription.value = config?.description || ''
         conversationCutoffDate.value = parseDateValue(config?.conversationLoadCutoffDate)
+        agentFileSizeLimit.value = Number(config?.agentFileSizeLimit) || 10 * 1024 * 1024
 
         adjustChatMessagesPaddingBottom()
         window.addEventListener('resize', onResize)
@@ -783,6 +785,7 @@
             <FileUpload
                 ref="fileUploader"
                 :files="userFiles"
+                :maxFileSizeBytes="agentFileSizeLimit"
                 :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
                 @add-file="addFile"
                 @remove-file="onFileRemoved"
