@@ -761,6 +761,47 @@ def test_stream_chat_response_with_metadata_keeps_web_search_urls_even_with_ai_s
     }
 
 
+def test_remap_ai_search_reference_urls_limits_metadata_lookups_to_needed_citations(monkeypatch):
+    references = [
+        {
+            "type": "url_citation",
+            "title": "Internal 1",
+            "url": "https://we-aisearch-it.search.windows.net/doc/1",
+        },
+        {
+            "type": "url_citation",
+            "title": "Internal 2",
+            "url": "https://we-aisearch-it.search.windows.net/doc/2",
+        },
+    ]
+    ai_search_get_urls = [
+        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_0?api-version=2024-07-01",
+        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_1?api-version=2024-07-01",
+        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_2?api-version=2024-07-01",
+    ]
+
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append((get_url, timeout_s))
+        index = len(calls)
+        return {
+            "title": f"Title {index}",
+            "url": f"https://www.randers.dk/kilde/{index}",
+        }
+
+    monkeypatch.setattr(azure_openai2, "_fetch_ai_search_document_metadata", fetch_metadata)
+
+    remapped = azure_openai2._remap_ai_search_reference_urls(
+        references=references,
+        ai_search_get_urls=ai_search_get_urls,
+    )
+
+    assert len(calls) == 2
+    assert remapped[0]["url"] == "https://www.randers.dk/kilde/1"
+    assert remapped[1]["url"] == "https://www.randers.dk/kilde/2"
+
+
 def test_stream_reconstructs_ai_search_reference_when_annotations_are_missing(monkeypatch):
     get_urls = [
         "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_0?api-version=2024-07-01",

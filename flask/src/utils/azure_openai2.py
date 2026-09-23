@@ -495,8 +495,26 @@ def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: 
 
     metadata_entries: list[dict] = []
     seen_metadata_urls: set[str] = set()
+    # Bound total lookup latency and only fetch the number of entries needed for remapping.
+    max_lookups = min(len(ai_search_get_urls), len(internal_citations))
+    lookup_deadline = time.monotonic() + 10.0
     for get_url in ai_search_get_urls:
-        metadata = _fetch_ai_search_document_metadata(get_url=get_url)
+        if len(metadata_entries) >= max_lookups:
+            break
+
+        remaining_s = lookup_deadline - time.monotonic()
+        if remaining_s <= 0:
+            logger.debug(
+                "AI Search metadata remap lookup budget exhausted (internal_citations=%s fetched=%s)",
+                len(internal_citations),
+                len(metadata_entries),
+            )
+            break
+
+        metadata = _fetch_ai_search_document_metadata(
+            get_url=get_url,
+            timeout_s=min(remaining_s, 1.5),
+        )
         if not isinstance(metadata, dict):
             continue
 
