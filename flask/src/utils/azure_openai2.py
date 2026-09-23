@@ -323,6 +323,15 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
         return None
 
     request_url = _normalize_ai_search_get_url(get_url)
+    request_host = (urllib.parse.urlparse(request_url).netloc or "").strip().lower()
+    endpoint_host = (urllib.parse.urlparse(AZURE_AISEARCH_ENDPOINT).netloc or "").strip().lower()
+    if endpoint_host and request_host and request_host != endpoint_host:
+        logger.warning(
+            "Blocked AI Search metadata fetch for mismatched domain (request_host=%s endpoint_host=%s)",
+            request_host,
+            endpoint_host,
+        )
+        return None
 
     try:
         request = Request(

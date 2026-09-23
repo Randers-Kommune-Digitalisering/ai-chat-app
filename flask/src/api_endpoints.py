@@ -63,7 +63,9 @@ def _decode_uploaded_files(files_data: list, max_size_bytes: int | None = None) 
         if not name or not content_b64:
             continue
         try:
-            file_bytes = base64.b64decode(content_b64)
+            if max_size_bytes is not None and len(content_b64) > ((max_size_bytes + 2) // 3) * 4:
+                raise FileSizeLimitError(name)
+            file_bytes = base64.b64decode(content_b64, validate=True)
             if max_size_bytes is not None and len(file_bytes) > max_size_bytes:
                 raise FileSizeLimitError(name)
             file_obj = io.BytesIO(file_bytes)

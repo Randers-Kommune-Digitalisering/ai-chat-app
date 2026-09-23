@@ -520,6 +520,26 @@ def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
     assert query["api-version"] == ["2024-07-01"]
 
 
+def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch):
+    monkeypatch.setattr(azure_openai2, "AZURE_AISEARCH_API_KEY", "dummy-key")
+    monkeypatch.setattr(
+        azure_openai2,
+        "AZURE_AISEARCH_ENDPOINT",
+        "https://we-aisearch-it.search.windows.net",
+    )
+
+    def _unexpected_urlopen(*args, **kwargs):
+        raise AssertionError("urlopen should not be called for cross-domain URL")
+
+    monkeypatch.setattr(azure_openai2, "urlopen", _unexpected_urlopen)
+
+    metadata = azure_openai2._fetch_ai_search_document_metadata(
+        get_url="https://evil.example.com/indexes/docs/doc_1?api-version=2024-07-01",
+    )
+
+    assert metadata is None
+
+
 def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monkeypatch):
     get_url = (
         "https://we-aisearch-it.search.windows.net/indexes/aisearch-randersdk-index/docs/doc_1"
