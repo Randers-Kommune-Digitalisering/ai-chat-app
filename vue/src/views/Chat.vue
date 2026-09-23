@@ -407,7 +407,6 @@
         followStreamAutoScroll.value = true
         responseStatus.value = 'Assistenten tænker ...'
         completedMessageLiveText.value = ''
-        liveRegionText.value = responseStatus.value.slice(0, -4)
         startTimer()
         const isFirstMessageInConversation = chatMessages.value.length == 1
 
@@ -474,16 +473,12 @@
                         if (generation !== responseGeneration.value) return
                         if (payload?.message) {
                             responseStatus.value = payload.message
-                            liveRegionText.value = payload.message
                         }
                     },
                     onDelta: (delta) => {
                         if (generation !== responseGeneration.value) return
                         streamedResponse += delta
                         assistantMessage.content = unfilterResponseContent(streamedResponse)
-                        if (typeof delta === 'string' && delta.trim() !== '') {
-                            liveRegionText.value = delta
-                        }
                         queueStreamScroll()
                     }
                 }

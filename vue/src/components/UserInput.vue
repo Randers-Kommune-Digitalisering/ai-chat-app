@@ -108,6 +108,10 @@
         // Shift+Enter will insert a newline by default
     }
 
+    function preventInputWhenDisabled(e) {
+        if (props.disabled) e.preventDefault()
+    }
+
     const emitTextareaResize = () => {
         if (!textarea.value) return
         textarea.value.style.height = 'auto'
@@ -196,14 +200,14 @@
             ref="textarea"
             :placeholder="placeholder"
             v-model="userInput"
-            :readonly="props.disabled"
-            :aria-disabled="props.disabled"
-            class="user-input"
+            :class="['user-input', { 'user-input--busy': props.disabled }]"
+            :tabindex="props.disabled ? -1 : 0"
             rows="1"
+            @beforeinput="preventInputWhenDisabled"
             @keydown="handleKeydown"
             @input="emitTextareaResize"
         />
-        <button type="submit" :disabled="props.disabled || userInput.trim() === ''" aria-label="Send besked">
+        <button type="submit" :disabled="props.disabled || userInput.trim() === ''" aria-label="Send besked" @mousedown.prevent>
             <i class="fa-solid fa-paper-plane"></i>
         </button>
 
@@ -274,6 +278,13 @@
     }
     .user-input:focus {
         background-color: var(--color-input-background-focus);
+    }
+    .user-input--busy {
+        caret-color: transparent;
+        pointer-events: none;
+    }
+    .user-input--busy:focus {
+        background-color: var(--color-input-background);
     }
     button[type="submit"] {
         position: absolute;
