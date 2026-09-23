@@ -123,12 +123,14 @@ Valgfrie Agent-indstillinger:
 | `FOUNDRY_AGENT_VERSION` | — | Version for den primære agent reference. |
 | `AGENT_ALT_ID` | — | Alternativ agent til UI-toggle. `ASSISTANT_ALT_ID` understøttes som legacy-alias. |
 | `FOUNDRY_AGENT_ALT_VERSION` | — | Version for den alternative agent reference. |
-| `MAX_MESSAGE_LENGTH` | `256000` | Maksimal længde af brugerens tekst i tegn. |
-| `AGENT_FILE_SIZE_LIMIT` | `100MB` | Maksimal størrelse pr. uploadet Agent-fil. Understøtter `B`, `KB`, `MB` og `GB`. |
 | `AGENT_FILE_METADATA_ONLY` | `True` | Gem kun filnavn, MIME-type og størrelse i den lokale database for Agent-uploads. Sæt til `False` for også at gemme base64-kodet filindhold. Påvirker ikke upload til Foundry. |
 | `ALT_TOGGLE_LABEL` | `Brug alternativ assistent` | Label for agent-toggle. |
 | `ALT_ALERT_MSG` | — | Alert-tekst for den alternative agent. |
+| `MAX_MESSAGE_LENGTH` | `256000` | Maksimal længde af brugerens tekst i tegn. |
+| `AGENT_FILE_SIZE_LIMIT` | `100MB` | Maksimal størrelse pr. uploadet Agent-fil. Understøtter `B`, `KB`, `MB` og `GB`. |
 | `ALT_ALERT_TYPE` | `info` | Alert-type: `info`, `warning` eller `danger`. |
+| `AZURE_AISEARCH_ENDPOINT` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
+| `AZURE_AISEARCH_API_KEY` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
 
 ### Fælles valgfrie indstillinger
 
@@ -139,7 +141,7 @@ Valgfrie Agent-indstillinger:
 | `ASSISTANT_DESCRIPTION` | — | Beskrivelse, der vises i UI. |
 | `PREDEFINED_QUESTIONS` | — | Semikolonseparerede forslagsspørgsmål, eksempelvis `Spørgsmål 1;Spørgsmål 2`. |
 | `ALLOW_FILE_UPLOAD` | `False` | Reserveret indstilling; er aktuelt ikke aktiv. |
-| `MAX_TOKEN_LIMIT_MESSAGE` | `98304` | Maksimalt antal tokens for enkelt besked (inklusiv filer for Chat, eklsusiv for Agent) |
+| `MAX_TOKEN_LIMIT_MESSAGE` | `98304` | Maksimalt antal tokens for enkelt besked (inklusiv filer for Chat, eksklusiv for Agent) |
 | `AZURE_API_VERSION_OPENAI` | `2024-12-01-preview` | API-version til Azure OpenAI. |
 | `AZURE_OPENAI_DEPLOYMENT_NAME_TITLE_GENERATION` | `AZURE_OPENAI_DEPLOYMENT_NAME` | Separat deployment til automatisk titelgenerering. |
 | `TITLE_GENERATION_MAX_CONCURRENCY` | `100` | Maksimalt antal samtidige titelgenereringer pr. proces; minimum er `10`. |

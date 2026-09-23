@@ -432,6 +432,7 @@
                 console.error("Failed to start new thread.")
                 stopTimer()
                 awaitingResponse.value = false
+                await undoAndEditMessage(chatMessage)
                 errorMessage.value = _DEFAULT_ERROR_MESSAGE
                 liveRegionText.value = errorMessage.value
                 return
@@ -493,6 +494,11 @@
             if (success === false) {
                 stopTimer()
                 awaitingResponse.value = false
+
+                const assistantIndex = chatMessages.value.lastIndexOf(assistantMessage)
+                 if (assistantIndex >= 0) {
+                     chatMessages.value.splice(assistantIndex, 1)
+                 }
 
                 undoAndEditMessage(chatMessage)
                 errorMessage.value = backendMessage || _DEFAULT_ERROR_MESSAGE

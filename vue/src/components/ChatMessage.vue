@@ -634,9 +634,9 @@
         :deep(.chat-content .code-block:hover .code-copy-button) {
             display: block;
         }
-        :deep(.chat-content .code-block:focus-within .code-copy-button) {
+        /* :deep(.chat-content .code-block:focus-within .code-copy-button) {
             display: block;
-        }
+        } */ /* Not reachable as .code-block is not focusable */
         :deep(.chat-content .code-copy-button:hover:not(:disabled)) {
             background-color: var(--color-options-background-hover);
         }
