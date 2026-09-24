@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-import utils.azure_openai2 as azure_openai2
-from utils.azure_openai2 import Agent, _extract_native_annotations_from_stream_event, _status_for_stream_event
+import utils.azure_openai as azure_openai
+from utils.azure_openai import Agent, _extract_native_annotations_from_stream_event, _status_for_stream_event
 
 
 def test_status_for_stream_event_maps_reasoning_search_and_output_text_without_event_details():
@@ -503,7 +503,7 @@ def test_extract_ai_search_get_urls_from_stream_event_reads_get_urls_list():
         ),
     )
 
-    assert azure_openai2._extract_ai_search_get_urls_from_stream_event(event=event) == [get_url]
+    assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == [get_url]
 
 
 def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
@@ -512,18 +512,18 @@ def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
         "?api-version=2024-07-01&$select=id,content,title"
     )
 
-    normalized = azure_openai2._normalize_ai_search_get_url(input_url)
-    parsed = azure_openai2.urllib.parse.urlparse(normalized)
-    query = azure_openai2.urllib.parse.parse_qs(parsed.query)
+    normalized = azure_openai._normalize_ai_search_get_url(input_url)
+    parsed = azure_openai.urllib.parse.urlparse(normalized)
+    query = azure_openai.urllib.parse.parse_qs(parsed.query)
 
     assert query["$select"] == ["title,url"]
     assert query["api-version"] == ["2024-07-01"]
 
 
 def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch):
-    monkeypatch.setattr(azure_openai2, "AZURE_AISEARCH_API_KEY", "dummy-key")
+    monkeypatch.setattr(azure_openai, "AZURE_AISEARCH_API_KEY", "dummy-key")
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "AZURE_AISEARCH_ENDPOINT",
         "https://we-aisearch-it.search.windows.net",
     )
@@ -531,9 +531,9 @@ def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch)
     def _unexpected_urlopen(*args, **kwargs):
         raise AssertionError("urlopen should not be called for cross-domain URL")
 
-    monkeypatch.setattr(azure_openai2, "urlopen", _unexpected_urlopen)
+    monkeypatch.setattr(azure_openai, "urlopen", _unexpected_urlopen)
 
-    metadata = azure_openai2._fetch_ai_search_document_metadata(
+    metadata = azure_openai._fetch_ai_search_document_metadata(
         get_url="https://evil.example.com/indexes/docs/doc_1?api-version=2024-07-01",
     )
 
@@ -590,7 +590,7 @@ def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monke
     agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
 
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "_fetch_ai_search_document_metadata",
         lambda get_url, timeout_s=5.0: {
             "title": "Discgolf%20-%20Randers%20Kommune",
@@ -668,7 +668,7 @@ def test_stream_chat_response_with_metadata_decodes_encoded_metadata_url(monkeyp
     agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
 
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "_fetch_ai_search_document_metadata",
         lambda get_url, timeout_s=5.0: {
             "title": "Discgolf%20-%20Randers%20Kommune",
@@ -739,7 +739,7 @@ def test_stream_chat_response_with_metadata_keeps_web_search_urls_even_with_ai_s
     agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
 
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "_fetch_ai_search_document_metadata",
         lambda get_url, timeout_s=5.0: {
             "title": "Discgolf%20-%20Randers%20Kommune",
@@ -790,9 +790,9 @@ def test_remap_ai_search_reference_urls_limits_metadata_lookups_to_needed_citati
             "url": f"https://www.randers.dk/kilde/{index}",
         }
 
-    monkeypatch.setattr(azure_openai2, "_fetch_ai_search_document_metadata", fetch_metadata)
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
 
-    remapped = azure_openai2._remap_ai_search_reference_urls(
+    remapped = azure_openai._remap_ai_search_reference_urls(
         references=references,
         ai_search_get_urls=ai_search_get_urls,
     )
@@ -850,7 +850,7 @@ def test_stream_reconstructs_ai_search_reference_when_annotations_are_missing(mo
             "url": "https%3A%2F%2Fwww.randers.dk%2Fborger%2Ffritid%2Fdiscgolf%2F",
         }
 
-    monkeypatch.setattr(azure_openai2, "_fetch_ai_search_document_metadata", fetch_metadata)
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
 
     agent = Agent.__new__(Agent)
     agent.client = SimpleNamespace(responses=_FakeResponses())
@@ -910,7 +910,7 @@ def test_stream_does_not_apply_ai_search_marker_fallback_when_web_search_is_pres
             return iter(events)
 
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "_fetch_ai_search_document_metadata",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("AI Search fallback must not run")),
     )
@@ -932,7 +932,7 @@ def test_build_ai_search_references_from_text_supports_bracket_marker_without_tu
     answer = "Se kilden her 【0†source】."
 
     monkeypatch.setattr(
-        azure_openai2,
+        azure_openai,
         "_fetch_ai_search_document_metadata",
         lambda get_url, timeout_s=5.0: {
             "title": "Regler",
@@ -940,7 +940,7 @@ def test_build_ai_search_references_from_text_supports_bracket_marker_without_tu
         },
     )
 
-    references = azure_openai2._build_ai_search_references_from_text(answer, get_urls)
+    references = azure_openai._build_ai_search_references_from_text(answer, get_urls)
 
     assert references == [
         {
@@ -961,7 +961,7 @@ def test_extract_ai_search_citation_markers_supports_malformed_foundry_variants(
     ]
 
     for answer, expected_indices in cases:
-        markers = azure_openai2._extract_ai_search_citation_markers(answer, source_count=5)
+        markers = azure_openai._extract_ai_search_citation_markers(answer, source_count=5)
 
         assert len(markers) == 1
         assert markers[0][2] == expected_indices
@@ -975,7 +975,7 @@ def test_extract_ai_search_citation_markers_only_infers_indexless_marker_for_one
 
     for answer in answers:
         marker_start = answer.index("cite") if "cite" in answer else answer.index("turn7")
-        assert azure_openai2._extract_ai_search_citation_markers(answer, source_count=5) == []
-        assert azure_openai2._extract_ai_search_citation_markers(answer, source_count=1) == [
+        assert azure_openai._extract_ai_search_citation_markers(answer, source_count=5) == []
+        assert azure_openai._extract_ai_search_citation_markers(answer, source_count=1) == [
             (marker_start, len(answer), [0])
         ]
