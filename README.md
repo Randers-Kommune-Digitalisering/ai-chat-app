@@ -225,6 +225,8 @@ De tilhørende miljøvariabler er beskrevet under **Metrics og runtime** i milj�
 
 ## Udvikling
 
+Backendens aktuelle HTTP- og streaming-kontrakter er beskrevet i [backend contract baseline](docs/backend-contracts.md), som bruges ved den trinvise refaktorering.
+
 * Kørsel af Frontenden (Vue): ```cd vue && npm install && npm run dev```
 * Kørsel af Bakcenden (Python): ```python flask/src/main.py```
 * Kørsel af frontend + backend i docker: ```docker-compose up``` i top dir (backend på port 8080, frontend på port 3000)

@@ -50,6 +50,20 @@ def _post_chat_message(client, *, messages, conversation_id=None, user_email="us
     )
 
 
+def test_chat_messages_redacts_history_before_provider(client):
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text.replace("private", "[REDACTED]"),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None, 200),
+    ) as mock_fetch:
+        response = _post_chat_message(client, messages=[{"role": "user", "content": "private"}])
+
+    assert response.status_code == 200
+    assert response.get_json()["response"] == "assistant reply"
+    assert mock_fetch.call_args.kwargs["chat_messages"][0]["content"] == "[REDACTED]"
+
+
 def test_chat_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}
