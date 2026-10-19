@@ -761,34 +761,28 @@ def test_stream_chat_response_with_metadata_keeps_web_search_urls_even_with_ai_s
     }
 
 
-def test_remap_ai_search_reference_urls_limits_metadata_lookups_to_needed_citations(monkeypatch):
+def test_remap_ai_search_reference_urls_finds_matching_metadata_beyond_first_results(monkeypatch):
     references = [
         {
             "type": "url_citation",
-            "title": "Internal 1",
+            "title": "Ugens%20menu%20-%20Broen",
             "url": "https://we-aisearch-it.search.windows.net/doc/1",
-        },
-        {
-            "type": "url_citation",
-            "title": "Internal 2",
-            "url": "https://we-aisearch-it.search.windows.net/doc/2",
         },
     ]
     ai_search_get_urls = [
-        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_0?api-version=2024-07-01",
-        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_1?api-version=2024-07-01",
-        "https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_2?api-version=2024-07-01",
+        f"https://we-aisearch-it.search.windows.net/indexes/documents/docs/doc_{index}?api-version=2024-07-01"
+        for index in range(3)
+    ]
+    calls = []
+    metadata = [
+        {"title": "Undertekstning", "url": "https://broen.randers.dk/kommunikation/undertekstning/"},
+        {"title": "Webtilgaengelighed", "url": "https://broen.randers.dk/kommunikation/webtilgaengelighed/"},
+        {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/ejendomsservice/kantinerne/ugens-menu/"},
     ]
 
-    calls = []
-
     def fetch_metadata(get_url, timeout_s=5.0):
-        calls.append((get_url, timeout_s))
-        index = len(calls)
-        return {
-            "title": f"Title {index}",
-            "url": f"https://www.randers.dk/kilde/{index}",
-        }
+        calls.append(get_url)
+        return metadata[ai_search_get_urls.index(get_url)]
 
     monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
 
@@ -797,9 +791,130 @@ def test_remap_ai_search_reference_urls_limits_metadata_lookups_to_needed_citati
         ai_search_get_urls=ai_search_get_urls,
     )
 
-    assert len(calls) == 2
-    assert remapped[0]["url"] == "https://www.randers.dk/kilde/1"
-    assert remapped[1]["url"] == "https://www.randers.dk/kilde/2"
+    assert calls == ai_search_get_urls
+    assert remapped[0]["url"] == metadata[2]["url"]
+
+
+def test_remap_ai_search_reference_urls_keeps_unmatched_and_ambiguous_citations(monkeypatch):
+    get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(2)]
+    metadata = [
+        {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/menu/a/"},
+        {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/menu/b/"},
+    ]
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: metadata[get_urls.index(get_url)],
+    )
+    references = [
+        {"type": "url_citation", "title": "Ugens menu - Broen", "url": "https://we-aisearch-it.search.windows.net/"},
+        {"type": "url_citation", "title": "Anden side", "url": "https://we-aisearch-it.search.windows.net/"},
+    ]
+
+    remapped = azure_openai._remap_ai_search_reference_urls(references, get_urls)
+
+    assert [reference["url"] for reference in remapped] == [
+        "https://we-aisearch-it.search.windows.net/",
+        "https://we-aisearch-it.search.windows.net/",
+    ]
+
+
+def test_remap_ai_search_reference_urls_does_not_guess_after_failed_lookup(monkeypatch):
+    get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(2)]
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: (
+            {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/menu/old/"}
+            if get_url == get_urls[0] else None
+        ),
+    )
+    reference = {
+        "type": "url_citation",
+        "title": "Ugens menu - Broen",
+        "url": "https://we-aisearch-it.search.windows.net/",
+    }
+
+    remapped = azure_openai._remap_ai_search_reference_urls([reference], get_urls)
+
+    assert remapped[0]["url"] == "https://we-aisearch-it.search.windows.net/"
+
+
+def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkeypatch):
+    get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
+    public_url = "https://broen.randers.dk/ejendomsservice/intern-service/kantinerne/ugens-menu/"
+    metadata = [
+        {"title": "Undertekstning", "url": "https://broen.randers.dk/kommunikation/undertekstning/"},
+        {"title": "Tilgaengelighed", "url": "https://broen.randers.dk/kommunikation/tilgaengelighed/"},
+        {"title": "Ugens menu - Broen", "url": public_url},
+    ]
+    answer = "Pa Laksetorvet: kl. 11-13\u30105:2\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+    annotation = {
+        "type": "url_citation",
+        "title": "Ugens%20menu%20-%20Broen",
+        "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": marker_start,
+        "end_index": len(answer),
+    }
+    events = [
+        SimpleNamespace(
+            type="response.output_item.done",
+            item=SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": get_urls}),
+        ),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[])),
+    ]
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append(get_url)
+        return metadata[get_urls.index(get_url)]
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_menu"))
+
+    assert calls == [get_urls[2]]
+    assert emitted[-1] == {
+        "type": "references",
+        "references": [{**annotation, "url": public_url}],
+    }
+
+
+def test_remap_ai_search_reference_urls_uses_citation_marker_for_duplicate_titles(monkeypatch):
+    get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
+    metadata = [
+        {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/menu/old/"},
+        {"title": "Anden side", "url": "https://broen.randers.dk/anden-side/"},
+        {"title": "Ugens menu - Broen", "url": "https://broen.randers.dk/menu/current/"},
+    ]
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append(get_url)
+        return metadata[get_urls.index(get_url)]
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    answer = "\U0001f600 Pa Laksetorvet: kl. 11-13\u30105:2\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+    references = [{
+        "type": "url_citation",
+        "title": "Ugens%20menu%20-%20Broen",
+        "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": azure_openai._python_index_to_utf16(answer, marker_start),
+        "end_index": azure_openai._python_index_to_utf16(answer, len(answer)),
+    }]
+
+    remapped = azure_openai._remap_ai_search_reference_urls(references, get_urls, answer_text=answer)
+
+    assert calls == [get_urls[2]]
+    assert remapped[0]["url"] == metadata[2]["url"]
 
 
 def test_stream_reconstructs_ai_search_reference_when_annotations_are_missing(monkeypatch):

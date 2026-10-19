@@ -470,13 +470,16 @@ def _get_url_citation_container(reference: Any) -> dict | None:
     return None
 
 
-def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: list[str]) -> list[dict]:
+def _remap_ai_search_reference_urls(
+    references: list[dict], ai_search_get_urls: list[str], answer_text: str = ""
+) -> list[dict]:
     """
-    Replace internal search.windows.net citation URLs using AI Search metadata lookups.
+    Replace internal search.windows.net citation URLs only when the source can be identified.
 
     :param references: Extracted reference annotations.
     :param ai_search_get_urls: URLs from AI Search get_urls output.
-    :return: References with internal AI Search URLs replaced when metadata is available.
+    :param answer_text: Full answer, used to match annotation offsets to source markers.
+    :return: References with resolved AI Search URLs replaced.
     """
     if not references or not ai_search_get_urls:
         return references
@@ -493,64 +496,69 @@ def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: 
     if not internal_citations:
         return references
 
-    metadata_entries: list[dict] = []
-    seen_metadata_urls: set[str] = set()
-    # Bound total lookup latency and only fetch the number of entries needed for remapping.
-    max_lookups = min(len(ai_search_get_urls), len(internal_citations))
+    marker_indices = {
+        (_python_index_to_utf16(answer_text, start), _python_index_to_utf16(answer_text, end)): indices[0]
+        for start, end, indices in _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
+        if len(indices) == 1
+    }
+    metadata_by_index: dict[int, dict | None] = {}
     lookup_deadline = time.monotonic() + 10.0
-    for get_url in ai_search_get_urls:
-        if len(metadata_entries) >= max_lookups:
-            break
 
+    def fetch_metadata(index: int) -> dict | None:
+        if index in metadata_by_index:
+            return metadata_by_index[index]
         remaining_s = lookup_deadline - time.monotonic()
         if remaining_s <= 0:
-            logger.debug(
-                "AI Search metadata remap lookup budget exhausted (internal_citations=%s fetched=%s)",
-                len(internal_citations),
-                len(metadata_entries),
-            )
-            break
-
+            return None
         metadata = _fetch_ai_search_document_metadata(
-            get_url=get_url,
+            get_url=ai_search_get_urls[index],
             timeout_s=min(remaining_s, 1.5),
         )
-        if not isinstance(metadata, dict):
-            continue
+        metadata_by_index[index] = metadata if isinstance(metadata, dict) else None
+        return metadata_by_index[index]
 
-        public_url = _extract_public_url_from_metadata(metadata=metadata)
-        if not public_url:
-            continue
-        if public_url in seen_metadata_urls:
-            continue
-
-        seen_metadata_urls.add(public_url)
-        metadata_entries.append({
-            "url": public_url,
-            "title": str(metadata.get("title") or "").strip(),
-        })
-
-    if not metadata_entries:
-        return references
-
-    title_to_url: dict[str, str] = {}
-    ordered_urls: list[str] = []
-    for entry in metadata_entries:
-        url = entry["url"]
-        ordered_urls.append(url)
-        title_key = _normalize_title_key(entry.get("title"))
-        if title_key and title_key not in title_to_url:
-            title_to_url[title_key] = url
-
-    fallback_index = 0
+    unresolved: list[dict] = []
     for citation in internal_citations:
-        replacement_url = title_to_url.get(_normalize_title_key(citation.get("title")))
-        if not replacement_url and fallback_index < len(ordered_urls):
-            replacement_url = ordered_urls[fallback_index]
-            fallback_index += 1
+        start, end = citation.get("start_index"), citation.get("end_index")
+        index = marker_indices.get((start, end)) if isinstance(start, int) and isinstance(end, int) else None
+        if index is not None:
+            metadata = fetch_metadata(index)
+            if metadata and _normalize_title_key(metadata.get("title")) == _normalize_title_key(citation.get("title")):
+                public_url = _extract_public_url_from_metadata(metadata)
+                if public_url:
+                    citation["url"] = public_url
+                    continue
+        unresolved.append(citation)
 
-        if replacement_url:
-            citation["url"] = replacement_url
+    if unresolved and any(_normalize_title_key(citation.get("title")) for citation in unresolved):
+        title_to_urls: dict[str, set[str]] = {}
+        complete_scan = True
+        for index in range(len(ai_search_get_urls)):
+            metadata = fetch_metadata(index)
+            if not metadata:
+                complete_scan = False
+                continue
+            title_key = _normalize_title_key(metadata.get("title"))
+            public_url = _extract_public_url_from_metadata(metadata)
+            if not title_key or not public_url:
+                complete_scan = False
+                continue
+            title_to_urls.setdefault(title_key, set()).add(public_url)
+
+        if complete_scan:
+            for citation in unresolved:
+                matching_urls = title_to_urls.get(_normalize_title_key(citation.get("title")), set())
+                if len(matching_urls) == 1:
+                    citation["url"] = next(iter(matching_urls))
+
+    unresolved_count = sum(_is_internal_ai_search_url(str(citation.get("url") or "")) for citation in internal_citations)
+    if unresolved_count:
+        logger.warning(
+            "AI Search citations left unresolved to avoid incorrect source links (count=%s fetched=%s total=%s)",
+            unresolved_count,
+            len(metadata_by_index),
+            len(ai_search_get_urls),
+        )
 
     return references
 
@@ -1447,6 +1455,7 @@ class Agent(AzureOpenAIClient):
                     latest_references = _remap_ai_search_reference_urls(
                         references=latest_references,
                         ai_search_get_urls=ai_search_get_urls,
+                        answer_text="".join(response_text_parts),
                     )
                     logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
@@ -1475,6 +1484,7 @@ class Agent(AzureOpenAIClient):
                 latest_references = _remap_ai_search_reference_urls(
                     references=latest_references,
                     ai_search_get_urls=ai_search_get_urls,
+                    answer_text="".join(response_text_parts),
                 )
                 logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
@@ -1501,6 +1511,7 @@ class Agent(AzureOpenAIClient):
             latest_references = _remap_ai_search_reference_urls(
                 references=latest_references,
                 ai_search_get_urls=ai_search_get_urls,
+                answer_text="".join(response_text_parts),
             )
             logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
