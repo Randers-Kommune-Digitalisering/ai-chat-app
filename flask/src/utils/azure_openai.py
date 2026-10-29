@@ -474,7 +474,7 @@ def _remap_ai_search_reference_urls(
     :param answer_text: Full answer, used to match annotation offsets to source markers.
     :return: References with resolved AI Search URLs replaced.
     """
-    if not references or not ai_search_get_urls:
+    if not references:
         return references
 
     internal_citations: list[dict] = []
@@ -487,6 +487,15 @@ def _remap_ai_search_reference_urls(
             internal_citations.append(citation)
 
     if not internal_citations:
+        return references
+
+    if not ai_search_get_urls:
+        for citation in internal_citations:
+            citation.pop("url", None)
+        logger.warning(
+            "AI Search citation URLs removed because canonical source slots are unavailable (count=%s)",
+            len(internal_citations),
+        )
         return references
 
     marker_indices = {
@@ -544,10 +553,17 @@ def _remap_ai_search_reference_urls(
                 if len(matching_urls) == 1:
                     citation["url"] = next(iter(matching_urls))
 
-    unresolved_count = sum(_is_internal_ai_search_url(str(citation.get("url") or "")) for citation in internal_citations)
+    unresolved_count = sum(
+        _is_internal_ai_search_url(str(citation.get("url") or ""))
+        for citation in internal_citations
+    )
     if unresolved_count:
+        for citation in internal_citations:
+            if _is_internal_ai_search_url(str(citation.get("url") or "")):
+                citation.pop("url", None)
         logger.warning(
-            "AI Search citations left unresolved to avoid incorrect source links (count=%s fetched=%s total=%s)",
+            "Unresolved AI Search citation URLs removed to avoid exposing internal links "
+            "(count=%s fetched=%s total=%s)",
             unresolved_count,
             len(metadata_by_index),
             len(ai_search_get_urls),
@@ -1408,18 +1424,13 @@ class Agent(AzureOpenAIClient):
                 response_text_parts.append(event.delta)
                 yield {"type": "delta", "text": event.delta}
 
-            extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
-            if extracted_get_urls:
-                if event_type == "response.completed":
-                    ai_search_get_urls = extracted_get_urls
-                elif event_type == "response.output_item.done":
-                    ai_search_get_urls.extend(extracted_get_urls)
-                if event_type != "response.output_item.added":
-                    logger.debug(
-                        "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
-                        thread_id,
-                        len(ai_search_get_urls),
-                    )
+            if event_type == "response.completed":
+                ai_search_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
+                logger.debug(
+                    "Agent stream captured canonical ai_search get_urls (thread_id=%s count=%s)",
+                    thread_id,
+                    len(ai_search_get_urls),
+                )
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":

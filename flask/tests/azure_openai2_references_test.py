@@ -569,6 +569,10 @@ def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monke
             response=SimpleNamespace(
                 output=[
                     SimpleNamespace(
+                        type="azure_ai_search_call_output",
+                        output={"get_urls": [get_url]},
+                    ),
+                    SimpleNamespace(
                         type="message",
                         content=[SimpleNamespace(type="output_text", annotations=[])],
                     )
@@ -647,6 +651,10 @@ def test_stream_chat_response_with_metadata_decodes_encoded_metadata_url(monkeyp
             response=SimpleNamespace(
                 output=[
                     SimpleNamespace(
+                        type="azure_ai_search_call_output",
+                        output={"get_urls": [get_url]},
+                    ),
+                    SimpleNamespace(
                         type="message",
                         content=[SimpleNamespace(type="output_text", annotations=[])],
                     )
@@ -717,6 +725,10 @@ def test_stream_chat_response_with_metadata_keeps_web_search_urls_even_with_ai_s
             type="response.completed",
             response=SimpleNamespace(
                 output=[
+                    SimpleNamespace(
+                        type="azure_ai_search_call_output",
+                        output={"get_urls": [get_url]},
+                    ),
                     SimpleNamespace(
                         type="message",
                         content=[SimpleNamespace(type="output_text", annotations=[])],
@@ -813,10 +825,7 @@ def test_remap_ai_search_reference_urls_keeps_unmatched_and_ambiguous_citations(
 
     remapped = azure_openai._remap_ai_search_reference_urls(references, get_urls)
 
-    assert [reference["url"] for reference in remapped] == [
-        "https://we-aisearch-it.search.windows.net/",
-        "https://we-aisearch-it.search.windows.net/",
-    ]
+    assert all("url" not in reference for reference in remapped)
 
 
 def test_remap_ai_search_reference_urls_does_not_guess_after_failed_lookup(monkeypatch):
@@ -837,7 +846,7 @@ def test_remap_ai_search_reference_urls_does_not_guess_after_failed_lookup(monke
 
     remapped = azure_openai._remap_ai_search_reference_urls([reference], get_urls)
 
-    assert remapped[0]["url"] == "https://we-aisearch-it.search.windows.net/"
+    assert "url" not in remapped[0]
 
 
 def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkeypatch):
@@ -864,7 +873,17 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
         ),
         SimpleNamespace(type="response.output_text.delta", delta=answer),
         SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
-        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[])),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(
+                output=[
+                    SimpleNamespace(
+                        type="azure_ai_search_call_output",
+                        output={"get_urls": get_urls},
+                    )
+                ]
+            ),
+        ),
     ]
     calls = []
 
@@ -942,6 +961,52 @@ def test_stream_preserves_duplicate_ai_search_result_slots_when_remapping(monkey
     assert emitted[-1]["references"][0]["url"] == metadata_by_url[duplicate_url]["url"]
 
 
+def test_stream_removes_internal_ai_search_url_without_canonical_results(monkeypatch):
+    get_url = "https://we-aisearch-it.search.windows.net/docs/partial"
+    annotation = {
+        "type": "url_citation",
+        "title": "Shared title",
+        "url": "https://we-aisearch-it.search.windows.net/",
+    }
+    events = [
+        SimpleNamespace(
+            type="response.output_item.done",
+            item=SimpleNamespace(
+                type="azure_ai_search_call_output",
+                output={"get_urls": [get_url]},
+            ),
+        ),
+        SimpleNamespace(
+            type="response.output_text.annotation.added",
+            annotation=annotation,
+        ),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(
+                output=[
+                    SimpleNamespace(
+                        type="message",
+                        content=[SimpleNamespace(type="output_text", annotations=[])],
+                    )
+                ]
+            ),
+        ),
+    ]
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("non-canonical URL list used")),
+    )
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_no_canonical_search_results"))
+
+    assert "url" not in emitted[-1]["references"][0]
+
+
 def test_remap_ai_search_reference_urls_uses_citation_marker_for_duplicate_titles(monkeypatch):
     get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
     metadata = [
@@ -998,6 +1063,10 @@ def test_stream_reconstructs_ai_search_reference_when_annotations_are_missing(mo
             type="response.completed",
             response=SimpleNamespace(
                 output=[
+                    SimpleNamespace(
+                        type="azure_ai_search_call_output",
+                        output={"get_urls": get_urls},
+                    ),
                     SimpleNamespace(
                         type="message",
                         content=[SimpleNamespace(type="output_text", annotations=[])],
