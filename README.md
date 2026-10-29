@@ -45,6 +45,8 @@ Robust håndtering af Azure/OpenAI-fejl som en del af chat-flowet:
 ## Miljøvariabler
 Konfiguration indlæses fra miljøet og fra en lokal `.env`-fil. Gem ikke nøgler eller passwords i Git; injicér dem via den godkendte secret store i det relevante miljø.
 
+Brug [.env.example](.env.example) som udgangspunkt for en lokal `.env`-fil, og erstat placeholder-værdierne med dine egne. `.env`-filen indeholder secrets og må ikke committes.
+
 `ASSISTANT_TYPE` vælger klienten og bør sættes eksplicit til enten `Chat` eller `Agent`. Værdien har default `Chat`. Andre værdier behandles også som Chat, så brug det dokumenterede navn for at undgå fejlkonfiguration.
 
 ### Nødvendige for begge typer
