@@ -887,6 +887,61 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
     }
 
 
+def test_stream_preserves_duplicate_ai_search_result_slots_when_remapping(monkeypatch):
+    duplicate_url = "https://we-aisearch-it.search.windows.net/docs/duplicate"
+    other_url = "https://we-aisearch-it.search.windows.net/docs/other"
+    get_urls = [duplicate_url, duplicate_url, other_url]
+    answer = "Se kilden \u30105:1\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+    annotation = {
+        "type": "url_citation",
+        "title": "Shared title",
+        "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": marker_start,
+        "end_index": len(answer),
+    }
+    search_item = SimpleNamespace(
+        type="azure_ai_search_call_output",
+        output={"get_urls": get_urls},
+    )
+    events = [
+        SimpleNamespace(type="response.output_item.added", item=search_item),
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(output=[search_item]),
+        ),
+    ]
+    metadata_by_url = {
+        duplicate_url: {
+            "title": "Shared title",
+            "url": "https://www.randers.dk/duplicate/",
+        },
+        other_url: {
+            "title": "Shared title",
+            "url": "https://www.randers.dk/other/",
+        },
+    }
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append(get_url)
+        return metadata_by_url[get_url]
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_duplicate_search_results"))
+
+    assert calls == [duplicate_url]
+    assert emitted[-1]["references"][0]["url"] == metadata_by_url[duplicate_url]["url"]
+
+
 def test_remap_ai_search_reference_urls_uses_citation_marker_for_duplicate_titles(monkeypatch):
     get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
     metadata = [

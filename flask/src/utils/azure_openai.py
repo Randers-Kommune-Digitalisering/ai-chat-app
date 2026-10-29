@@ -247,7 +247,6 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
     if _get_field(item, "type") != "azure_ai_search_call_output":
         return []
 
-    seen: set[str] = set()
     get_urls: list[str] = []
 
     def visit(value: Any) -> None:
@@ -270,9 +269,8 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
         if isinstance(raw_urls, (list, tuple)):
             for candidate in raw_urls:
                 candidate_url = str(candidate or "").strip()
-                if not candidate_url or candidate_url in seen:
+                if not candidate_url:
                     continue
-                seen.add(candidate_url)
                 get_urls.append(candidate_url)
 
         for nested in normalized.values():
@@ -298,14 +296,9 @@ def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     if event_type == "response.completed":
         response = _get_field(event, "response")
         output_items = list(_get_field(response, "output", []) or [])
-        seen: set[str] = set()
         merged: list[str] = []
         for output_item in output_items:
-            for get_url in _extract_ai_search_get_urls_from_item(output_item):
-                if get_url in seen:
-                    continue
-                seen.add(get_url)
-                merged.append(get_url)
+            merged.extend(_extract_ai_search_get_urls_from_item(output_item))
         return merged
 
     return []
@@ -1417,14 +1410,16 @@ class Agent(AzureOpenAIClient):
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
             if extracted_get_urls:
-                for get_url in extracted_get_urls:
-                    if get_url not in ai_search_get_urls:
-                        ai_search_get_urls.append(get_url)
-                logger.debug(
-                    "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
-                    thread_id,
-                    len(ai_search_get_urls),
-                )
+                if event_type == "response.completed":
+                    ai_search_get_urls = extracted_get_urls
+                elif event_type == "response.output_item.done":
+                    ai_search_get_urls.extend(extracted_get_urls)
+                if event_type != "response.output_item.added":
+                    logger.debug(
+                        "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
+                        thread_id,
+                        len(ai_search_get_urls),
+                    )
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":
