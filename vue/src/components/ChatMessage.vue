@@ -293,7 +293,7 @@
         content = content
             .replace(/<\/span>(?=<span class="inline-reference">)/g, '</span> ')
             .replace(/([^\s])(?=<span class="inline-reference">)/g, '$1 ')
-            .replace(/(<\/span>)(?=[^\s])/g, '$1 ')
+            .replace(/(<span class="inline-reference">[\s\S]*?<\/span>)(?=[^\s\p{P}])/gu, '$1 ')
 
         return content
     }
@@ -461,7 +461,7 @@
         tabindex="0"
         :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
     >
-        <!-- <div class="focus-bar"></div> --> <!-- Enable if you want a visual focus indicator for focused chat messages -->
+         <div class="focus-bar"></div>
 
         <div class="chat-content"
              ref="chatContentEl"
@@ -725,23 +725,23 @@
     .focus-bar {
         position: absolute;
         height: 100%;
-        width: 0.05rem;
+        width: 0.1rem;
         background-color: transparent;
         opacity: 0.5;
     }
     .chat-message:focus {
         outline: 0;
     }
-    .chat-message.assistant:focus .focus-bar,
-    .chat-message.assistant:has(:focus) .focus-bar {
-        background-color: rgba(145, 145, 145, 0.3);
+    .chat-message.assistant:focus-visible .focus-bar,
+    .chat-message.assistant:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
         left: -1rem;
         right: auto;
         height: calc(100% - 2rem);
     }
-    .chat-message.user:focus .focus-bar,
-    .chat-message.user:has(:focus) .focus-bar {
-        background-color: rgba(145, 145, 145, 0.3);
+    .chat-message.user:focus-visible .focus-bar,
+    .chat-message.user:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
         right: -1rem;
         top: 0rem;
         left: auto;
