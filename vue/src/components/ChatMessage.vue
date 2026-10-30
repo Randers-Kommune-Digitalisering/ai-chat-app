@@ -290,6 +290,11 @@
             return ''
         })
 
+        content = content
+            .replace(/<\/span>(?=<span class="inline-reference">)/g, '</span> ')
+            .replace(/([^\s])(?=<span class="inline-reference">)/g, '$1 ')
+            .replace(/(<\/span>)(?=[^\s])/g, '$1 ')
+
         return content
     }
 
