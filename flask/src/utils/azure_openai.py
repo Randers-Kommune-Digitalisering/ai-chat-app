@@ -300,9 +300,8 @@ def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
         response = _get_field(event, "response")
         output_items = list(_get_field(response, "output", []) or [])
         for output_item in reversed(output_items):
-            get_urls = _extract_ai_search_get_urls_from_item(output_item)
-            if get_urls:
-                return get_urls
+            if _get_field(output_item, "type") == "azure_ai_search_call_output":
+                return _extract_ai_search_get_urls_from_item(output_item)
 
     return []
 
@@ -481,7 +480,7 @@ def _remap_ai_search_reference_urls(
     :param answer_text: Full answer, used to match annotation offsets to source markers.
     :return: References with resolved AI Search URLs replaced.
     """
-    if not references or not ai_search_get_urls:
+    if not references:
         return references
 
     internal_citations: list[dict] = []
@@ -1437,7 +1436,17 @@ class Agent(AzureOpenAIClient):
                 yield {"type": "delta", "text": event.delta}
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
-            if extracted_get_urls:
+            is_ai_search_result_event = (
+                event_type in {"response.output_item.added", "response.output_item.done"}
+                and _get_field(_get_field(event, "item"), "type") == "azure_ai_search_call_output"
+            )
+            if event_type == "response.completed":
+                output_items = list(_get_field(_get_field(event, "response"), "output", []) or [])
+                is_ai_search_result_event = any(
+                    _get_field(output_item, "type") == "azure_ai_search_call_output"
+                    for output_item in output_items
+                )
+            if extracted_get_urls or is_ai_search_result_event:
                 ai_search_get_urls = extracted_get_urls
                 if event_type != "response.output_item.added":
                     logger.debug(

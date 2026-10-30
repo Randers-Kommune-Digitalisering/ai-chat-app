@@ -528,6 +528,26 @@ def test_extract_ai_search_get_urls_from_completed_event_uses_latest_call_result
     assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == latest_group
 
 
+def test_extract_ai_search_get_urls_from_completed_event_preserves_latest_empty_result_set():
+    event = SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            output=[
+                SimpleNamespace(
+                    type="azure_ai_search_call_output",
+                    output={"get_urls": ["https://we-aisearch-it.search.windows.net/docs/previous"]},
+                ),
+                SimpleNamespace(
+                    type="azure_ai_search_call_output",
+                    output={"get_urls": []},
+                ),
+            ],
+        ),
+    )
+
+    assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == []
+
+
 def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
     input_url = (
         "https://we-aisearch-it.search.windows.net/indexes/aisearch-randersdk-index/docs/doc_1"
@@ -975,6 +995,57 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
         "type": "references",
         "references": [{**annotation, "url": public_url}],
     }
+
+
+def test_stream_does_not_resolve_citation_against_previous_nonempty_search_result(monkeypatch):
+    previous_url = "https://we-aisearch-it.search.windows.net/docs/previous"
+    answer = "Se kilden \u30105:0\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+    annotation = {
+        "type": "url_citation",
+        "title": "Previous result",
+        "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": marker_start,
+        "end_index": len(answer),
+    }
+    previous_search_item = SimpleNamespace(
+        type="azure_ai_search_call_output",
+        output={"get_urls": [previous_url]},
+    )
+    empty_search_item = SimpleNamespace(
+        type="azure_ai_search_call_output",
+        output={"get_urls": []},
+    )
+    message_item = SimpleNamespace(
+        type="message",
+        content=[SimpleNamespace(type="output_text", annotations=[annotation])],
+    )
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=previous_search_item),
+        SimpleNamespace(type="response.output_item.done", item=empty_search_item),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(output=[message_item]),
+        ),
+    ]
+    metadata_calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        metadata_calls.append(get_url)
+        return {"title": "Previous result", "url": "https://example.com/previous"}
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_empty_latest_search"))
+
+    assert metadata_calls == []
+    assert emitted[-1] == {"type": "references", "references": [{**annotation, "url": ""}]}
 
 
 def test_stream_preserves_duplicate_ai_search_result_slots_when_remapping(monkeypatch):
