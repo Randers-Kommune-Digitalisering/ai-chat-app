@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -66,6 +67,22 @@ def _post_thread_message(
     )
 
 
+def test_thread_message_redacts_before_provider(client):
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text.replace("private", "[REDACTED]"),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None, 200),
+    ) as mock_fetch:
+        response = _post_thread_message(client, thread_id="thread-1", message="private")
+
+    assert response.status_code == 200
+    assert response.get_json()["response"] == "assistant reply"
+    mock_fetch.assert_called_once_with(
+        chat_message="[REDACTED]", files=[], thread_id="thread-1", use_alt=False,
+    )
+
+
 def test_thread_message_stream_forwards_status_separately_from_text(client):
     stream_events = iter([
         {"type": "status", "status": "thinking", "message": "Assistenten tænker ..."},
@@ -90,6 +107,75 @@ def test_thread_message_stream_forwards_status_separately_from_text(client):
     assert "event: status\ndata: {\"status\": \"thinking\", \"message\": \"Assistenten tænker ...\"}" in body
     assert "event: delta\ndata: {\"text\": \"Et svar\"}" in body
     assert body.index("event: status") < body.index("event: delta") < body.index("event: end")
+
+
+def test_thread_message_stream_completion_contract(client):
+    references = [{"url": "https://example.com/source", "title": "Source"}]
+    stream_events = iter([
+        {"type": "delta", "text": "Hello "},
+        {"type": "delta", "text": "world"},
+        {"type": "references", "references": references},
+    ])
+
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.count_tokens", return_value=1,
+    ), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: stream_events),
+    ):
+        response = client.post(
+            "/api/threads/thread-1/messages/stream",
+            json={"message": "Hello", "files": [], "use_alt": False},
+        )
+        events = [
+            (name.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))
+            for name, payload in (block.split("\n", 1) for block in response.get_data(as_text=True).strip().split("\n\n"))
+        ]
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert response.headers["Cache-Control"] == "no-cache"
+    assert events == [
+        ("start", {"thread_id": "thread-1", "conversation_id": None}),
+        ("delta", {"text": "Hello "}),
+        ("delta", {"text": "world"}),
+        ("end", {
+            "success": True,
+            "response": "Hello world",
+            "references": references,
+            "conversation_id": None,
+            "title": None,
+        }),
+    ]
+
+
+def test_thread_message_stream_empty_response_contract(client):
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.count_tokens", return_value=1,
+    ), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: iter([])),
+    ):
+        response = client.post(
+            "/api/threads/thread-1/messages/stream",
+            json={"message": "Hello", "files": [], "use_alt": False},
+        )
+        events = [
+            (name.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))
+            for name, payload in (block.split("\n", 1) for block in response.get_data(as_text=True).strip().split("\n\n"))
+        ]
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert events[0] == ("start", {"thread_id": "thread-1", "conversation_id": None})
+    assert len(events) == 2
+    assert events[1][0] == "error"
+    assert events[1][1]["status"] == 502
+    assert isinstance(events[1][1]["message"], str)
 
 
 def test_thread_message_stream_rejects_token_overflow_before_stream(client):

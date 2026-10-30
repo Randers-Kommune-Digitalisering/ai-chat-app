@@ -1,7 +1,7 @@
 from io import BytesIO
 from types import SimpleNamespace
 
-import utils.azure_openai2 as azure_openai2
+import utils.azure_openai as azure_openai
 
 
 class _FakeEncoding:
@@ -20,7 +20,7 @@ class _FakeCompletions:
 
 
 def _build_chat(response):
-    chat = azure_openai2.Chat.__new__(azure_openai2.Chat)
+    chat = azure_openai.Chat.__new__(azure_openai.Chat)
     chat.client = SimpleNamespace(
         chat=SimpleNamespace(completions=_FakeCompletions(response))
     )
@@ -54,7 +54,7 @@ def test_chat_fetch_uses_legacy_chat_completions_and_maps_citations(monkeypatch)
         ]
     )
     chat = _build_chat(response)
-    monkeypatch.setattr(azure_openai2, "_get_token_encoding", lambda _model: _FakeEncoding())
+    monkeypatch.setattr(azure_openai, "_get_token_encoding", lambda _model: _FakeEncoding())
 
     text, references, error, status = chat.fetch_chat_response(
         chat_messages=[{"role": "user", "content": "Hej", "files": []}]
@@ -62,7 +62,7 @@ def test_chat_fetch_uses_legacy_chat_completions_and_maps_citations(monkeypatch)
 
     request = chat.client.chat.completions.kwargs
     assert request["messages"] == [
-        {"role": "system", "content": azure_openai2.SYSTEM_PROMPT},
+        {"role": "system", "content": azure_openai.SYSTEM_PROMPT},
         {"role": "user", "content": "Hej"},
     ]
     assert request["extra_body"]["data_sources"][0]["type"] == "azure_search"
@@ -90,10 +90,10 @@ def test_chat_fetch_uses_legacy_chat_completions_and_maps_citations(monkeypatch)
 
 def test_get_chat_client_selects_legacy_chat(monkeypatch):
     expected = object()
-    monkeypatch.setattr(azure_openai2, "ASSISTANT_TYPE", "chat")
-    monkeypatch.setattr(azure_openai2, "Chat", lambda: expected)
+    monkeypatch.setattr(azure_openai, "ASSISTANT_TYPE", "chat")
+    monkeypatch.setattr(azure_openai, "Chat", lambda: expected)
 
-    assert azure_openai2.get_chat_client() is expected
+    assert azure_openai.get_chat_client() is expected
 
 
 def test_agent_file_upload_rewinds_stream_before_retry(monkeypatch):
@@ -106,11 +106,11 @@ def test_agent_file_upload_rewinds_stream_before_retry(monkeypatch):
             raise TimeoutError("temporary upload failure")
         return SimpleNamespace(id="file-123")
 
-    agent = azure_openai2.Agent.__new__(azure_openai2.Agent)
+    agent = azure_openai.Agent.__new__(azure_openai.Agent)
     agent.client = SimpleNamespace(files=SimpleNamespace(create=create_file))
     upload = BytesIO(b"complete document")
     upload.filename = "document.txt"
-    monkeypatch.setattr(azure_openai2.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(azure_openai.time, "sleep", lambda _delay: None)
 
     response_input = agent._prepare_response_input(chat_message="Read this", files=[upload])
 
@@ -128,7 +128,7 @@ def test_agent_image_upload_uses_input_image():
     def create_file(**_kwargs):
         return SimpleNamespace(id="file-image")
 
-    agent = azure_openai2.Agent.__new__(azure_openai2.Agent)
+    agent = azure_openai.Agent.__new__(azure_openai.Agent)
     agent.client = SimpleNamespace(files=SimpleNamespace(create=create_file))
     upload = BytesIO(b"png image")
     upload.filename = "image.png"
