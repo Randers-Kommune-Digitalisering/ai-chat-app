@@ -1,5 +1,5 @@
 <script setup>
-    import { nextTick, ref, computed } from 'vue'
+    import { nextTick, ref, computed, watch, onMounted, onUnmounted } from 'vue'
     import { marked } from 'marked'
     import { sendFeedback, sendLikeFeedback } from '../services/backend-service.js'
 
@@ -9,6 +9,10 @@
     renderer.link = function(href, title, text) {
         var link = marked.Renderer.prototype.link.call(this, href, title, text)
         return link.replace("<a","<a target='_blank' ")
+    }
+    renderer.table = function(token) {
+        const table = marked.Renderer.prototype.table.call(this, token)
+        return `<div class="table-shell"><div class="table-scroll">${table}</div><div class="table-scroll-hint" aria-hidden="true">Rul vandret for at se alle kolonner</div></div>`
     }
     marked.setOptions({ breaks: true, renderer: renderer })
 
@@ -50,6 +54,11 @@
             type: Array,
             required: false,
             default: () => []
+        },
+        isStreaming: {
+            type: Boolean,
+            required: false,
+            default: false
         }
     })
 
@@ -58,24 +67,87 @@
 
     const recentlyCopied = ref(false)
 
+    const writeTextToClipboard = async (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text)
+            return
+        }
+        throw new Error('Clipboard API not available or context not secure')
+    }
+
     const copyTextToClipboard = async (text) => {
         try {
-            // Use Clipboard API if available and page is secure
-            if (navigator.clipboard && window.isSecureContext) {
-                await navigator.clipboard.writeText(text)
-                recentlyCopied.value = true
-                setTimeout(() => {
-                    recentlyCopied.value = false
-                }, 1500)
-                console.log('Text copied to clipboard:', text)
-            } else {
-                throw new Error('Clipboard API not available or context not secure')
-            }
+            const formattedText = text.trim().replaceAll(`<span class="inline-reference">`, '').replaceAll(`</span>`, '')
+            await writeTextToClipboard(formattedText)
+            recentlyCopied.value = true
+            setTimeout(() => {
+                recentlyCopied.value = false
+            }, 1500)
         } catch (err) {
             recentlyCopied.value = false
             alert('Kunne ikke kopiere tekst: ' + err)
             console.error('Could not copy text: ', err)
         }
+    }
+
+    async function onCodeCopyButtonClick(button) {
+        const codeElement = button.parentElement?.querySelector('pre > code')
+        if (!codeElement) return
+
+        const originalHtml = button.innerHTML || '<i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div>'
+        try {
+            await writeTextToClipboard(codeElement.textContent || '')
+            button.innerHTML = '<i class="fa-solid fa-copy"></i><div class="tooltip">Kopieret!</div>'
+            button.disabled = true
+            setTimeout(() => {
+                button.innerHTML = originalHtml
+                button.disabled = false
+            }, 1200)
+        } catch (err) {
+            alert('Kunne ikke kopiere kode: ' + err)
+        }
+    }
+
+    async function bindCodeCopyButtons() {
+        await nextTick()
+        const container = chatContentEl.value
+        if (!container) return
+
+        const buttons = container.querySelectorAll('.code-copy-button')
+        buttons.forEach((button) => {
+            button.type = 'button'
+            button.setAttribute('aria-label', 'Kopiér kodeblok')
+            button.onclick = () => onCodeCopyButtonClick(button)
+        })
+    }
+
+    let tableResizeObserver
+
+    function updateTableScroll(scrollArea) {
+        const overflow = scrollArea.scrollWidth > scrollArea.clientWidth + 1
+        const shell = scrollArea.parentElement
+        shell.classList.toggle('has-overflow', overflow)
+        shell.classList.toggle('scrolled', overflow && scrollArea.scrollLeft > 1)
+        shell.classList.toggle('at-end', scrollArea.scrollLeft + scrollArea.clientWidth >= scrollArea.scrollWidth - 1)
+        if (overflow) {
+            scrollArea.tabIndex = 0
+            scrollArea.setAttribute('role', 'region')
+            scrollArea.setAttribute('aria-label', 'Tabel med flere kolonner, rul vandret for at se alle kolonner')
+        } else {
+            scrollArea.removeAttribute('tabindex')
+            scrollArea.removeAttribute('role')
+            scrollArea.removeAttribute('aria-label')
+        }
+    }
+
+    function refreshTableScroll() {
+        tableResizeObserver?.disconnect()
+        chatContentEl.value?.querySelectorAll('.table-scroll').forEach((scrollArea) => {
+            scrollArea.onscroll = () => updateTableScroll(scrollArea)
+            tableResizeObserver?.observe(scrollArea)
+            tableResizeObserver?.observe(scrollArea.querySelector('table'))
+            updateTableScroll(scrollArea)
+        })
     }
 
     const feedbackLiked = ref(false)
@@ -84,6 +156,36 @@
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+    const chatContentEl = ref(null)
+
+    function decodeReferenceTitle(value) {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+        try {
+            return decodeURIComponent(raw)
+        } catch (_) {
+            return raw.replace(/%20/g, ' ')
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+    }
+
+    function formatInlineReferenceLabel(value) {
+        const decoded = decodeReferenceTitle(value)
+        if (!decoded) return ''
+        return `<span class="inline-reference">[${escapeHtml(decoded)}]</span>`
+    }
+
+    function formatReferenceListLabel(value) {
+        return decodeReferenceTitle(value)
+    }
 
     function onFeedbackClick() {
         if (feedbackSent.value) return
@@ -132,7 +234,7 @@
     }
 
     const highlightedMessage = computed(() => {
-        let content = props.message
+        let content = transformedMessageWithCitations.value
         let uniqueWords = [...new Set(props.highlightedWords)]
         uniqueWords.forEach(word => {
             const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
@@ -141,14 +243,170 @@
         return content
     })
 
-    const isUrl = (string) => {
+    function mapInlineCitationsToTitles(message, references) {
+        let content = typeof message === 'string' ? message : ''
+        if (!content) return ''
+
+        const refs = Array.isArray(references) ? references : []
+        const indexedReplacements = []
+        const fallbackTitles = []
+
+        for (const reference of refs) {
+            const { type, payload } = pickCitationPayload(reference)
+            if (type !== 'url_citation') continue
+
+            const formattedTitle = formatInlineReferenceLabel(payload?.title)
+            if (!formattedTitle) continue
+
+            const start = Number(payload?.start_index)
+            const end = Number(payload?.end_index)
+
+            if (
+                Number.isInteger(start) &&
+                Number.isInteger(end) &&
+                start >= 0 &&
+                end > start &&
+                end <= content.length
+            ) {
+                indexedReplacements.push({ start, end, title: formattedTitle })
+            } else {
+                fallbackTitles.push(formattedTitle)
+            }
+        }
+
+        indexedReplacements
+            .sort((a, b) => b.start - a.start)
+            .forEach(({ start, end, title }) => {
+                content = `${content.slice(0, start)}${title}${content.slice(end)}`
+            })
+
+        const inlineMarkerPattern = /【(?:\d+:)?(\d+)†source】|cite(?:(?:turn)?\d+:)?(\d+)(?:†source)?|(?:turn)?\d+search\d+|(?:turn)?\d+search\d+|\b(?:turn)?\d+:\d+(?:(?:turn)?\d+:\d+)*|(?:turn)?\d+source|cite\?\s*no,\s*must use Azure citation format\.?|cite/gi
+        content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
+            const indexRaw = legacyIndex ?? foundryIndex
+            const sourceIndex = Number(indexRaw)
+            if (Number.isInteger(sourceIndex) && sourceIndex >= 0) {
+                return fallbackTitles[sourceIndex] || ''
+            }
+            return ''
+        })
+
+        content = content
+            .replace(/<\/span>(?=<span class="inline-reference">)/g, '</span> ')
+            .replace(/([^\s])(?=<span class="inline-reference">)/g, '$1 ')
+            .replace(/(<span class="inline-reference">[\s\S]*?<\/span>)(?=[^\s\p{P}])/gu, '$1 ')
+
+        return content
+    }
+
+    const transformedMessageWithCitations = computed(() => {
+        return mapInlineCitationsToTitles(props.message, props.references)
+    })
+
+    const renderedMessage = computed(() => {
+        const html = marked(highlightedMessage.value)
+        return html.replace(
+            /<pre><code([\s\S]*?)>([\s\S]*?)<\/code><\/pre>/g,
+            '<div class="code-block"><button type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></button><pre><code$1>$2</code></pre></div>'
+        )
+    })
+
+    watch(renderedMessage, async () => {
+        await bindCodeCopyButtons()
+        refreshTableScroll()
+    })
+
+    onMounted(async () => {
+        tableResizeObserver = new ResizeObserver(() => {
+            chatContentEl.value?.querySelectorAll('.table-scroll').forEach(updateTableScroll)
+        })
+        await bindCodeCopyButtons()
+        refreshTableScroll()
+    })
+
+    onUnmounted(() => tableResizeObserver?.disconnect())
+
+    const toSafeHttpUrl = (value) => {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+
         try {
-            new URL(string)
-            return true
+            const parsed = new URL(raw)
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                return ''
+            }
+            return parsed.href
         } catch (_) {
-            return false
+            return ''
         }
     }
+
+    const isUrl = (string) => {
+        return !!toSafeHttpUrl(string)
+    }
+
+    function pickCitationPayload(reference) {
+        if (!reference || typeof reference !== 'object') {
+            return { type: '', payload: {} }
+        }
+
+        if (typeof reference.type === 'string' && reference.type.trim()) {
+            return { type: reference.type.trim(), payload: reference }
+        }
+
+        for (const key of ['url_citation', 'file_citation', 'container_file_citation', 'file_path']) {
+            const nested = reference[key]
+            if (nested && typeof nested === 'object') {
+                return { type: key, payload: nested }
+            }
+        }
+
+        return { type: '', payload: reference }
+    }
+
+    function toRenderedReference(reference) {
+        const { type, payload } = pickCitationPayload(reference)
+
+        if (type === 'url_citation') {
+            const href = toSafeHttpUrl(payload.url)
+            const formattedTitle = formatReferenceListLabel(payload.title)
+            const label = formattedTitle || (href || 'Reference')
+            return { type, label, href, dedupeKey: `${label}||${href}` }
+        }
+
+        if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
+            const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
+            const fileId = String(payload.file_id || '')
+            return { type, label: String(label), href: '', dedupeKey: `${label}||${fileId}` }
+        }
+
+        const href = toSafeHttpUrl(payload.url)
+        const formattedTitle = formatReferenceListLabel(payload.title)
+        const label = formattedTitle || (href || 'Reference')
+        return { type, label, href }
+    }
+
+    const renderedReferences = computed(() => {
+        const refs = Array.isArray(props.references) ? props.references : []
+        const seenReferenceKeys = new Set()
+        const uniqueRefs = []
+
+        for (const reference of refs) {
+            const renderedReference = toRenderedReference(reference)
+            if (!renderedReference?.label) continue
+
+            if (renderedReference.dedupeKey) {
+                const dedupeKey = `${renderedReference.type}||${renderedReference.dedupeKey}`
+                if (seenReferenceKeys.has(dedupeKey)) {
+                    continue
+                }
+                seenReferenceKeys.add(dedupeKey)
+            }
+
+            uniqueRefs.push(renderedReference)
+        }
+
+        return uniqueRefs
+    })
 
     const resizeTextareaToFitContent = () => {
         if (!feedbackTextareaRef.value) return
@@ -157,10 +415,10 @@
         let height = Math.min(maxHeight, feedbackTextareaRef.value.scrollHeight + 2) + 'px'
         feedbackTextareaRef.value.style.height = height
     }
+
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
-        console.log('Scrolling to feedback dialog for message id:', props.id)
         await nextTick()
         // Wait an extra frame so layout/positions are accurate.
         await new Promise((resolve) => requestAnimationFrame(resolve))
@@ -193,12 +451,21 @@
         const textarea = document.getElementById('feedback_textarea_' + props.id)
         if (textarea?.focus) textarea.focus({ preventScroll: true })
     }
-
 </script>
 
 <template>
-    <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="marked(highlightedMessage)"></div>
+    <div
+        v-show="props.sender !== 'assistant' || props.message.trim()"
+        :class="['chat-message', props.sender]"
+        :id="props.id"
+        tabindex="0"
+        :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
+    >
+         <div class="focus-bar"></div>
+
+        <div class="chat-content"
+             ref="chatContentEl"
+             v-html="renderedMessage"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -215,26 +482,27 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div class="references" v-if="props.references.length > 0 || props.timeSpent">
+            <div class="references" v-if="renderedReferences.length > 0 || props.timeSpent">
                 <div
-                    v-if="props.references.length > 0"
-                    v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
-                    :key="index">
+                    v-if="renderedReferences.length > 0"
+                    v-for="(ref, index) in renderedReferences.slice(0, showAllReferences ? renderedReferences.length : REFERENCE_DISPLAY_LIMIT)"
+                    :key="index"
+                    aria-label="Reference.">
                     <a
-                        :href="isUrl(ref.link) ? ref.link : null"
+                        :href="isUrl(ref.href) ? ref.href : null"
                         target="_blank"
                         rel="noopener"
-                        :tabindex="isUrl(ref.link) ? 0 : -1"
-                        :aria-disabled="!isUrl(ref.link)"
-                        :class="{'disabled': !isUrl(ref.link)}"
+                        :tabindex="isUrl(ref.href) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.href)"
+                        :class="{'disabled': !isUrl(ref.href)}"
                     >
-                        {{ ref.title }}
+                        {{ ref.label }}
                     </a>
                 </div>
-                <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
+                <div v-if="renderedReferences.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
                         <template v-if="showAllReferences"><i class="fa-solid fa-arrow-left"></i></template>
-                        <template v-else><i class="fa-solid fa-plus"></i>{{ props.references.length - REFERENCE_DISPLAY_LIMIT }}</template>
+                        <template v-else><i class="fa-solid fa-plus"></i>{{ renderedReferences.length - REFERENCE_DISPLAY_LIMIT }}</template>
                     </a>
                 </div>
 
@@ -245,25 +513,25 @@
             </div>
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
-            <div class="options">
-                <div class="option" @click="copyTextToClipboard(props.message)">
-                    <i class="fa-regular fa-copy"></i>
+            <div class="options" v-if="!props.isStreaming">
+                <button type="button" class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
+                    <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
-                </div>
-                <div :class="['option', { disabled: feedbackLiked }]" @click="onThumbsUpClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackLiked" @click="onThumbsUpClick">
                     <i :class="[feedbackLiked ? 'fa-solid' : 'fa-regular', 'fa-thumbs-up']"></i>
                     <div class="tooltip">Synes godt om</div>
-                </div>
-                <div :class="['option', { disabled: feedbackSent }]" @click="onFeedbackClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackSent" @click="onFeedbackClick">
                     <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
-                </div>
+                </button>
                 <div v-if="feedbackSent" class="feedback-sent-message">
                     Tak for din feedback!
                 </div>
             </div>
 
-            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen" tabindex="-1">
+            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen && !props.isStreaming" tabindex="-1">
                 <textarea
                     v-model="feedbackText"
                     ref="feedbackTextareaRef"
@@ -286,7 +554,7 @@
                         </template>
                     </button>
                     <button class="cancel-feedback-button" @click="feedbackDialogOpen = false">
-                        Annuller
+                        Annullér
                     </button>
                 </div>
             </div>  
@@ -300,6 +568,8 @@
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+        position: relative;
+        --table-scroll-background: var(--color-background-primary);
     }
     .chat-message:not(:last-of-type) {
         margin-bottom: 0.5rem;
@@ -307,6 +577,7 @@
     .chat-message.user {
         background-color: var(--color-chat-user-background);
         border: 0.05rem solid var(--color-chat-user-border);
+        --table-scroll-background: var(--color-chat-user-background);
         margin-left: auto;
         max-width: 100%;
         justify-self: flex-start;
@@ -326,14 +597,80 @@
             margin-bottom: 0;
             margin-block-end: 0rem;
         }
+        :deep(.chat-content table) {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+            line-height: 1.4;
+        }
+        :deep(.chat-content .table-shell) {
+            position: relative;
+            margin: 1rem 0;
+        }
+        :deep(.chat-content .table-scroll) {
+            max-width: 100%;
+            overflow-x: auto;
+            border: 0.05rem solid var(--color-toolbar-border);
+            border-radius: 0.4rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow:not(.at-end)::after),
+        :deep(.chat-content .table-shell.scrolled::before) {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 1.5rem;
+            width: 1.2rem;
+            pointer-events: none;
+            border-radius: 0.4rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow:not(.at-end)::after) {
+            right: 0;
+            background: linear-gradient(to right, transparent, var(--table-scroll-background));
+        }
+        :deep(.chat-content .table-shell.scrolled::before) {
+            left: 0;
+            background: linear-gradient(to left, transparent, var(--table-scroll-background));
+        }
+        :deep(.chat-content .table-scroll-hint) {
+            display: none;
+            text-align: right;
+            font-size: 0.75rem;
+            color: var(--color-text-faded);
+            margin-top: 0.2rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow .table-scroll-hint) {
+            display: block;
+        }
+        :deep(.chat-content thead) {
+            background: var(--color-options-background-hover);
+            text-align: left;
+        }
+        :deep(.chat-content tbody tr:not(:last-child)) {
+            border-bottom: 0.05rem solid var(--color-toolbar-border);
+        }
+        :deep(.chat-content th), :deep(.chat-content td) {
+            min-width: 6rem;
+            padding: 0.45rem 0.7rem;
+            vertical-align: top;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        :deep(.chat-content th) {
+            font-weight: 600;
+        }
         :deep(.chat-content code) {
-            display: inline-block;
+            display: inline;
             background-color: var(--color-code-background);
             padding: 0.2rem 0.4rem;
             border-radius: 0.3rem;
             font-family: var(--font-code);
             border: 0.05rem solid var(--color-code-border);
             font-size: 0.8em;
+            max-width: 100%;
+            overflow: auto;
+        }
+        :deep(.chat-content p > code), :deep(.chat-content li > code) {
+            white-space: pre-wrap;
         }
         :deep(.chat-content mark) {
             padding-left: 0.2rem;
@@ -342,6 +679,73 @@
             color: inherit;
             border-radius: 0.2rem;
         }
+        :deep(.chat-content .code-block) {
+            position: relative;
+            margin: 0;
+        }
+        :deep(.chat-content .code-block code) {
+            display: block;
+            width: 100%;
+            padding-top: 0.65rem;
+            padding-bottom: 0.65rem;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+        :deep(.chat-content .code-block pre) {
+            margin: 0;
+            max-width: 100%;
+            overflow: auto;
+        }
+        :deep(.chat-content .code-copy-button) {
+            position: absolute;
+            top: 0.35rem;
+            right: 0.35rem;
+            border: 0.05rem solid var(--color-code-border);
+            background-color: var(--color-code-background);
+            color: var(--color-text-primary);
+            height: 1.88rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: none;
+        }
+        :deep(.chat-content .code-block:hover .code-copy-button) {
+            display: block;
+        }
+        /* :deep(.chat-content .code-block:focus-within .code-copy-button) {
+            display: block;
+        } */ /* Not reachable as .code-block is not focusable */
+        :deep(.chat-content .code-copy-button:hover:not(:disabled)) {
+            background-color: var(--color-options-background-hover);
+        }
+        :deep(.chat-content .code-copy-button:disabled) {
+            cursor: default;
+            opacity: 0.8;
+        }
+
+    .focus-bar {
+        position: absolute;
+        height: 100%;
+        width: 0.1rem;
+        background-color: transparent;
+        opacity: 0.5;
+    }
+    .chat-message:focus {
+        outline: 0;
+    }
+    .chat-message.assistant:focus-visible .focus-bar,
+    .chat-message.assistant:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
+        left: -1rem;
+        right: auto;
+        height: calc(100% - 2rem);
+    }
+    .chat-message.user:focus-visible .focus-bar,
+    .chat-message.user:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
+        right: -1rem;
+        top: 0rem;
+        left: auto;
+    }
 
     .fileUploads {
         padding-top: 0.3rem;
@@ -436,16 +840,22 @@
         display: flex;
         color: var(--color-options-text);
     }
-    .option {
+    .option, :deep(.code-copy-button) {
         position: relative;
         transition: color 0.2s;
         background-color: transparent;
         padding: 0.3rem 0.6rem;
         border-radius: 0.4rem;
     }
-        .option.disabled {
+        .option {
+            border: 0;
+            color: inherit;
+            font: inherit;
+        }
+        .option:disabled {
             pointer-events: none;
             color: var(--color-options-text-selected);
+            cursor: default;
         }
         .option:hover {
             cursor: pointer;
@@ -467,11 +877,19 @@
     .show-more-less i {
         font-size: 0.7em;
     }
-    .option .tooltip {
+    .option .tooltip, :deep(.code-copy-button > .tooltip) {
         bottom: -100%;
         left: 50%;
         transform: translateX(-50%);
     }
+    :deep(.code-copy-button > .tooltip) {
+        bottom: -110%;
+    }
+    :deep(.inline-reference) {
+        color: var(--color-text-faded);
+        font-size: 0.8em;
+    }
+
     .feedback-sent-message {
         margin-left: 0.5rem;
         font-size: 0.9rem;

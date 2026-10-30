@@ -1,3 +1,5 @@
+import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +11,19 @@ class _DummyThread:
 
     def join(self, timeout=None):
         self.join_called += 1
+
+
+class _HungThread:
+    def __init__(self):
+        self.join_called = 0
+        self.last_timeout = None
+
+    def join(self, timeout=None):
+        self.join_called += 1
+        self.last_timeout = timeout
+
+    def is_alive(self):
+        return True
 
 
 @pytest.fixture()
@@ -52,6 +67,186 @@ def _post_thread_message(
     )
 
 
+def test_thread_message_redacts_before_provider(client):
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text.replace("private", "[REDACTED]"),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None, 200),
+    ) as mock_fetch:
+        response = _post_thread_message(client, thread_id="thread-1", message="private")
+
+    assert response.status_code == 200
+    assert response.get_json()["response"] == "assistant reply"
+    mock_fetch.assert_called_once_with(
+        chat_message="[REDACTED]", files=[], thread_id="thread-1", use_alt=False,
+    )
+
+
+def test_thread_message_stream_forwards_status_separately_from_text(client):
+    stream_events = iter([
+        {"type": "status", "status": "thinking", "message": "Assistenten tænker ..."},
+        {"type": "delta", "text": "Et svar"},
+        {"type": "references", "references": []},
+    ])
+
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: stream_events),
+    ):
+        response = client.post(
+            "/api/threads/conv_status/messages/stream",
+            json={"message": "Hej", "files": [], "use_alt": False},
+        )
+        body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "event: status\ndata: {\"status\": \"thinking\", \"message\": \"Assistenten tænker ...\"}" in body
+    assert "event: delta\ndata: {\"text\": \"Et svar\"}" in body
+    assert body.index("event: status") < body.index("event: delta") < body.index("event: end")
+
+
+def test_thread_message_stream_completion_contract(client):
+    references = [{"url": "https://example.com/source", "title": "Source"}]
+    stream_events = iter([
+        {"type": "delta", "text": "Hello "},
+        {"type": "delta", "text": "world"},
+        {"type": "references", "references": references},
+    ])
+
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.count_tokens", return_value=1,
+    ), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: stream_events),
+    ):
+        response = client.post(
+            "/api/threads/thread-1/messages/stream",
+            json={"message": "Hello", "files": [], "use_alt": False},
+        )
+        events = [
+            (name.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))
+            for name, payload in (block.split("\n", 1) for block in response.get_data(as_text=True).strip().split("\n\n"))
+        ]
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert response.headers["Cache-Control"] == "no-cache"
+    assert events == [
+        ("start", {"thread_id": "thread-1", "conversation_id": None}),
+        ("delta", {"text": "Hello "}),
+        ("delta", {"text": "world"}),
+        ("end", {
+            "success": True,
+            "response": "Hello world",
+            "references": references,
+            "conversation_id": None,
+            "title": None,
+        }),
+    ]
+
+
+def test_thread_message_stream_empty_response_contract(client):
+    with patch("api_endpoints.USE_DB", False), patch(
+        "api_endpoints.count_tokens", return_value=1,
+    ), patch(
+        "api_endpoints.redact_content", side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client",
+        SimpleNamespace(stream_chat_response_with_metadata=lambda **kwargs: iter([])),
+    ):
+        response = client.post(
+            "/api/threads/thread-1/messages/stream",
+            json={"message": "Hello", "files": [], "use_alt": False},
+        )
+        events = [
+            (name.removeprefix("event: "), json.loads(payload.removeprefix("data: ")))
+            for name, payload in (block.split("\n", 1) for block in response.get_data(as_text=True).strip().split("\n\n"))
+        ]
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/event-stream"
+    assert events[0] == ("start", {"thread_id": "thread-1", "conversation_id": None})
+    assert len(events) == 2
+    assert events[1][0] == "error"
+    assert events[1][1]["status"] == 502
+    assert isinstance(events[1][1]["message"], str)
+
+
+def test_thread_message_stream_rejects_token_overflow_before_stream(client):
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.count_tokens",
+        return_value=10**9,
+    ):
+        response = client.post(
+            "/api/threads/conv_overflow/messages/stream",
+            json={
+                "message": "Hej",
+                "files": [{"name": "doc.txt", "content": "SGVq"}],
+                "use_alt": False,
+            },
+        )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["success"] is False
+    assert "for lang" in body["message"]
+
+
+def test_thread_message_rejects_file_over_size_limit_before_azure(client):
+    with patch("api_endpoints.AGENT_FILE_SIZE_LIMIT", 2), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+    ) as mock_fetch:
+        response = _post_thread_message(
+            client,
+            thread_id="conv_file_limit",
+            message="Hej",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+        )
+
+    assert response.status_code == 413
+    assert response.get_json()["success"] is False
+    mock_fetch.assert_not_called()
+
+
+def test_thread_message_stream_rejects_file_over_size_limit_before_azure(client):
+    mock_azure_client = MagicMock()
+
+    with patch("api_endpoints.AGENT_FILE_SIZE_LIMIT", 2), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.count_tokens",
+        return_value=1,
+    ), patch(
+        "api_endpoints.azure_client",
+        mock_azure_client,
+    ):
+        response = client.post(
+            "/api/threads/conv_stream_file_limit/messages/stream",
+            json={
+                "message": "Hej",
+                "files": [{"name": "doc.txt", "content": "SGVq"}],
+                "use_alt": False,
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.get_json()["success"] is False
+    mock_azure_client.stream_chat_response_with_metadata.assert_not_called()
+
+
 def test_thread_messages_db_unavailable_still_returns_success(client):
     dummy_thread = _DummyThread()
     title_result = {"title": "Generated title"}
@@ -62,7 +257,7 @@ def test_thread_messages_db_unavailable_still_returns_success(client):
     ), patch(
         "api_endpoints._start_title_generation_thread",
         return_value=(dummy_thread, title_result),
-    ), patch(
+    ) as mock_start_title, patch(
         "api_endpoints.azure_client.fetch_chat_response",
         return_value=("assistant reply", [{"url": "https://example.com"}], None),
     ), patch(
@@ -80,8 +275,9 @@ def test_thread_messages_db_unavailable_still_returns_success(client):
     assert body.get("conversation_id") is None
     assert body.get("title") is None
 
-    # Title thread is started, but join only happens in the DB create path.
+    # Title generation starts only after DB session is confirmed.
     assert dummy_thread.join_called == 0
+    mock_start_title.assert_not_called()
 
 
 def test_thread_messages_creates_conversation_persists_messages_and_returns_title_and_id(client):
@@ -134,6 +330,74 @@ def test_thread_messages_creates_conversation_persists_messages_and_returns_titl
     assert mock_conv_counter.labels.call_args.kwargs.get("mode") == "agent"
     mock_conv_counter.labels.return_value.inc.assert_called_once()
     db_session.close.assert_called_once()
+
+
+def test_thread_messages_persists_only_file_metadata_when_enabled(client):
+    db_session = MagicMock()
+
+    with patch(
+        "api_endpoints.AGENT_FILE_METADATA_ONLY",
+        True,
+    ), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ) as mock_add_msg:
+        res = _post_thread_message(
+            client,
+            thread_id="thr_metadata",
+            message="Hi",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+            conversation_id=123,
+        )
+
+    assert res.status_code == 200
+    assert mock_add_msg.call_args_list[0].kwargs["file_content"] == [{
+        "file_name": "doc.txt",
+        "file_type": "text/plain",
+        "file_size": 3,
+    }]
+
+
+def test_thread_messages_persists_file_content_when_metadata_only_disabled(client):
+    db_session = MagicMock()
+
+    with patch(
+        "api_endpoints.AGENT_FILE_METADATA_ONLY",
+        False,
+    ), patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ) as mock_add_msg:
+        res = _post_thread_message(
+            client,
+            thread_id="thr_content",
+            message="Hi",
+            files=[{"name": "doc.txt", "content": "SGVq"}],
+            conversation_id=123,
+        )
+
+    assert res.status_code == 200
+    stored_file = mock_add_msg.call_args_list[0].kwargs["file_content"][0]
+    assert stored_file.filename == "doc.txt"
+    assert stored_file.getvalue() == b"Hej"
 
 
 def test_thread_messages_create_conversation_fails_still_returns_success_with_title(client):
@@ -232,7 +496,7 @@ def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client)
         side_effect=lambda *, text: text,
     ), patch(
         "api_endpoints.azure_client.fetch_chat_response",
-        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen om lidt.", 429),
+        return_value=(None, [], "Assistenten er travl lige nu. Prøv igen senere.", 429),
     ):
         res = _post_thread_message(client, thread_id="thr_rate", message="Hi")
 
@@ -240,3 +504,54 @@ def test_thread_messages_propagates_rate_limit_status_from_azure_wrapper(client)
     body = res.get_json()
     assert body["success"] is False
     assert "travl" in body["message"].lower()
+
+
+def test_thread_messages_title_join_timeout_uses_fallback_and_tracks_metric(client):
+    import api_endpoints
+
+    hung_thread = _HungThread()
+    title_result = {"title": "Generated title"}
+
+    db_session = MagicMock()
+    created_conversation = MagicMock()
+    created_conversation.id = 654
+
+    with patch(
+        "api_endpoints.redact_content",
+        side_effect=lambda *, text: text,
+    ), patch(
+        "api_endpoints._start_title_generation_thread",
+        return_value=(hung_thread, title_result),
+    ), patch(
+        "api_endpoints.azure_client.fetch_chat_response",
+        return_value=("assistant reply", [], None),
+    ), patch(
+        "api_endpoints.db_client.get_session",
+        return_value=db_session,
+    ), patch(
+        "api_endpoints.chat_conversations_counter",
+    ), patch(
+        "api_endpoints.title_generation_timeout_counter",
+    ) as mock_timeout_counter, patch(
+        "api_endpoints.create_db_conversation",
+        return_value=created_conversation,
+    ) as mock_create_conv, patch(
+        "api_endpoints.add_message_to_conversation",
+        side_effect=[True, True],
+    ):
+        res = _post_thread_message(client, thread_id="thr_timeout", message="Hi")
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["success"] is True
+    assert body.get("conversation_id") == 654
+    assert body.get("title") == "Samtale thr_timeout"
+
+    assert hung_thread.join_called == 1
+    assert hung_thread.last_timeout == api_endpoints.TITLE_GENERATION_JOIN_TIMEOUT_S
+
+    mock_timeout_counter.labels.assert_called_once()
+    assert mock_timeout_counter.labels.call_args.kwargs.get("mode") == "agent"
+    mock_timeout_counter.labels.return_value.inc.assert_called_once()
+
+    assert mock_create_conv.call_args.kwargs.get("title") == "Samtale thr_timeout"
