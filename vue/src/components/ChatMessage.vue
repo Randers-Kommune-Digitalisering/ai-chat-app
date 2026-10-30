@@ -654,7 +654,7 @@
             font-weight: 600;
         }
         :deep(.chat-content code) {
-            display: inline-block;
+            display: inline;
             background-color: var(--color-code-background);
             padding: 0.2rem 0.4rem;
             border-radius: 0.3rem;
@@ -666,7 +666,6 @@
         }
         :deep(.chat-content p > code), :deep(.chat-content li > code) {
             white-space: pre-wrap;
-            transform: translateY(0.5rem);
         }
         :deep(.chat-content mark) {
             padding-left: 0.2rem;
@@ -680,6 +679,7 @@
             margin: 0;
         }
         :deep(.chat-content .code-block code) {
+            display: block;
             width: 100%;
             padding-top: 0.65rem;
             padding-bottom: 0.65rem;
