@@ -554,7 +554,6 @@
             max-width: 100%;
             overflow: auto;
             display: block;
-            white-space: nowrap;
         }
         :deep(.chat-content tr) {
             display: table-row;
