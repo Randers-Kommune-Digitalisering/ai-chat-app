@@ -1,5 +1,5 @@
 <script setup>
-    import { nextTick, ref, computed, watch, onMounted } from 'vue'
+    import { nextTick, ref, computed, watch, onMounted, onUnmounted } from 'vue'
     import { marked } from 'marked'
     import { sendFeedback, sendLikeFeedback } from '../services/backend-service.js'
 
@@ -9,6 +9,10 @@
     renderer.link = function(href, title, text) {
         var link = marked.Renderer.prototype.link.call(this, href, title, text)
         return link.replace("<a","<a target='_blank' ")
+    }
+    renderer.table = function(token) {
+        const table = marked.Renderer.prototype.table.call(this, token)
+        return `<div class="table-shell"><div class="table-scroll">${table}</div><div class="table-scroll-hint" aria-hidden="true">Rul vandret for at se alle kolonner</div></div>`
     }
     marked.setOptions({ breaks: true, renderer: renderer })
 
@@ -114,6 +118,35 @@
             button.type = 'button'
             button.setAttribute('aria-label', 'Kopiér kodeblok')
             button.onclick = () => onCodeCopyButtonClick(button)
+        })
+    }
+
+    let tableResizeObserver
+
+    function updateTableScroll(scrollArea) {
+        const overflow = scrollArea.scrollWidth > scrollArea.clientWidth + 1
+        const shell = scrollArea.parentElement
+        shell.classList.toggle('has-overflow', overflow)
+        shell.classList.toggle('scrolled', overflow && scrollArea.scrollLeft > 1)
+        shell.classList.toggle('at-end', scrollArea.scrollLeft + scrollArea.clientWidth >= scrollArea.scrollWidth - 1)
+        if (overflow) {
+            scrollArea.tabIndex = 0
+            scrollArea.setAttribute('role', 'region')
+            scrollArea.setAttribute('aria-label', 'Tabel med flere kolonner, rul vandret for at se alle kolonner')
+        } else {
+            scrollArea.removeAttribute('tabindex')
+            scrollArea.removeAttribute('role')
+            scrollArea.removeAttribute('aria-label')
+        }
+    }
+
+    function refreshTableScroll() {
+        tableResizeObserver?.disconnect()
+        chatContentEl.value?.querySelectorAll('.table-scroll').forEach((scrollArea) => {
+            scrollArea.onscroll = () => updateTableScroll(scrollArea)
+            tableResizeObserver?.observe(scrollArea)
+            tableResizeObserver?.observe(scrollArea.querySelector('table'))
+            updateTableScroll(scrollArea)
         })
     }
 
@@ -257,6 +290,11 @@
             return ''
         })
 
+        content = content
+            .replace(/<\/span>(?=<span class="inline-reference">)/g, '</span> ')
+            .replace(/([^\s])(?=<span class="inline-reference">)/g, '$1 ')
+            .replace(/(<span class="inline-reference">[\s\S]*?<\/span>)(?=[^\s\p{P}])/gu, '$1 ')
+
         return content
     }
 
@@ -272,13 +310,20 @@
         )
     })
 
-    watch(renderedMessage, () => {
-        bindCodeCopyButtons()
+    watch(renderedMessage, async () => {
+        await bindCodeCopyButtons()
+        refreshTableScroll()
     })
 
-    onMounted(() => {
-        bindCodeCopyButtons()
+    onMounted(async () => {
+        tableResizeObserver = new ResizeObserver(() => {
+            chatContentEl.value?.querySelectorAll('.table-scroll').forEach(updateTableScroll)
+        })
+        await bindCodeCopyButtons()
+        refreshTableScroll()
     })
+
+    onUnmounted(() => tableResizeObserver?.disconnect())
 
     const toSafeHttpUrl = (value) => {
         const raw = typeof value === 'string' ? value.trim() : ''
@@ -416,7 +461,7 @@
         tabindex="0"
         :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
     >
-        <div class="focus-bar"></div>
+         <div class="focus-bar"></div>
 
         <div class="chat-content"
              ref="chatContentEl"
@@ -524,6 +569,7 @@
         padding-bottom: 1rem;
         font-size: 1rem;
         position: relative;
+        --table-scroll-background: var(--color-background-primary);
     }
     .chat-message:not(:last-of-type) {
         margin-bottom: 0.5rem;
@@ -531,6 +577,7 @@
     .chat-message.user {
         background-color: var(--color-chat-user-background);
         border: 0.05rem solid var(--color-chat-user-border);
+        --table-scroll-background: var(--color-chat-user-background);
         margin-left: auto;
         max-width: 100%;
         justify-self: flex-start;
@@ -551,37 +598,68 @@
             margin-block-end: 0rem;
         }
         :deep(.chat-content table) {
-            max-width: 100%;
-            overflow: auto;
-            display: block;
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+            line-height: 1.4;
         }
-        :deep(.chat-content tr) {
-            display: table-row;
-        }
-        :deep(.chat-content thead) {
-            display: table-header-group;
-            font-weight: bold;
-            text-align: left;
-        }
-        :deep(.chat-content thead tr) {
+        :deep(.chat-content .table-shell) {
             position: relative;
+            margin: 1rem 0;
         }
-        :deep(.chat-content thead tr::after) {
+        :deep(.chat-content .table-scroll) {
+            max-width: 100%;
+            overflow-x: auto;
+            border: 0.05rem solid var(--color-toolbar-border);
+            border-radius: 0.4rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow:not(.at-end)::after),
+        :deep(.chat-content .table-shell.scrolled::before) {
             content: '';
             position: absolute;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            border-bottom: 0.05rem solid var(--color-toolbar-border);
+            top: 0;
+            bottom: 1.5rem;
+            width: 1.2rem;
             pointer-events: none;
+            border-radius: 0.4rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow:not(.at-end)::after) {
+            right: 0;
+            background: linear-gradient(to right, transparent, var(--table-scroll-background));
+        }
+        :deep(.chat-content .table-shell.scrolled::before) {
+            left: 0;
+            background: linear-gradient(to left, transparent, var(--table-scroll-background));
+        }
+        :deep(.chat-content .table-scroll-hint) {
+            display: none;
+            text-align: right;
+            font-size: 0.75rem;
+            color: var(--color-text-faded);
+            margin-top: 0.2rem;
+        }
+        :deep(.chat-content .table-shell.has-overflow .table-scroll-hint) {
+            display: block;
+        }
+        :deep(.chat-content thead) {
+            background: var(--color-options-background-hover);
+            text-align: left;
+        }
+        :deep(.chat-content tbody tr:not(:last-child)) {
+            border-bottom: 0.05rem solid var(--color-toolbar-border);
         }
         :deep(.chat-content th), :deep(.chat-content td) {
-            display: table-cell;
-            padding: 0.4rem 1rem;
-            /* border: 0.05rem solid var(--color-table-border); */
+            min-width: 6rem;
+            padding: 0.45rem 0.7rem;
+            vertical-align: top;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        :deep(.chat-content th) {
+            font-weight: 600;
         }
         :deep(.chat-content code) {
-            display: inline-block;
+            display: inline;
             background-color: var(--color-code-background);
             padding: 0.2rem 0.4rem;
             border-radius: 0.3rem;
@@ -593,7 +671,6 @@
         }
         :deep(.chat-content p > code), :deep(.chat-content li > code) {
             white-space: pre-wrap;
-            transform: translateY(0.5rem);
         }
         :deep(.chat-content mark) {
             padding-left: 0.2rem;
@@ -607,6 +684,7 @@
             margin: 0;
         }
         :deep(.chat-content .code-block code) {
+            display: block;
             width: 100%;
             padding-top: 0.65rem;
             padding-bottom: 0.65rem;
@@ -647,23 +725,23 @@
     .focus-bar {
         position: absolute;
         height: 100%;
-        width: 0.05rem;
+        width: 0.1rem;
         background-color: transparent;
         opacity: 0.5;
     }
     .chat-message:focus {
         outline: 0;
     }
-    .chat-message.assistant:focus .focus-bar,
-    .chat-message.assistant:has(:focus) .focus-bar {
-        background-color: rgba(145, 145, 145, 0.3);
+    .chat-message.assistant:focus-visible .focus-bar,
+    .chat-message.assistant:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
         left: -1rem;
         right: auto;
         height: calc(100% - 2rem);
     }
-    .chat-message.user:focus .focus-bar,
-    .chat-message.user:has(:focus) .focus-bar {
-        background-color: rgba(145, 145, 145, 0.3);
+    .chat-message.user:focus-visible .focus-bar,
+    .chat-message.user:has(:focus-visible) .focus-bar {
+        background-color: var(--color-text-primary);
         right: -1rem;
         top: 0rem;
         left: auto;

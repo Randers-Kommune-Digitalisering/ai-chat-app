@@ -80,6 +80,7 @@
     const isOverDropZone = ref(false)
     const filesAwaitingUpload = ref(0)
     const filesTotalToUpload = ref(0)
+    const fileUploadTimeoutMs = 5_000
     const fileDropped = ref(false)
     const fileUploaded = ref(false)
     const fileInputRef = ref(null)
@@ -159,17 +160,40 @@
         filesAwaitingUpload.value = filesTotalToUpload.value = acceptedFiles.length
         fileDropped.value = true
         if (acceptedFiles.length > 0) {
-
-            // Read all files as base64
-            const filesWithContent = await Promise.all(
-                acceptedFiles.map(async file => ({
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    content: await readFileAsBase64(file),
-                    hover: false
-                }))
-            )
+            let uploadTimeout
+            let filesWithContent
+            try {
+                filesWithContent = await Promise.race([
+                    Promise.all(
+                        acceptedFiles.map(async file => ({
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            content: await readFileAsBase64(file),
+                            hover: false
+                        }))
+                    ),
+                    new Promise((_, reject) => {
+                        uploadTimeout = setTimeout(
+                            () => reject(new Error('File upload timed out')),
+                            fileUploadTimeoutMs
+                        )
+                    })
+                ])
+            } catch (error) {
+                console.error('File upload failed', error)
+                filesAwaitingUpload.value = 0
+                filesTotalToUpload.value = 0
+                fileUploaded.value = false
+                showUploadError(
+                    error instanceof Error && error.message === 'File upload timed out'
+                        ? 'Uploaden tog for lang tid. Prøv igen.'
+                        : 'Filen kunne ikke uploades'
+                )
+                return
+            } finally {
+                clearTimeout(uploadTimeout)
+            }
 
             // Initiate upload animation in input field
             const totalUploadTime = 300 + (filesWithContent.length - 1) * 500
