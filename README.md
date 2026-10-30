@@ -45,6 +45,8 @@ Robust håndtering af Azure/OpenAI-fejl som en del af chat-flowet:
 ## Miljøvariabler
 Konfiguration indlæses fra miljøet og fra en lokal `.env`-fil. Gem ikke nøgler eller passwords i Git; injicér dem via den godkendte secret store i det relevante miljø.
 
+Brug [.env.example](.env.example) som udgangspunkt for en lokal `.env`-fil, og erstat placeholder-værdierne med dine egne. `.env`-filen indeholder secrets og må ikke committes.
+
 `ASSISTANT_TYPE` vælger klienten og bør sættes eksplicit til enten `Chat` eller `Agent`. Værdien har default `Chat`. Andre værdier behandles også som Chat, så brug det dokumenterede navn for at undgå fejlkonfiguration.
 
 ### Nødvendige for begge typer
@@ -131,6 +133,8 @@ Valgfrie Agent-indstillinger:
 | `ALT_ALERT_TYPE` | `info` | Alert-type: `info`, `warning` eller `danger`. |
 | `AZURE_AISEARCH_ENDPOINT` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
 | `AZURE_AISEARCH_API_KEY` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
+
+Agent-kildereferencer til Azure AI Search bruger dokumentets `url`-felt fra søgeindekset som offentligt link; blobstien og filformatet (JSON/PDF) bruges ikke til at danne linket. Kilden findes via citationsmarkørens indeks i det senest afsluttede søgekalds `get_urls`-resultatsæt, og dokumenttitlen kontrolleres mod citationen. Der bruges ikke titelbaseret fallback. Hvis indekset ikke kan matches sikkert, titlen er forskellig, eller metadataopslaget fejler, vises den interne Azure AI Search-URL ikke som et link.
 
 ### Fælles valgfrie indstillinger
 

@@ -7,6 +7,8 @@ import random
 import re
 import time
 import urllib.parse
+from http.client import HTTPException
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from abc import abstractmethod
 from json import JSONDecodeError, loads
@@ -247,7 +249,6 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
     if _get_field(item, "type") != "azure_ai_search_call_output":
         return []
 
-    seen: set[str] = set()
     get_urls: list[str] = []
 
     def visit(value: Any) -> None:
@@ -270,9 +271,8 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
         if isinstance(raw_urls, (list, tuple)):
             for candidate in raw_urls:
                 candidate_url = str(candidate or "").strip()
-                if not candidate_url or candidate_url in seen:
+                if not candidate_url:
                     continue
-                seen.add(candidate_url)
                 get_urls.append(candidate_url)
 
         for nested in normalized.values():
@@ -285,10 +285,12 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
 
 def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     """
-    Extract AI Search get_urls values from a stream event.
+    Extract the latest AI Search result set from a stream event.
+
+    Citation marker indexes are scoped to one call's result list, not all calls combined.
 
     :param event: Stream event.
-    :return: Ordered list of get_urls values.
+    :return: Ordered get_urls list for the latest completed AI Search call.
     """
     event_type = _get_field(event, "type")
 
@@ -298,15 +300,9 @@ def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     if event_type == "response.completed":
         response = _get_field(event, "response")
         output_items = list(_get_field(response, "output", []) or [])
-        seen: set[str] = set()
-        merged: list[str] = []
-        for output_item in output_items:
-            for get_url in _extract_ai_search_get_urls_from_item(output_item):
-                if get_url in seen:
-                    continue
-                seen.add(get_url)
-                merged.append(get_url)
-        return merged
+        for output_item in reversed(output_items):
+            if _get_field(output_item, "type") == "azure_ai_search_call_output":
+                return _extract_ai_search_get_urls_from_item(output_item)
 
     return []
 
@@ -320,6 +316,7 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
     :return: Parsed metadata object or None.
     """
     if not AZURE_AISEARCH_API_KEY:
+        logger.warning("AI Search metadata lookup skipped because its API key is not configured")
         return None
 
     request_url = _normalize_ai_search_get_url(get_url)
@@ -345,8 +342,11 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
             payload = loads(response.read().decode("utf-8"))
         if isinstance(payload, dict):
             return payload
-    except Exception as exc:
-        logger.debug("AI Search metadata fetch failed for get_url %s: %s", request_url, exc)
+        logger.warning("AI Search metadata lookup returned a non-object payload")
+    except HTTPError as exc:
+        logger.warning("AI Search metadata request failed (status=%s)", exc.code)
+    except (HTTPException, URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        logger.warning("AI Search metadata request failed (error_type=%s)", type(exc).__name__)
 
     return None
 
@@ -470,15 +470,18 @@ def _get_url_citation_container(reference: Any) -> dict | None:
     return None
 
 
-def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: list[str]) -> list[dict]:
+def _remap_ai_search_reference_urls(
+    references: list[dict], ai_search_get_urls: list[str], answer_text: str = ""
+) -> list[dict]:
     """
-    Replace internal search.windows.net citation URLs using AI Search metadata lookups.
+    Replace internal search.windows.net citation URLs only when the source can be identified.
 
     :param references: Extracted reference annotations.
     :param ai_search_get_urls: URLs from AI Search get_urls output.
-    :return: References with internal AI Search URLs replaced when metadata is available.
+    :param answer_text: Full answer, used to match annotation offsets to source markers.
+    :return: References with resolved AI Search URLs replaced.
     """
-    if not references or not ai_search_get_urls:
+    if not references:
         return references
 
     internal_citations: list[dict] = []
@@ -493,64 +496,88 @@ def _remap_ai_search_reference_urls(references: list[dict], ai_search_get_urls: 
     if not internal_citations:
         return references
 
-    metadata_entries: list[dict] = []
-    seen_metadata_urls: set[str] = set()
-    # Bound total lookup latency and only fetch the number of entries needed for remapping.
-    max_lookups = min(len(ai_search_get_urls), len(internal_citations))
+    citation_markers = _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
+    marker_indices_by_start = {
+        _python_index_to_utf16(answer_text, start): indices
+        for start, _, indices in citation_markers
+    }
+    marker_text_by_start = {
+        _python_index_to_utf16(answer_text, start): answer_text[start:end]
+        for start, end, _ in citation_markers
+    }
+    metadata_by_index: dict[int, dict | None] = {}
     lookup_deadline = time.monotonic() + 10.0
-    for get_url in ai_search_get_urls:
-        if len(metadata_entries) >= max_lookups:
-            break
 
+    def fetch_metadata(index: int) -> dict | None:
+        if index in metadata_by_index:
+            return metadata_by_index[index]
         remaining_s = lookup_deadline - time.monotonic()
         if remaining_s <= 0:
-            logger.debug(
-                "AI Search metadata remap lookup budget exhausted (internal_citations=%s fetched=%s)",
-                len(internal_citations),
-                len(metadata_entries),
-            )
-            break
-
+            return None
         metadata = _fetch_ai_search_document_metadata(
-            get_url=get_url,
+            get_url=ai_search_get_urls[index],
             timeout_s=min(remaining_s, 1.5),
         )
-        if not isinstance(metadata, dict):
-            continue
+        metadata_by_index[index] = metadata if isinstance(metadata, dict) else None
+        logger.debug(
+            "AI Search citation metadata lookup (source_index=%s available=%s)",
+            index,
+            metadata_by_index[index] is not None,
+        )
+        return metadata_by_index[index]
 
-        public_url = _extract_public_url_from_metadata(metadata=metadata)
-        if not public_url:
-            continue
-        if public_url in seen_metadata_urls:
-            continue
+    unresolved_count = 0
+    for citation_position, citation in enumerate(internal_citations):
+        start, end = citation.get("start_index"), citation.get("end_index")
+        source_indices = marker_indices_by_start.get(start, []) if type(start) is int else []
+        index = source_indices[0] if len(source_indices) == 1 else None
+        reason = "resolved"
 
-        seen_metadata_urls.add(public_url)
-        metadata_entries.append({
-            "url": public_url,
-            "title": str(metadata.get("title") or "").strip(),
-        })
+        if index is not None:
+            metadata = fetch_metadata(index)
+            if not metadata:
+                reason = "metadata_unavailable"
+            else:
+                metadata_title_key = _normalize_title_key(metadata.get("title"))
+                citation_title_key = _normalize_title_key(citation.get("title"))
+                if not metadata_title_key or not citation_title_key:
+                    reason = "title_missing"
+                elif metadata_title_key != citation_title_key:
+                    reason = "title_mismatch"
+                else:
+                    public_url = _extract_public_url_from_metadata(metadata)
+                    if public_url:
+                        citation["url"] = public_url
+                    else:
+                        reason = "public_url_missing"
+        elif len(source_indices) > 1:
+            reason = "ambiguous_marker"
+        else:
+            reason = "marker_not_found"
 
-    if not metadata_entries:
-        return references
+        logger.debug(
+            "AI Search citation resolution "
+            "(citation=%s offsets=(%s,%s) marker=%s source_indices=%s source_index=%s reason=%s)",
+            citation_position,
+            start,
+            end,
+            marker_text_by_start.get(start, "") if type(start) is int else "",
+            source_indices,
+            index,
+            reason,
+        )
+        if reason != "resolved":
+            citation["url"] = ""
+            unresolved_count += 1
 
-    title_to_url: dict[str, str] = {}
-    ordered_urls: list[str] = []
-    for entry in metadata_entries:
-        url = entry["url"]
-        ordered_urls.append(url)
-        title_key = _normalize_title_key(entry.get("title"))
-        if title_key and title_key not in title_to_url:
-            title_to_url[title_key] = url
-
-    fallback_index = 0
-    for citation in internal_citations:
-        replacement_url = title_to_url.get(_normalize_title_key(citation.get("title")))
-        if not replacement_url and fallback_index < len(ordered_urls):
-            replacement_url = ordered_urls[fallback_index]
-            fallback_index += 1
-
-        if replacement_url:
-            citation["url"] = replacement_url
+    if unresolved_count:
+        logger.warning(
+            "AI Search citations unresolved; internal fallback URLs suppressed "
+            "(count=%s fetched=%s total_sources=%s)",
+            unresolved_count,
+            len(metadata_by_index),
+            len(ai_search_get_urls),
+        )
 
     return references
 
@@ -564,6 +591,13 @@ def _summarize_output_item_for_logs(item: Any) -> dict:
     """
     item_type = str(_get_field(item, "type") or "")
     summary: dict[str, Any] = {"type": item_type}
+
+    if item_type in {"azure_ai_search_call", "azure_ai_search_call_output"}:
+        summary["id"] = _get_field(item, "id")
+        summary["call_id"] = _get_field(item, "call_id")
+        if item_type == "azure_ai_search_call_output":
+            summary["get_url_count"] = len(_extract_ai_search_get_urls_from_item(item))
+        return summary
 
     if item_type == "message":
         content_items = list(_get_field(item, "content", []) or [])
@@ -927,10 +961,10 @@ class Chat(AzureOpenAIClient):
         """Return the configured legacy system prompt."""
         system_prompt = SYSTEM_PROMPT.strip()
         if self.emphasize_recent_content:
-            weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lordag", "Sondag"]
+            weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
             now = datetime.now()
             date = f"{weekdays_danish[now.weekday()]} d. {now.strftime('%d-%m-%Y')}"
-            system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgaengelig."
+            system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgængelig."
         return system_prompt
 
     @staticmethod
@@ -1040,13 +1074,13 @@ class Chat(AzureOpenAIClient):
             return None, [], message, status
 
         if not response or not getattr(response, "choices", None):
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
         choice = response.choices[0]
         response_message = getattr(choice, "message", None)
         assistant_response = getattr(response_message, "content", None)
         if assistant_response is None:
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
         citation_refs = [int(ref) for ref in re.findall(r"\[(?:doc)?(\d{1,2})\]", assistant_response)]
         unique_refs = sorted(set(citation_refs))
@@ -1408,15 +1442,25 @@ class Agent(AzureOpenAIClient):
                 yield {"type": "delta", "text": event.delta}
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
-            if extracted_get_urls:
-                for get_url in extracted_get_urls:
-                    if get_url not in ai_search_get_urls:
-                        ai_search_get_urls.append(get_url)
-                logger.debug(
-                    "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
-                    thread_id,
-                    len(ai_search_get_urls),
+            is_ai_search_result_event = (
+                event_type in {"response.output_item.added", "response.output_item.done"}
+                and _get_field(_get_field(event, "item"), "type") == "azure_ai_search_call_output"
+            )
+            if event_type == "response.completed":
+                output_items = list(_get_field(_get_field(event, "response"), "output", []) or [])
+                is_ai_search_result_event = any(
+                    _get_field(output_item, "type") == "azure_ai_search_call_output"
+                    for output_item in output_items
                 )
+            if extracted_get_urls or is_ai_search_result_event:
+                ai_search_get_urls = extracted_get_urls
+                if event_type != "response.output_item.added":
+                    logger.debug(
+                        "Agent stream selected latest ai_search result set (thread_id=%s event=%s count=%s)",
+                        thread_id,
+                        event_type,
+                        len(ai_search_get_urls),
+                    )
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":
@@ -1447,6 +1491,7 @@ class Agent(AzureOpenAIClient):
                     latest_references = _remap_ai_search_reference_urls(
                         references=latest_references,
                         ai_search_get_urls=ai_search_get_urls,
+                        answer_text="".join(response_text_parts),
                     )
                     logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
@@ -1475,6 +1520,7 @@ class Agent(AzureOpenAIClient):
                 latest_references = _remap_ai_search_reference_urls(
                     references=latest_references,
                     ai_search_get_urls=ai_search_get_urls,
+                    answer_text="".join(response_text_parts),
                 )
                 logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
@@ -1501,6 +1547,7 @@ class Agent(AzureOpenAIClient):
             latest_references = _remap_ai_search_reference_urls(
                 references=latest_references,
                 ai_search_get_urls=ai_search_get_urls,
+                answer_text="".join(response_text_parts),
             )
             logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
@@ -1546,15 +1593,15 @@ class AzureOpenAITitleGenerator:
         system_prompt = {
             "role": "system",
             "content": (
-                "Du er en hjaelpsom assistent, der genererer korte og praecise titler "
-                "(maksimalt 24 tegn) til samtaler baseret pa brugerens forste besked. "
-                "Titlen skal vaere pa dansk og opsummere samtalens emne uden at inkludere "
+                "Du er en hjælpsom assistent, der genererer korte og præcise titler "
+                "(maksimalt 24 tegn) til samtaler baseret på brugerens første besked. "
+                "Titlen skal være på dansk og opsummere samtalens emne uden at inkludere "
                 "citater eller referencer."
             ),
         }
         user_prompt = {
             "role": "user",
-            "content": f"Generer en kort titel for folgende besked: '{conversation_messages[0]['content']}'",
+            "content": f"Generer en kort titel for følgende besked: '{conversation_messages[0]['content']}'",
         }
 
         response = self.client.chat.completions.create(
