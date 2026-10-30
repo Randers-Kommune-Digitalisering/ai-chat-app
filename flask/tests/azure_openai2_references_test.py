@@ -506,6 +506,28 @@ def test_extract_ai_search_get_urls_from_stream_event_reads_get_urls_list():
     assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == [get_url]
 
 
+def test_extract_ai_search_get_urls_from_completed_event_uses_latest_call_result_set():
+    first_group = ["https://we-aisearch-it.search.windows.net/docs/first"]
+    latest_group = ["https://we-aisearch-it.search.windows.net/docs/latest"]
+    event = SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            output=[
+                SimpleNamespace(
+                    type="azure_ai_search_call_output",
+                    output={"get_urls": first_group},
+                ),
+                SimpleNamespace(
+                    type="azure_ai_search_call_output",
+                    output={"get_urls": latest_group},
+                ),
+            ],
+        ),
+    )
+
+    assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == latest_group
+
+
 def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
     input_url = (
         "https://we-aisearch-it.search.windows.net/indexes/aisearch-randersdk-index/docs/doc_1"
@@ -546,6 +568,7 @@ def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monke
         "?api-version=2024-07-01&$select=id,title"
     )
     public_url = "https://www.randers.dk/borger/fritid/discgolf"
+    answer = "Svar \u30105:0\u2020source\u3011"
 
     events = [
         SimpleNamespace(
@@ -555,13 +578,15 @@ def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monke
                 output={"get_urls": [get_url]},
             ),
         ),
-        SimpleNamespace(type="response.output_text.delta", delta="Svar "),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
         SimpleNamespace(
             type="response.output_text.annotation.added",
             annotation={
                 "type": "url_citation",
                 "title": "Discgolf%20-%20Randers%20Kommune",
                 "url": "https://we-aisearch-it.search.windows.net/",
+                "start_index": answer.index("\u3010"),
+                "end_index": len(answer),
             },
         ),
         SimpleNamespace(
@@ -607,6 +632,8 @@ def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monke
                 "type": "url_citation",
                 "title": "Discgolf%20-%20Randers%20Kommune",
                 "url": public_url,
+                "start_index": answer.index("\u3010"),
+                "end_index": len(answer),
             }
         ],
     }
@@ -625,6 +652,7 @@ def test_stream_chat_response_with_metadata_decodes_encoded_metadata_url(monkeyp
         "https://www.randers.dk/borger/fritid/faelles-indsatser/"
         "bevaeg-dig-randers/aktiviteter/oplevelser-og-bevaegelse-i-det-fri/discgolf/"
     )
+    answer = "Svar \u30105:0\u2020source\u3011"
 
     events = [
         SimpleNamespace(
@@ -634,12 +662,15 @@ def test_stream_chat_response_with_metadata_decodes_encoded_metadata_url(monkeyp
                 output={"get_urls": [get_url]},
             ),
         ),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
         SimpleNamespace(
             type="response.output_text.annotation.added",
             annotation={
                 "type": "url_citation",
                 "title": "Discgolf%20-%20Randers%20Kommune",
                 "url": "https://we-aisearch-it.search.windows.net/",
+                "start_index": answer.index("\u3010"),
+                "end_index": len(answer),
             },
         ),
         SimpleNamespace(
@@ -685,6 +716,8 @@ def test_stream_chat_response_with_metadata_decodes_encoded_metadata_url(monkeyp
                 "type": "url_citation",
                 "title": "Discgolf%20-%20Randers%20Kommune",
                 "url": decoded_public_url,
+                "start_index": answer.index("\u3010"),
+                "end_index": len(answer),
             }
         ],
     }
@@ -761,12 +794,16 @@ def test_stream_chat_response_with_metadata_keeps_web_search_urls_even_with_ai_s
     }
 
 
-def test_remap_ai_search_reference_urls_finds_matching_metadata_beyond_first_results(monkeypatch):
+def test_remap_ai_search_reference_urls_uses_marker_index_not_first_result(monkeypatch):
+    answer = "Se den relevante side \u30105:2\u2020source\u3011"
+    marker_start = answer.index("\u3010")
     references = [
         {
             "type": "url_citation",
             "title": "Ugens%20menu%20-%20Broen",
             "url": "https://we-aisearch-it.search.windows.net/doc/1",
+            "start_index": marker_start,
+            "end_index": len(answer),
         },
     ]
     ai_search_get_urls = [
@@ -789,9 +826,10 @@ def test_remap_ai_search_reference_urls_finds_matching_metadata_beyond_first_res
     remapped = azure_openai._remap_ai_search_reference_urls(
         references=references,
         ai_search_get_urls=ai_search_get_urls,
+        answer_text=answer,
     )
 
-    assert calls == ai_search_get_urls
+    assert calls == [ai_search_get_urls[2]]
     assert remapped[0]["url"] == metadata[2]["url"]
 
 
@@ -811,16 +849,22 @@ def test_remap_ai_search_reference_urls_keeps_unmatched_and_ambiguous_citations(
         {"type": "url_citation", "title": "Anden side", "url": "https://we-aisearch-it.search.windows.net/"},
     ]
 
+    calls = []
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: calls.append(get_url),
+    )
+
     remapped = azure_openai._remap_ai_search_reference_urls(references, get_urls)
 
-    assert [reference["url"] for reference in remapped] == [
-        "https://we-aisearch-it.search.windows.net/",
-        "https://we-aisearch-it.search.windows.net/",
-    ]
+    assert [reference["url"] for reference in remapped] == ["", ""]
+    assert calls == []
 
 
 def test_remap_ai_search_reference_urls_does_not_guess_after_failed_lookup(monkeypatch):
     get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(2)]
+    answer = "Se menuen \u30105:1\u2020source\u3011"
     monkeypatch.setattr(
         azure_openai,
         "_fetch_ai_search_document_metadata",
@@ -833,15 +877,46 @@ def test_remap_ai_search_reference_urls_does_not_guess_after_failed_lookup(monke
         "type": "url_citation",
         "title": "Ugens menu - Broen",
         "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
     }
 
-    remapped = azure_openai._remap_ai_search_reference_urls([reference], get_urls)
+    remapped = azure_openai._remap_ai_search_reference_urls([reference], get_urls, answer_text=answer)
 
-    assert remapped[0]["url"] == "https://we-aisearch-it.search.windows.net/"
+    assert remapped[0]["url"] == ""
+
+
+def test_remap_ai_search_reference_urls_does_not_title_fallback_for_indexed_title_conflict(monkeypatch):
+    get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(2)]
+    answer = "Læs menuen \u30105:1\u2020source\u3011"
+    metadata = [
+        {"title": "Menu", "url": "https://example.com/source-0"},
+        {"title": "Menu revised", "url": "https://example.com/source-1"},
+    ]
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append(get_url)
+        return metadata[get_urls.index(get_url)]
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    reference = {
+        "type": "url_citation",
+        "title": "Menu",
+        "url": "https://we-aisearch-it.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
+    }
+
+    remapped = azure_openai._remap_ai_search_reference_urls([reference], get_urls, answer_text=answer)
+
+    assert calls == [get_urls[1]]
+    assert remapped[0]["url"] == ""
 
 
 def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkeypatch):
     get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
+    earlier_get_urls = [f"https://we-aisearch-it.search.windows.net/docs/earlier-{index}" for index in range(3)]
     public_url = "https://broen.randers.dk/ejendomsservice/intern-service/kantinerne/ugens-menu/"
     metadata = [
         {"title": "Undertekstning", "url": "https://broen.randers.dk/kommunikation/undertekstning/"},
@@ -857,14 +932,29 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
         "start_index": marker_start,
         "end_index": len(answer),
     }
+    earlier_search_item = SimpleNamespace(
+        type="azure_ai_search_call_output",
+        output={"get_urls": earlier_get_urls},
+    )
+    latest_search_item = SimpleNamespace(
+        type="azure_ai_search_call_output",
+        output={"get_urls": get_urls},
+    )
     events = [
         SimpleNamespace(
             type="response.output_item.done",
-            item=SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": get_urls}),
+            item=earlier_search_item,
+        ),
+        SimpleNamespace(
+            type="response.output_item.done",
+            item=latest_search_item,
         ),
         SimpleNamespace(type="response.output_text.delta", delta=answer),
         SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
-        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[])),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(output=[earlier_search_item, latest_search_item]),
+        ),
     ]
     calls = []
 
@@ -956,7 +1046,7 @@ def test_remap_ai_search_reference_urls_uses_citation_marker_for_duplicate_title
         return metadata[get_urls.index(get_url)]
 
     monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
-    answer = "\U0001f600 Pa Laksetorvet: kl. 11-13\u30105:2\u2020source\u3011"
+    answer = "\U0001f600 Pa Laksetorvet: kl. 11-13\u30105:2\u2020source\u3011 bagefter"
     marker_start = answer.index("\u3010")
     references = [{
         "type": "url_citation",

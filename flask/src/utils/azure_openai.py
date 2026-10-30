@@ -7,6 +7,7 @@ import random
 import re
 import time
 import urllib.parse
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from abc import abstractmethod
 from json import JSONDecodeError, loads
@@ -283,10 +284,12 @@ def _extract_ai_search_get_urls_from_item(item: Any) -> list[str]:
 
 def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     """
-    Extract AI Search get_urls values from a stream event.
+    Extract the latest AI Search result set from a stream event.
+
+    Citation marker indexes are scoped to one call's result list, not all calls combined.
 
     :param event: Stream event.
-    :return: Ordered list of get_urls values.
+    :return: Ordered get_urls list for the latest completed AI Search call.
     """
     event_type = _get_field(event, "type")
 
@@ -296,10 +299,10 @@ def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     if event_type == "response.completed":
         response = _get_field(event, "response")
         output_items = list(_get_field(response, "output", []) or [])
-        merged: list[str] = []
-        for output_item in output_items:
-            merged.extend(_extract_ai_search_get_urls_from_item(output_item))
-        return merged
+        for output_item in reversed(output_items):
+            get_urls = _extract_ai_search_get_urls_from_item(output_item)
+            if get_urls:
+                return get_urls
 
     return []
 
@@ -313,6 +316,7 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
     :return: Parsed metadata object or None.
     """
     if not AZURE_AISEARCH_API_KEY:
+        logger.warning("AI Search metadata lookup skipped because its API key is not configured")
         return None
 
     request_url = _normalize_ai_search_get_url(get_url)
@@ -338,8 +342,11 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
             payload = loads(response.read().decode("utf-8"))
         if isinstance(payload, dict):
             return payload
-    except Exception as exc:
-        logger.debug("AI Search metadata fetch failed for get_url %s: %s", request_url, exc)
+        logger.warning("AI Search metadata lookup returned a non-object payload")
+    except HTTPError as exc:
+        logger.warning("AI Search metadata request failed (status=%s)", exc.code)
+    except (URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning("AI Search metadata request failed (error_type=%s)", type(exc).__name__)
 
     return None
 
@@ -489,10 +496,14 @@ def _remap_ai_search_reference_urls(
     if not internal_citations:
         return references
 
-    marker_indices = {
-        (_python_index_to_utf16(answer_text, start), _python_index_to_utf16(answer_text, end)): indices[0]
-        for start, end, indices in _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
-        if len(indices) == 1
+    citation_markers = _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
+    marker_indices_by_start = {
+        _python_index_to_utf16(answer_text, start): indices
+        for start, _, indices in citation_markers
+    }
+    marker_text_by_start = {
+        _python_index_to_utf16(answer_text, start): answer_text[start:end]
+        for start, end, _ in citation_markers
     }
     metadata_by_index: dict[int, dict | None] = {}
     lookup_deadline = time.monotonic() + 10.0
@@ -508,48 +519,56 @@ def _remap_ai_search_reference_urls(
             timeout_s=min(remaining_s, 1.5),
         )
         metadata_by_index[index] = metadata if isinstance(metadata, dict) else None
+        logger.debug(
+            "AI Search citation metadata lookup (source_index=%s available=%s)",
+            index,
+            metadata_by_index[index] is not None,
+        )
         return metadata_by_index[index]
 
-    unresolved: list[dict] = []
-    for citation in internal_citations:
+    unresolved_count = 0
+    for citation_position, citation in enumerate(internal_citations):
         start, end = citation.get("start_index"), citation.get("end_index")
-        index = marker_indices.get((start, end)) if isinstance(start, int) and isinstance(end, int) else None
+        source_indices = marker_indices_by_start.get(start, []) if type(start) is int else []
+        index = source_indices[0] if len(source_indices) == 1 else None
+        reason = "resolved"
+
         if index is not None:
             metadata = fetch_metadata(index)
-            if metadata and _normalize_title_key(metadata.get("title")) == _normalize_title_key(citation.get("title")):
+            if not metadata:
+                reason = "metadata_unavailable"
+            elif _normalize_title_key(metadata.get("title")) != _normalize_title_key(citation.get("title")):
+                reason = "title_mismatch"
+            else:
                 public_url = _extract_public_url_from_metadata(metadata)
                 if public_url:
                     citation["url"] = public_url
-                    continue
+                else:
+                    reason = "public_url_missing"
+        elif len(source_indices) > 1:
+            reason = "ambiguous_marker"
+        else:
+            reason = "marker_not_found"
 
-        if index is None:
-            unresolved.append(citation)
+        logger.debug(
+            "AI Search citation resolution "
+            "(citation=%s offsets=(%s,%s) marker=%s source_indices=%s source_index=%s reason=%s)",
+            citation_position,
+            start,
+            end,
+            marker_text_by_start.get(start, "") if type(start) is int else "",
+            source_indices,
+            index,
+            reason,
+        )
+        if reason != "resolved":
+            citation["url"] = ""
+            unresolved_count += 1
 
-    if unresolved and any(_normalize_title_key(citation.get("title")) for citation in unresolved):
-        title_to_urls: dict[str, set[str]] = {}
-        complete_scan = True
-        for index in range(len(ai_search_get_urls)):
-            metadata = fetch_metadata(index)
-            if not metadata:
-                complete_scan = False
-                continue
-            title_key = _normalize_title_key(metadata.get("title"))
-            public_url = _extract_public_url_from_metadata(metadata)
-            if not title_key or not public_url:
-                complete_scan = False
-                continue
-            title_to_urls.setdefault(title_key, set()).add(public_url)
-
-        if complete_scan:
-            for citation in unresolved:
-                matching_urls = title_to_urls.get(_normalize_title_key(citation.get("title")), set())
-                if len(matching_urls) == 1:
-                    citation["url"] = next(iter(matching_urls))
-
-    unresolved_count = sum(_is_internal_ai_search_url(str(citation.get("url") or "")) for citation in internal_citations)
     if unresolved_count:
         logger.warning(
-            "AI Search citations left unresolved to avoid incorrect source links (count=%s fetched=%s total=%s)",
+            "AI Search citations unresolved; internal fallback URLs suppressed "
+            "(count=%s fetched=%s total_sources=%s)",
             unresolved_count,
             len(metadata_by_index),
             len(ai_search_get_urls),
@@ -567,6 +586,13 @@ def _summarize_output_item_for_logs(item: Any) -> dict:
     """
     item_type = str(_get_field(item, "type") or "")
     summary: dict[str, Any] = {"type": item_type}
+
+    if item_type in {"azure_ai_search_call", "azure_ai_search_call_output"}:
+        summary["id"] = _get_field(item, "id")
+        summary["call_id"] = _get_field(item, "call_id")
+        if item_type == "azure_ai_search_call_output":
+            summary["get_url_count"] = len(_extract_ai_search_get_urls_from_item(item))
+        return summary
 
     if item_type == "message":
         content_items = list(_get_field(item, "content", []) or [])
@@ -1412,14 +1438,12 @@ class Agent(AzureOpenAIClient):
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
             if extracted_get_urls:
-                if event_type == "response.completed":
-                    ai_search_get_urls = extracted_get_urls
-                elif event_type == "response.output_item.done":
-                    ai_search_get_urls.extend(extracted_get_urls)
+                ai_search_get_urls = extracted_get_urls
                 if event_type != "response.output_item.added":
                     logger.debug(
-                        "Agent stream captured ai_search get_urls (thread_id=%s count=%s)",
+                        "Agent stream selected latest ai_search result set (thread_id=%s event=%s count=%s)",
                         thread_id,
+                        event_type,
                         len(ai_search_get_urls),
                     )
 
