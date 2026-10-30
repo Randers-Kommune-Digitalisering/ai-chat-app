@@ -34,10 +34,26 @@ try {
 
 // createApp(App).mount('#app')
 
+const DEFAULT_CONFIG = {
+	conversationLoadCutoffDate: '2026-09-15T00:00:00'
+};
+
 async function fetchConfig() {
-	const res = await fetch('/api/config');
-	if (!res.ok) return {};
-	return await res.json();
+	try {
+		const res = await fetch('/api/config');
+		if (!res.ok) {
+			console.error('[ai-chat main] Failed to fetch /api/config', { status: res.status });
+			return { ...DEFAULT_CONFIG };
+		}
+		const config = await res.json();
+		return {
+			...DEFAULT_CONFIG,
+			...(config || {})
+		};
+	} catch (error) {
+		console.error('[ai-chat main] Error fetching /api/config', error);
+		return { ...DEFAULT_CONFIG };
+	}
 }
 
 fetchConfig().then(config => {

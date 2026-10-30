@@ -1,5 +1,7 @@
 import time
 from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -53,6 +55,32 @@ def client(app):
 def test_load_conversation_requires_valid_permit(client):
     res = client.post('/api/conversations/load', json={})
     assert res.status_code == 401
+
+
+def test_load_conversation_uses_permit_identity_and_returns_404_when_missing(client, monkeypatch):
+    import api_endpoints as api
+
+    @contextmanager
+    def _fake_session_scope():
+        yield object()
+
+    mock_lookup = Mock(return_value=None)
+    monkeypatch.setattr(api, 'verify_conversation_load_permit', lambda token: SimpleNamespace(
+        user_email='owner@example.com', conversation_id=42,
+    ))
+    monkeypatch.setattr(api, 'get_user_conversation', mock_lookup)
+    monkeypatch.setattr(api.db_client, 'session_scope', _fake_session_scope)
+
+    response = client.post(
+        '/api/conversations/load',
+        headers={'Authorization': 'Bearer signed-permit', 'X-User-Email': 'someone-else@example.com'},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()['success'] is False
+    assert isinstance(response.get_json()['message'], str)
+    assert mock_lookup.call_args.kwargs['user_email'] == 'owner@example.com'
+    assert mock_lookup.call_args.kwargs['conversation_id'] == 42
 
 
 def test_load_conversation_by_permit_happy_path(client, monkeypatch):

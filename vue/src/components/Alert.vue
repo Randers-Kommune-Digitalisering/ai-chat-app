@@ -25,6 +25,10 @@
         inline: {
             type: Boolean,
             default: false
+        },
+        sticky: {
+            type: Boolean,
+            default: false
         }
     })
 
@@ -41,8 +45,11 @@
 </script>
 
 <template>
-    <div class="alert-wrapper">
-        <div :class="['alert', 'fade-in', typeClass, { 'alert--inline': props.inline }]">
+    <div :class="['alert-wrapper', { 'alert-wrapper--sticky': props.sticky }]" aria-live="polite" aria-atomic="false">
+        <div
+            tabindex="0"
+            role="note"
+            :class="['alert', 'fade-in', typeClass, { 'alert--inline': props.inline, 'alert--sticky': props.sticky }]">
             <i :class="`fa-solid fa-${icon}`"></i>
             <span class="alert-message" v-html="formattedMessage"></span>
             <slot />
@@ -55,14 +62,20 @@
         background-color: var(--color-background-primary);
         position: relative;
         z-index: 9;
+        margin-top: -0.7rem;
+    }
+    .alert-wrapper--sticky {
+        position: sticky;
+        top: calc(var(--alert-sticky-top, 2.8rem) + var(--alert-sticky-gap, 0.7rem));
+        z-index: 11;
     }
     .alert {
         display: flex;
         align-items: center;
         padding: 0.75em 1em;
         border-radius: 0.25rem;
-        margin: 0.5em 0;
-        transform: translateY(-0.7rem);
+        margin: 0.75em 0;
+        /* transform: translateY(-0.7rem); */
         font-size: 0.9rem;
     }
     .alert i {
@@ -89,7 +102,7 @@
         border-left: 4px solid #f44336;
         background: #f443332f;
     }
-    .alert--inline {
-        transform: translateY(0);
+    .alert--sticky {
+        margin-bottom: 0.7rem;
     }
 </style>

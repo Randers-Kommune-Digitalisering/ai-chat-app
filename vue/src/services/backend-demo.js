@@ -18,7 +18,7 @@ export async function sendThreadMessage(threadId, conversationId, message, files
 }
 
 export async function sendChatMessage(conversationId, messages, userEmail = null) {
-    console.log("Sending chat message with messages:", messages);
+    console.info("Sending demo chat message with messages:", messages);
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000)); // Wait for 1-3 seconds
     return {
         response: "This is a demo chat response based on your messages.",

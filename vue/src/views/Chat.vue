@@ -4,30 +4,45 @@
     import FileUpload from '../components/FileUpload.vue'
     import ChatMessageItem from '../components/ChatMessage.vue'
     import Alert from '../components/Alert.vue'
-    import { startThread, sendThreadMessage, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
+    import { startThread, sendThreadMessageStream, sendChatMessage, getIllegalContents, fetchConversationByPermit } from '../services/backend-service.js'
     import { portalDebugLog, notifyParentLoaded, notifyParentNewConversation, notifyParentChatCleared } from '../utils/portalMessaging.js'
 
     const props = defineProps({
         userEmail: { type: String, default: null }
     })
 
+    const _DEFAULT_ERROR_MESSAGE = "Beklager, der opstod en fejl. Prøv venligst igen."
+
 
     class ChatMessage {
-        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0) {
+        constructor(sender, content, illegalContents = [], references = [], files = [], timeSpent = 0, isStreaming = false) {
             this.sender = sender
             this.content = content
             this.illegalContents = illegalContents
-            this.redactedContents = illegalContents.slice() // Preserve original filtered content for later restoration when unfiltering assistant responses
+            this.redactedContents = Array.isArray(illegalContents) ? illegalContents.slice() : [] // Preserve original filtered content for later restoration when unfiltering assistant responses
             this.references = references
             this.files = files
             this.timeSpent = timeSpent
+            this.isStreaming = isStreaming
         }
     }
-    class Reference {
-        constructor(title, link) {
-            this.title = title
-            this.link = link
-        }
+
+    function asCitationObject(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+        return value
+    }
+
+    function mapApiReferences(references) {
+        if (!Array.isArray(references)) return []
+        return references.map(ref => asCitationObject(ref)).filter(Boolean)
+    }
+
+    function parseDateValue(value) {
+        if (!value) return null
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime())) return null
+        return parsed
     }
 
     const isAgent = ref(false)
@@ -38,6 +53,7 @@
     const userFiles = ref([])
     const chatMessages = ref([])
     const awaitingResponse = ref(false)
+    const responseStatus = ref('Assistenten tænker ...')
     const awaitingUserInput = ref(false)
     const showAssistantToggle = ref(false)
     const useAltAssistant = ref(false)
@@ -46,26 +62,52 @@
     const ASSISTANT_NAME_ID = ref('')
     const assistantName = ref('')
     const assistantDescription = ref('')
+    const assistantType = ref('chat')
     const errorMessage = ref('')
     const errorTimeoutId = ref(null)
+    const conversationCutoffDate = ref(null)
+    const agentFileSizeLimit = ref(10 * 1024 * 1024)
+    const responseGeneration = ref(0)
 
     const chatMessagesEl = ref(null)
     const fileUploadRootEl = ref(null)
+    const followStreamAutoScroll = ref(true)
+    const isProgrammaticScroll = ref(false)
+    const liveRegionText = ref('')
+    const completedMessageLiveText = ref('')
 
     onMounted(() => {
         const instance = getCurrentInstance()
         const config = instance.appContext.config.globalProperties.$config
-        isAgent.value = !!config?.isAgent
+        assistantType.value = (config?.assistantType || (config?.isAgent ? 'agent' : 'chat')).toLowerCase()
+        isAgent.value = assistantType.value === 'agent'
         showAssistantToggle.value = !!config?.showAssistantToggle
         altAssistantAlertMsg.value = config?.altAlertMsg
         altAssistantAlertType.value = config?.altAlertType
         ASSISTANT_NAME_ID.value = config?.assistantNameId || ''
         assistantName.value = config?.assistantName || ''
         assistantDescription.value = config?.description || ''
+        conversationCutoffDate.value = parseDateValue(config?.conversationLoadCutoffDate)
+        agentFileSizeLimit.value = Number(config?.agentFileSizeLimit) || 10 * 1024 * 1024
 
         adjustChatMessagesPaddingBottom()
         window.addEventListener('resize', onResize)
+        window.addEventListener('scroll', onWindowScroll, { passive: true })
     })
+
+    function onWindowScroll() {
+        if (!awaitingResponse.value) return
+        if (isProgrammaticScroll.value) return
+        followStreamAutoScroll.value = false
+    }
+
+    function withProgrammaticScroll(callback) {
+        isProgrammaticScroll.value = true
+        callback()
+        requestAnimationFrame(() => {
+            isProgrammaticScroll.value = false
+        })
+    }
 
     function adjustChatMessagesPaddingBottom() {
         nextTick(() => {
@@ -156,6 +198,7 @@
     
     onUnmounted(() => {
         window.removeEventListener('resize', onResize)
+        window.removeEventListener('scroll', onWindowScroll)
         if (resizeTimeoutId !== null) {
             clearTimeout(resizeTimeoutId)
             resizeTimeoutId = null
@@ -176,14 +219,19 @@
     async function clearChat(options = {}) {
         const { notifyParent = true } = options
         const previousConversationId = activeConversationId.value
+        responseGeneration.value += 1
         // Clear UI state
         chatMessages.value = []
+        liveRegionText.value = ''
+        completedMessageLiveText.value = ''
         awaitingResponse.value = false
         awaitingUserInput.value = false
         threadId.value = null
         activeConversationId.value = null
         useAltAssistant.value = false
         userInput.value.clearUserInput()
+        userInput.value.setInputVisibility(true)
+        fileUploader.value.setFileUploadVisibility(true)
         clearAllFiles()
         stopTimer()
         if (notifyParent) {
@@ -197,6 +245,8 @@
 
         if (data?.success === false) {
             console.error("Failed to load conversation:", data?.message)
+            errorMessage.value = data?.message
+            notifyParentLoaded()
             return
         }
 
@@ -209,12 +259,21 @@
         const loadedConversationId = data?.conversation?.id
         if (loadedConversationId) activeConversationId.value = loadedConversationId
 
+        // Extract and set user email and thread ID from the loaded conversation
         const loadedUserEmail = data?.conversation?.user_email
         if (loadedUserEmail) currentUserEmail.value = loadedUserEmail
         const loadedThreadId = data.conversation.threadId ?? data.conversation.thread_id
         if (isAgent.value && loadedThreadId) {
             threadId.value = loadedThreadId
             portalDebugLog("Set thread ID successfully from loaded conversation")
+        }
+
+        // Disable chat input for conversations created before the cutoff date
+        const conversationCreatedAt = parseDateValue(data?.conversation?.created_at)
+        if (conversationCreatedAt && conversationCutoffDate.value && conversationCreatedAt < conversationCutoffDate.value) {
+            portalDebugLog("Disabling chat input due to conversation being created before cutoff date")
+            userInput.value.setInputVisibility(false)
+            fileUploader.value.setFileUploadVisibility(false)
         }
 
         function mapFiles(msg) {
@@ -234,20 +293,22 @@
         }
         function mapReferences(msg) {
             // DB-backed references are shaped like {reference_type, reference_content}.
-            // reference_content is JSON stored by backend (see db_controller normalization).
+            // reference_content stores native citation JSON from backend.
             const raw = Array.isArray(msg?.references) ? msg.references : []
             return raw.map(ref => {
                     const content = ref?.reference_content
                     if (typeof content !== 'string') return null
                     try {
                         const parsed = JSON.parse(content)
-                        return new Reference(parsed.title ?? 'Reference', parsed.url ?? '')
+                        return asCitationObject(parsed)
                     } catch (_) {
                         return null
                     }
                 })
                 .filter(Boolean)
         }
+
+        // Map and add each message from the loaded conversation to the chatMessages state
         for (let msg of data.conversation.messages) {
             const chatMsg = new ChatMessage(
                 msg.sender,
@@ -259,6 +320,8 @@
             )
             chatMessages.value.push(chatMsg)
         }
+
+        // Notify parent that the conversation has been loaded
         notifyParentLoaded()
         nextTick(() => {
             scrollToMessage(chatMessages.value.length - 1, false)
@@ -279,6 +342,15 @@
             illegalContents = await getIllegalContents(message)
         } catch (error) {
             console.error("Error filtering message:", error)
+            errorMessage.value = _DEFAULT_ERROR_MESSAGE
+            return
+        }
+
+        if (!Array.isArray(illegalContents) && typeof illegalContents === 'object' && illegalContents.success == false)
+        {
+            errorMessage.value = illegalContents.message || _DEFAULT_ERROR_MESSAGE
+            await undoAndEditMessage(new ChatMessage('user', message, [], [], [...userFiles.value]))
+            return
         }
 
         // Add user message to state (with all file info for display)
@@ -286,7 +358,7 @@
         clearAllFiles() // Remove all files from UI
         chatMessages.value.push(newMessage)
         nextTick(() => {
-            scrollToMessage(chatMessages.value.length - 1)
+            withProgrammaticScroll(() => scrollToBottom(false))
         })
 
         // Send message if no illegal content
@@ -297,28 +369,48 @@
     }
 
     const undoAndEditMessage = async (chatMessage) => {
+        // Remove the transient empty assistant shell message (stream mode) if it is still last.
+        const lastMessage = chatMessages.value[chatMessages.value.length - 1]
+        if (lastMessage?.sender === 'assistant' && (!lastMessage.content || lastMessage.content.trim() === '')) {
+            chatMessages.value.pop()
+        }
+
         awaitingUserInput.value = false
+
         // Re-add user files to state
-        for (let file of chatMessage.files) {
+        for (let file of (chatMessage.files || [])) {
             addFile(file)
         }
+
         // Remove last user message
-        chatMessages.value.pop()
+        const messageIndex = chatMessages.value.lastIndexOf(chatMessage)
+        if (messageIndex >= 0) {
+            chatMessages.value.splice(messageIndex, 1)
+        }
+
         nextTick(() => {
             const input = document.querySelector('.user-input')
             if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
         })
+
         // Set user input to previous message content
         userInput.value.setUserInput(chatMessage.content)
     }
 
     const sendMessage = async (chatMessage) => {
+        const generation = responseGeneration.value + 1
+        responseGeneration.value = generation
+
         // Update state
         awaitingUserInput.value = false
         chatMessage.illegalContents = [] // Clear illegal contents
         awaitingResponse.value = true
+        followStreamAutoScroll.value = true
+        responseStatus.value = 'Assistenten tænker ...'
+        completedMessageLiveText.value = ''
         startTimer()
+        const isFirstMessageInConversation = chatMessages.value.length == 1
 
         // Prepare messages for chat mode
         let message = chatMessage.content
@@ -332,46 +424,149 @@
         }
         // Create thread if agent mode and thread does not exists
         else if (!threadId.value) {
-            threadId.value = await startThread()
-            console.log("Started new thread successfully")
-            if (!threadId.value) {
+            const startedThreadId = await startThread()
+            if (generation !== responseGeneration.value) return
+
+            if (typeof startedThreadId === 'string' && startedThreadId.trim() !== '') {
+                threadId.value = startedThreadId
+                console.debug("Started new thread successfully")
+            }
+
+            if (typeof threadId.value !== 'string' || threadId.value.trim() === '') {
                 console.error("Failed to start new thread.")
+                stopTimer()
+                awaitingResponse.value = false
+                await undoAndEditMessage(chatMessage)
+                errorMessage.value = _DEFAULT_ERROR_MESSAGE
+                liveRegionText.value = errorMessage.value
                 return
             }
         }
 
-        // Send message to backend
-        const result = isAgent.value ?
-            await sendThreadMessage(
+        if (isAgent.value) {
+            const assistantMessage = new ChatMessage('assistant', '', [], [], [], 0, true)
+            chatMessages.value.push(assistantMessage)
+
+            let streamedResponse = ''
+            let scrollQueued = false
+            const queueStreamScroll = () => {
+                if (!followStreamAutoScroll.value) return
+                if (scrollQueued) return
+                scrollQueued = true
+                requestAnimationFrame(() => {
+                    scrollQueued = false
+                    if (!followStreamAutoScroll.value) return
+                    withProgrammaticScroll(() => scrollToMessage(chatMessages.value.length - 1, false))
+                })
+            }
+
+            const result = await sendThreadMessageStream(
                 threadId.value,
                 activeConversationId.value,
                 message,
                 chatMessage.files.map(({ name, content }) => ({ name, content })),
                 useAltAssistant.value,
-                currentUserEmail.value
-            ) :
-            await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
+                currentUserEmail.value,
+                {
+                    onStart: (payload) => {
+                        if (generation !== responseGeneration.value) return
+                        if (payload?.conversation_id) {
+                            activeConversationId.value = payload.conversation_id
+                        }
+                    },
+                    onStatus: (payload) => {
+                        if (generation !== responseGeneration.value) return
+                        if (payload?.message) {
+                            responseStatus.value = payload.message
+                        }
+                    },
+                    onDelta: (delta) => {
+                        if (generation !== responseGeneration.value) return
+                        streamedResponse += delta
+                        assistantMessage.content = unfilterResponseContent(streamedResponse)
+                        queueStreamScroll()
+                    }
+                }
+            )
+
+            const { success, message: backendMessage, response, references, conversation_id, title } = result
+            console.debug('Agent stream result references from backend:', references || [])
+
+            if (generation !== responseGeneration.value)
+                return  // Ignore outdated generation
+
+            if (success === false) {
+                stopTimer()
+                awaitingResponse.value = false
+
+                const assistantIndex = chatMessages.value.lastIndexOf(assistantMessage)
+                 if (assistantIndex >= 0) {
+                     chatMessages.value.splice(assistantIndex, 1)
+                 }
+
+                undoAndEditMessage(chatMessage)
+                errorMessage.value = backendMessage || _DEFAULT_ERROR_MESSAGE
+                liveRegionText.value = errorMessage.value
+                return
+            }
+
+            activeConversationId.value = conversation_id
+
+            if (isFirstMessageInConversation)
+                notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
+
+            const spentTime = Number((stopTimer() / 1000).toFixed(2))
+            if (!awaitingResponse.value) {
+                console.warn("Response received but awaitingResponse is false. Ignoring response.")
+                return
+            }
+            awaitingResponse.value = false
+
+            assistantMessage.isStreaming = false
+            assistantMessage.timeSpent = spentTime
+            assistantMessage.references = mapApiReferences(references)
+
+            const finalResponse = response || streamedResponse
+            assistantMessage.content = unfilterResponseContent(finalResponse)
+            if (!assistantMessage.content || assistantMessage.content.trim() === "") {
+                assistantMessage.content = backendMessage || _DEFAULT_ERROR_MESSAGE
+            }
+            completedMessageLiveText.value = assistantMessage.content
+            liveRegionText.value = ''
+
+            nextTick(() => {
+                if (followStreamAutoScroll.value) {
+                    scrollToMessage(chatMessages.value.length - 1)
+                }
+                focusUserInput()
+            })
+
+            return
+        }
+
+        // Send message to backend
+        const result = await sendChatMessage(activeConversationId.value, messages, currentUserEmail.value)
 
         // Response received from backend
         const { success, message: backendMessage, response, references, conversation_id, title } = result
+
+        if (generation !== responseGeneration.value) {
+            return
+        }
 
         if (success === false) {
             console.error("Backend returned success=false:", backendMessage)
             stopTimer()
             awaitingResponse.value = false
             undoAndEditMessage(chatMessage)
-            errorMessage.value = backendMessage || "Der opstod en fejl. Prøv venligst igen."
-            nextTick(() => {
-                const input = document.querySelector('.user-input')
-                if (input) input.focus()
-                scrollToMessage(chatMessages.value.length - 1)
-            })
+            errorMessage.value = backendMessage || _DEFAULT_ERROR_MESSAGE
+            liveRegionText.value = errorMessage.value
             return
         }
 
         activeConversationId.value = conversation_id
 
-        if(chatMessages.value.length == 1) // If first message - notify parent of new conversation
+        if (isFirstMessageInConversation) // If first message - notify parent of new conversation
             notifyParentNewConversation({ id: conversation_id, gpt_id: ASSISTANT_NAME_ID.value, title: title || 'Ny samtale' })
 
         const timeSpent = Number((stopTimer() / 1000).toFixed(2)) // seconds, rounded to 2 decimals
@@ -384,7 +579,7 @@
             'assistant',
             unfilterResponseContent(response),
             [],
-            (references || []).map(ref => new Reference(ref.title, ref.url)),
+            mapApiReferences(references),
             [],
             timeSpent
         )
@@ -393,15 +588,16 @@
             for (let file of chatMessage.files) {
                 addFile(file)
             }
-            assistantMessage.content = backendMessage || "Beklager, der opstod en fejl. Prøv venligst igen."
+            assistantMessage.content = backendMessage || _DEFAULT_ERROR_MESSAGE
         }
         chatMessages.value.push(assistantMessage)
+        completedMessageLiveText.value = assistantMessage.content
+        liveRegionText.value = ''
 
         // Update UI
         nextTick(() => {
-            const input = document.querySelector('.user-input')
-            if (input) input.focus()
             scrollToMessage(chatMessages.value.length - 1)
+            focusUserInput()
         })
     }
 
@@ -457,6 +653,14 @@
     }
 
     // Scroll to specific message
+    function scrollToBottom(smoothScroll = true) {
+        window.scrollTo({
+            left: 0,
+            top: document.documentElement.scrollHeight,
+            behavior: smoothScroll ? 'smooth' : 'auto'
+        })
+    }
+
     function scrollToMessage(index, smoothScroll = true) {
         const item = document.getElementById('msg_' + index)
         if (item) {
@@ -489,6 +693,15 @@
         timeSpent.value = 0
         return elapsed
     }
+
+    function focusUserInput() {
+        const input = document.querySelector('.user-input')
+        if (!input) return
+        if (document.activeElement === input) return
+        if (typeof input.focus === 'function') {
+            input.focus({ preventScroll: true })
+        }
+    }
 </script>
 
 <template>
@@ -506,11 +719,13 @@
         v-if="useAltAssistant && altAssistantAlertMsg"
         :type="altAssistantAlertType"
         :message="altAssistantAlertMsg"
+        :sticky="!errorMessage"
     />
     <Alert
         v-if="errorMessage"
         type="error"
         :message="errorMessage"
+        :sticky="true"
     />
 
     <div style="margin-bottom: auto"></div><!-- spacer to force alerts to top and chat to bottom -->
@@ -531,6 +746,7 @@
                 :files="msg.files"
                 :timeSpent="msg.timeSpent"
                 :chatHistory="chatMessages"
+                :isStreaming="msg.isStreaming"
             />
            
             <div v-if="msg.illegalContents.length > 0" class="alert-content-filter">
@@ -549,13 +765,16 @@
 
         <div v-if="awaitingResponse" class="loading-indicator">
             <i class="fa-solid fa-rotate rotate"></i>
-            Assistenten tænker ...
+            <span>{{ responseStatus }}</span>
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}
             </span>
         </div>
     </div>
+
+    <div class="sr-only-live" aria-live="polite" :aria-atomic="false" aria-relevant="additions text">{{ liveRegionText }}</div>
+    <div class="sr-only-live" aria-live="polite" :aria-atomic="true" aria-relevant="additions text">{{ completedMessageLiveText }}</div>
 
     <div :class="['user-input-container', { 'landing-page': chatMessages.length == 0 }]" ref="userInputContainer">
         <UserInput
@@ -571,6 +790,8 @@
             <FileUpload
                 ref="fileUploader"
                 :files="userFiles"
+                :assistantType="assistantType"
+                :maxFileSizeBytes="agentFileSizeLimit"
                 :showAssistantTogglePadding="showAssistantToggle && chatMessages.length != 0"
                 @add-file="addFile"
                 @remove-file="onFileRemoved"
@@ -652,8 +873,21 @@
         100% {transform: rotate(1turn)}
     }
 
+    .sr-only-live {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
     #chat-messages {
         padding-bottom: 1.5rem;
+        padding-top: 0.5rem;
     }
 
     .user-input-container {

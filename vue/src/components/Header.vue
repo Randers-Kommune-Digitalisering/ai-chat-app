@@ -1,5 +1,5 @@
 <script setup>
-import { ref, getCurrentInstance, onMounted } from 'vue'
+import { ref, getCurrentInstance } from 'vue'
 
 const ASSISTANT_NAME = getCurrentInstance().appContext.config.globalProperties.$config.assistantName || 'AI Assistent'
 

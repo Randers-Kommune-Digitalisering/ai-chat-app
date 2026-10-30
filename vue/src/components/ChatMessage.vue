@@ -1,5 +1,5 @@
 <script setup>
-    import { nextTick, ref, computed } from 'vue'
+    import { nextTick, ref, computed, watch, onMounted } from 'vue'
     import { marked } from 'marked'
     import { sendFeedback, sendLikeFeedback } from '../services/backend-service.js'
 
@@ -50,6 +50,11 @@
             type: Array,
             required: false,
             default: () => []
+        },
+        isStreaming: {
+            type: Boolean,
+            required: false,
+            default: false
         }
     })
 
@@ -68,7 +73,8 @@
 
     const copyTextToClipboard = async (text) => {
         try {
-            await writeTextToClipboard(text)
+            const formattedText = text.trim().replaceAll(`<span class="inline-reference">`, '').replaceAll(`</span>`, '')
+            await writeTextToClipboard(formattedText)
             recentlyCopied.value = true
             setTimeout(() => {
                 recentlyCopied.value = false
@@ -80,10 +86,7 @@
         }
     }
 
-    async function onChatContentClick(event) {
-        const button = event?.target?.closest?.('.code-copy-button')
-        if (!button) return
-
+    async function onCodeCopyButtonClick(button) {
         const codeElement = button.parentElement?.querySelector('pre > code')
         if (!codeElement) return
 
@@ -101,12 +104,55 @@
         }
     }
 
+    async function bindCodeCopyButtons() {
+        await nextTick()
+        const container = chatContentEl.value
+        if (!container) return
+
+        const buttons = container.querySelectorAll('.code-copy-button')
+        buttons.forEach((button) => {
+            button.type = 'button'
+            button.setAttribute('aria-label', 'Kopiér kodeblok')
+            button.onclick = () => onCodeCopyButtonClick(button)
+        })
+    }
+
     const feedbackLiked = ref(false)
     const feedbackDialogOpen = ref(false)
     const feedbackIsSubmitting = ref(false)
     const feedbackSent = ref(false)
     const feedbackTextareaRef = ref(null)
     const feedbackText = ref('')
+    const chatContentEl = ref(null)
+
+    function decodeReferenceTitle(value) {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+        try {
+            return decodeURIComponent(raw)
+        } catch (_) {
+            return raw.replace(/%20/g, ' ')
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+    }
+
+    function formatInlineReferenceLabel(value) {
+        const decoded = decodeReferenceTitle(value)
+        if (!decoded) return ''
+        return `<span class="inline-reference">[${escapeHtml(decoded)}]</span>`
+    }
+
+    function formatReferenceListLabel(value) {
+        return decodeReferenceTitle(value)
+    }
 
     function onFeedbackClick() {
         if (feedbackSent.value) return
@@ -155,7 +201,7 @@
     }
 
     const highlightedMessage = computed(() => {
-        let content = props.message
+        let content = transformedMessageWithCitations.value
         let uniqueWords = [...new Set(props.highlightedWords)]
         uniqueWords.forEach(word => {
             const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi')
@@ -164,22 +210,158 @@
         return content
     })
 
+    function mapInlineCitationsToTitles(message, references) {
+        let content = typeof message === 'string' ? message : ''
+        if (!content) return ''
+
+        const refs = Array.isArray(references) ? references : []
+        const indexedReplacements = []
+        const fallbackTitles = []
+
+        for (const reference of refs) {
+            const { type, payload } = pickCitationPayload(reference)
+            if (type !== 'url_citation') continue
+
+            const formattedTitle = formatInlineReferenceLabel(payload?.title)
+            if (!formattedTitle) continue
+
+            const start = Number(payload?.start_index)
+            const end = Number(payload?.end_index)
+
+            if (
+                Number.isInteger(start) &&
+                Number.isInteger(end) &&
+                start >= 0 &&
+                end > start &&
+                end <= content.length
+            ) {
+                indexedReplacements.push({ start, end, title: formattedTitle })
+            } else {
+                fallbackTitles.push(formattedTitle)
+            }
+        }
+
+        indexedReplacements
+            .sort((a, b) => b.start - a.start)
+            .forEach(({ start, end, title }) => {
+                content = `${content.slice(0, start)}${title}${content.slice(end)}`
+            })
+
+        const inlineMarkerPattern = /【(?:\d+:)?(\d+)†source】|cite(?:(?:turn)?\d+:)?(\d+)(?:†source)?|(?:turn)?\d+search\d+|(?:turn)?\d+search\d+|\b(?:turn)?\d+:\d+(?:(?:turn)?\d+:\d+)*|(?:turn)?\d+source|cite\?\s*no,\s*must use Azure citation format\.?|cite/gi
+        content = content.replace(inlineMarkerPattern, (_marker, legacyIndex, foundryIndex) => {
+            const indexRaw = legacyIndex ?? foundryIndex
+            const sourceIndex = Number(indexRaw)
+            if (Number.isInteger(sourceIndex) && sourceIndex >= 0) {
+                return fallbackTitles[sourceIndex] || ''
+            }
+            return ''
+        })
+
+        return content
+    }
+
+    const transformedMessageWithCitations = computed(() => {
+        return mapInlineCitationsToTitles(props.message, props.references)
+    })
+
     const renderedMessage = computed(() => {
         const html = marked(highlightedMessage.value)
         return html.replace(
             /<pre><code([\s\S]*?)>([\s\S]*?)<\/code><\/pre>/g,
-            '<div class="code-block"><div type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></div><pre><code$1>$2</code></pre></div>'
+            '<div class="code-block"><button type="button" class="code-copy-button"><i class="fa-regular fa-copy"></i><div class="tooltip">Kopiér tekst</div></button><pre><code$1>$2</code></pre></div>'
         )
     })
 
-    const isUrl = (string) => {
+    watch(renderedMessage, () => {
+        bindCodeCopyButtons()
+    })
+
+    onMounted(() => {
+        bindCodeCopyButtons()
+    })
+
+    const toSafeHttpUrl = (value) => {
+        const raw = typeof value === 'string' ? value.trim() : ''
+        if (!raw) return ''
+
         try {
-            new URL(string)
-            return true
+            const parsed = new URL(raw)
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                return ''
+            }
+            return parsed.href
         } catch (_) {
-            return false
+            return ''
         }
     }
+
+    const isUrl = (string) => {
+        return !!toSafeHttpUrl(string)
+    }
+
+    function pickCitationPayload(reference) {
+        if (!reference || typeof reference !== 'object') {
+            return { type: '', payload: {} }
+        }
+
+        if (typeof reference.type === 'string' && reference.type.trim()) {
+            return { type: reference.type.trim(), payload: reference }
+        }
+
+        for (const key of ['url_citation', 'file_citation', 'container_file_citation', 'file_path']) {
+            const nested = reference[key]
+            if (nested && typeof nested === 'object') {
+                return { type: key, payload: nested }
+            }
+        }
+
+        return { type: '', payload: reference }
+    }
+
+    function toRenderedReference(reference) {
+        const { type, payload } = pickCitationPayload(reference)
+
+        if (type === 'url_citation') {
+            const href = toSafeHttpUrl(payload.url)
+            const formattedTitle = formatReferenceListLabel(payload.title)
+            const label = formattedTitle || (href || 'Reference')
+            return { type, label, href, dedupeKey: `${label}||${href}` }
+        }
+
+        if (type === 'file_citation' || type === 'container_file_citation' || type === 'file_path') {
+            const label = formatReferenceListLabel(payload.filename || payload.file_id || 'Filreference')
+            const fileId = String(payload.file_id || '')
+            return { type, label: String(label), href: '', dedupeKey: `${label}||${fileId}` }
+        }
+
+        const href = toSafeHttpUrl(payload.url)
+        const formattedTitle = formatReferenceListLabel(payload.title)
+        const label = formattedTitle || (href || 'Reference')
+        return { type, label, href }
+    }
+
+    const renderedReferences = computed(() => {
+        const refs = Array.isArray(props.references) ? props.references : []
+        const seenReferenceKeys = new Set()
+        const uniqueRefs = []
+
+        for (const reference of refs) {
+            const renderedReference = toRenderedReference(reference)
+            if (!renderedReference?.label) continue
+
+            if (renderedReference.dedupeKey) {
+                const dedupeKey = `${renderedReference.type}||${renderedReference.dedupeKey}`
+                if (seenReferenceKeys.has(dedupeKey)) {
+                    continue
+                }
+                seenReferenceKeys.add(dedupeKey)
+            }
+
+            uniqueRefs.push(renderedReference)
+        }
+
+        return uniqueRefs
+    })
 
     const resizeTextareaToFitContent = () => {
         if (!feedbackTextareaRef.value) return
@@ -188,10 +370,10 @@
         let height = Math.min(maxHeight, feedbackTextareaRef.value.scrollHeight + 2) + 'px'
         feedbackTextareaRef.value.style.height = height
     }
+
     async function scrollToFeedbackDialog() {
         if (!feedbackDialogOpen.value) return
 
-        console.log('Scrolling to feedback dialog for message id:', props.id)
         await nextTick()
         // Wait an extra frame so layout/positions are accurate.
         await new Promise((resolve) => requestAnimationFrame(resolve))
@@ -224,12 +406,21 @@
         const textarea = document.getElementById('feedback_textarea_' + props.id)
         if (textarea?.focus) textarea.focus({ preventScroll: true })
     }
-
 </script>
 
 <template>
-    <div :class="['chat-message', props.sender]" :id="props.id">
-        <div class="chat-content" v-html="renderedMessage" @click="onChatContentClick"></div>
+    <div
+        v-show="props.sender !== 'assistant' || props.message.trim()"
+        :class="['chat-message', props.sender]"
+        :id="props.id"
+        tabindex="0"
+        :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
+    >
+        <div class="focus-bar"></div>
+
+        <div class="chat-content"
+             ref="chatContentEl"
+             v-html="renderedMessage"></div>
 
         <div v-if="props.sender == 'user'">
             <div class="fileUploads" v-if="props.files.length > 0">
@@ -246,26 +437,27 @@
 
         <div v-if="props.sender == 'assistant'">
 
-            <div class="references" v-if="props.references.length > 0 || props.timeSpent">
+            <div class="references" v-if="renderedReferences.length > 0 || props.timeSpent">
                 <div
-                    v-if="props.references.length > 0"
-                    v-for="(ref, index) in props.references.slice(0, showAllReferences ? props.references.length : REFERENCE_DISPLAY_LIMIT)"
-                    :key="index">
+                    v-if="renderedReferences.length > 0"
+                    v-for="(ref, index) in renderedReferences.slice(0, showAllReferences ? renderedReferences.length : REFERENCE_DISPLAY_LIMIT)"
+                    :key="index"
+                    aria-label="Reference.">
                     <a
-                        :href="isUrl(ref.link) ? ref.link : null"
+                        :href="isUrl(ref.href) ? ref.href : null"
                         target="_blank"
                         rel="noopener"
-                        :tabindex="isUrl(ref.link) ? 0 : -1"
-                        :aria-disabled="!isUrl(ref.link)"
-                        :class="{'disabled': !isUrl(ref.link)}"
+                        :tabindex="isUrl(ref.href) ? 0 : -1"
+                        :aria-disabled="!isUrl(ref.href)"
+                        :class="{'disabled': !isUrl(ref.href)}"
                     >
-                        {{ ref.title }}
+                        {{ ref.label }}
                     </a>
                 </div>
-                <div v-if="props.references.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
+                <div v-if="renderedReferences.length > REFERENCE_DISPLAY_LIMIT" class="show-more-less">
                     <a href="#" @click.prevent="showAllReferences = !showAllReferences">
                         <template v-if="showAllReferences"><i class="fa-solid fa-arrow-left"></i></template>
-                        <template v-else><i class="fa-solid fa-plus"></i>{{ props.references.length - REFERENCE_DISPLAY_LIMIT }}</template>
+                        <template v-else><i class="fa-solid fa-plus"></i>{{ renderedReferences.length - REFERENCE_DISPLAY_LIMIT }}</template>
                     </a>
                 </div>
 
@@ -276,25 +468,25 @@
             </div>
             <div style="height: 1rem;" v-else></div><!-- Spacer if no references and no timeSpent -->
 
-            <div class="options">
-                <div class="option" @click="copyTextToClipboard(props.message)">
+            <div class="options" v-if="!props.isStreaming">
+                <button type="button" class="option" @click="copyTextToClipboard(transformedMessageWithCitations)">
                     <i :class="[recentlyCopied ? 'fa-solid' : 'fa-regular', 'fa-copy']"></i>
                     <div class="tooltip">{{ recentlyCopied ? 'Kopieret!' : 'Kopiér svar' }}</div>
-                </div>
-                <div :class="['option', { disabled: feedbackLiked }]" @click="onThumbsUpClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackLiked" @click="onThumbsUpClick">
                     <i :class="[feedbackLiked ? 'fa-solid' : 'fa-regular', 'fa-thumbs-up']"></i>
                     <div class="tooltip">Synes godt om</div>
-                </div>
-                <div :class="['option', { disabled: feedbackSent }]" @click="onFeedbackClick">
+                </button>
+                <button type="button" class="option" :disabled="feedbackSent" @click="onFeedbackClick">
                     <i :class="[feedbackDialogOpen || feedbackSent ? 'fa-solid' : 'fa-regular', 'fa-comment']"></i>
                     <div class="tooltip">Giv feedback</div>
-                </div>
+                </button>
                 <div v-if="feedbackSent" class="feedback-sent-message">
                     Tak for din feedback!
                 </div>
             </div>
 
-            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen" tabindex="-1">
+            <div class="feedback-dialog" :id="'feedback_' + props.id" v-if="feedbackDialogOpen && !props.isStreaming" tabindex="-1">
                 <textarea
                     v-model="feedbackText"
                     ref="feedbackTextareaRef"
@@ -317,7 +509,7 @@
                         </template>
                     </button>
                     <button class="cancel-feedback-button" @click="feedbackDialogOpen = false">
-                        Annuller
+                        Annullér
                     </button>
                 </div>
             </div>  
@@ -331,6 +523,7 @@
         padding-top: 1rem;
         padding-bottom: 1rem;
         font-size: 1rem;
+        position: relative;
     }
     .chat-message:not(:last-of-type) {
         margin-bottom: 0.5rem;
@@ -357,6 +550,37 @@
             margin-bottom: 0;
             margin-block-end: 0rem;
         }
+        :deep(.chat-content table) {
+            max-width: 100%;
+            overflow: auto;
+            display: block;
+            white-space: nowrap;
+        }
+        :deep(.chat-content tr) {
+            display: table-row;
+        }
+        :deep(.chat-content thead) {
+            display: table-header-group;
+            font-weight: bold;
+            text-align: left;
+        }
+        :deep(.chat-content thead tr) {
+            position: relative;
+        }
+        :deep(.chat-content thead tr::after) {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-bottom: 0.05rem solid var(--color-toolbar-border);
+            pointer-events: none;
+        }
+        :deep(.chat-content th), :deep(.chat-content td) {
+            display: table-cell;
+            padding: 0.4rem 1rem;
+            /* border: 0.05rem solid var(--color-table-border); */
+        }
         :deep(.chat-content code) {
             display: inline-block;
             background-color: var(--color-code-background);
@@ -368,7 +592,7 @@
             max-width: 100%;
             overflow: auto;
         }
-        :deep(.chat-content p > code) {
+        :deep(.chat-content p > code), :deep(.chat-content li > code) {
             white-space: pre-wrap;
             transform: translateY(0.5rem);
         }
@@ -402,8 +626,7 @@
             border: 0.05rem solid var(--color-code-border);
             background-color: var(--color-code-background);
             color: var(--color-text-primary);
-            /* border-radius: 0.3rem;
-            padding: 0.4rem 0.5rem; */
+            height: 1.88rem;
             font-size: 0.8rem;
             cursor: pointer;
             display: none;
@@ -411,6 +634,9 @@
         :deep(.chat-content .code-block:hover .code-copy-button) {
             display: block;
         }
+        /* :deep(.chat-content .code-block:focus-within .code-copy-button) {
+            display: block;
+        } */ /* Not reachable as .code-block is not focusable */
         :deep(.chat-content .code-copy-button:hover:not(:disabled)) {
             background-color: var(--color-options-background-hover);
         }
@@ -418,6 +644,31 @@
             cursor: default;
             opacity: 0.8;
         }
+
+    .focus-bar {
+        position: absolute;
+        height: 100%;
+        width: 0.05rem;
+        background-color: transparent;
+        opacity: 0.5;
+    }
+    .chat-message:focus {
+        outline: 0;
+    }
+    .chat-message.assistant:focus .focus-bar,
+    .chat-message.assistant:has(:focus) .focus-bar {
+        background-color: rgba(145, 145, 145, 0.3);
+        left: -1rem;
+        right: auto;
+        height: calc(100% - 2rem);
+    }
+    .chat-message.user:focus .focus-bar,
+    .chat-message.user:has(:focus) .focus-bar {
+        background-color: rgba(145, 145, 145, 0.3);
+        right: -1rem;
+        top: 0rem;
+        left: auto;
+    }
 
     .fileUploads {
         padding-top: 0.3rem;
@@ -519,9 +770,15 @@
         padding: 0.3rem 0.6rem;
         border-radius: 0.4rem;
     }
-        .option.disabled {
+        .option {
+            border: 0;
+            color: inherit;
+            font: inherit;
+        }
+        .option:disabled {
             pointer-events: none;
             color: var(--color-options-text-selected);
+            cursor: default;
         }
         .option:hover {
             cursor: pointer;
@@ -550,6 +807,10 @@
     }
     :deep(.code-copy-button > .tooltip) {
         bottom: -110%;
+    }
+    :deep(.inline-reference) {
+        color: var(--color-text-faded);
+        font-size: 0.8em;
     }
 
     .feedback-sent-message {
