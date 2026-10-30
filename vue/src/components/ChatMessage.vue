@@ -461,7 +461,7 @@
         tabindex="0"
         :aria-label="'Chatbesked, ' + (props.sender == 'assistant' ? 'assistent.' : 'bruger.')"
     >
-        <div class="focus-bar"></div>
+        <!-- <div class="focus-bar"></div> --> <!-- Enable if you want a visual focus indicator for focused chat messages -->
 
         <div class="chat-content"
              ref="chatContentEl"
