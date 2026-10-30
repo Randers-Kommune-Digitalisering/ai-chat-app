@@ -134,7 +134,7 @@ Valgfrie Agent-indstillinger:
 | `AZURE_AISEARCH_ENDPOINT` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
 | `AZURE_AISEARCH_API_KEY` | — | Påkrævet hvis agenten anvender Azure AI Search tool. |
 
-Agent-kildereferencer til Azure AI Search bruger dokumentets `url`-felt fra søgeindekset som offentligt link; blobstien og filformatet (JSON/PDF) bruges ikke til at danne linket. Kilden findes via citationsmarkørens indeks i det senest afsluttede søgekalds `get_urls`-resultatsæt, og dokumenttitlen kontrolleres mod citationen. Der bruges ikke titelbaseret fallback. Hvis indekset ikke kan matches sikkert, titlen er forskellig, eller metadataopslaget fejler, vises den interne Azure AI Search-URL ikke som et link.
+Agent-kildereferencer til Azure AI Search bruger dokumentets `url`-felt fra søgeindekset som offentligt link; blobstien og filformatet (JSON/PDF) bruges ikke til at danne linket. Ved flere søgekald bevares hvert kalds `get_urls`-resultatsæt. Citationsmarkørens kildeindeks slås op i resultatsættene, og et offentligt link bruges kun, når dokumentets titel matcher citationen, og opslagene entydigt peger på samme URL. Der bruges ikke titelbaseret fallback uden kildeindeks. Hvis kilden ikke kan identificeres sikkert, metadataopslaget fejler, eller et senere tomt resultatsæt erstatter et tidligere, vises den interne Azure AI Search-URL ikke som et link.
 
 ### Fælles valgfrie indstillinger
 

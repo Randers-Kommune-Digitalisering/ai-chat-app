@@ -986,6 +986,79 @@ def test_remap_ai_search_reference_urls_requires_nonblank_title_match(monkeypatc
         assert remapped[0]["url"] == ""
 
 
+def test_remap_ai_search_reference_urls_rejects_ambiguous_indexed_matches(monkeypatch):
+    groups = [
+        ["https://search.search.windows.net/docs/first"],
+        ["https://search.search.windows.net/docs/second"],
+    ]
+    answer = "See \u30105:0\u2020source\u3011"
+    reference = {
+        "type": "url_citation",
+        "title": "Shared title",
+        "url": "https://search.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
+    }
+    metadata = {
+        get_url: {"title": "Shared title", "url": f"https://example.com/{group_index}"}
+        for group_index, group in enumerate(groups)
+        for get_url in group
+    }
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: metadata[get_url],
+    )
+
+    remapped = azure_openai._remap_ai_search_reference_urls(
+        [reference],
+        groups[-1],
+        answer_text=answer,
+        ai_search_get_url_groups=groups,
+    )
+
+    assert remapped[0]["url"] == ""
+
+
+def test_remap_ai_search_reference_urls_allows_time_for_multiple_result_sets(monkeypatch):
+    groups = [
+        [f"https://search.search.windows.net/docs/{group_index}/{index}" for index in range(5)]
+        for group_index in range(8)
+    ]
+    answer = "See \u301026:0\u2020source\u3011"
+    reference = {
+        "type": "url_citation",
+        "title": "Latest title",
+        "url": "https://search.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
+    }
+    clock = [0.0]
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0):
+        calls.append(get_url)
+        clock[0] += 1.5
+        return {
+            "title": "Latest title" if get_url == groups[-1][0] else "Another title",
+            "url": "https://example.com/latest",
+        }
+
+    monkeypatch.setattr(azure_openai.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+
+    remapped = azure_openai._remap_ai_search_reference_urls(
+        [reference],
+        groups[-1],
+        answer_text=answer,
+        ai_search_get_url_groups=groups,
+    )
+
+    assert calls == [group[0] for group in groups]
+    assert clock[0] == 12.0
+    assert remapped[0]["url"] == "https://example.com/latest"
+
+
 def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkeypatch):
     get_urls = [f"https://we-aisearch-it.search.windows.net/docs/{index}" for index in range(3)]
     earlier_get_urls = [f"https://we-aisearch-it.search.windows.net/docs/earlier-{index}" for index in range(3)]
@@ -1032,6 +1105,8 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
 
     def fetch_metadata(get_url, timeout_s=5.0):
         calls.append(get_url)
+        if get_url in earlier_get_urls:
+            return {"title": "Earlier result", "url": "https://example.com/earlier"}
         return metadata[get_urls.index(get_url)]
 
     monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
@@ -1042,10 +1117,81 @@ def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkey
 
     emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_menu"))
 
-    assert calls == [get_urls[2]]
+    assert calls == [earlier_get_urls[2], get_urls[2]]
     assert emitted[-1] == {
         "type": "references",
         "references": [{**annotation, "url": public_url}],
+    }
+
+
+def test_stream_resolves_indexed_citations_across_multiple_search_calls(monkeypatch):
+    groups = [
+        [f"https://search.search.windows.net/docs/{group}/{index}" for index in range(2)]
+        for group in range(3)
+    ]
+    answer = "First \u30105:0\u2020source\u3011 second \u30108:1\u2020source\u3011 third \u301011:0\u2020source\u3011"
+    titles = ["First", "Second", "Third"]
+    markers = list(azure_openai._extract_ai_search_citation_markers(answer, 2))
+    annotations = [
+        {
+            "type": "url_citation",
+            "title": title,
+            "url": "https://search.search.windows.net/",
+            "start_index": start,
+            "end_index": end,
+        }
+        for (start, end, _), title in zip(markers, titles)
+    ]
+    search_items = [
+        SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": urls})
+        for urls in groups
+    ]
+    events = [
+        *(SimpleNamespace(type="response.output_item.done", item=item) for item in search_items),
+        SimpleNamespace(type="response.output_text.delta", delta=answer),
+        *(SimpleNamespace(type="response.output_text.annotation.added", annotation=a) for a in annotations),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(
+                output=[
+                    *search_items,
+                    SimpleNamespace(type="message", content=[
+                        SimpleNamespace(type="output_text", annotations=annotations),
+                    ]),
+                ],
+            ),
+        ),
+    ]
+    metadata = {
+        url: {"title": titles[group] if index == [0, 1, 0][group] else "Other",
+              "url": f"https://example.com/{group}/{index}"}
+        for group, urls in enumerate(groups)
+        for index, url in enumerate(urls)
+    }
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0: metadata[get_url],
+    )
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_three_search_calls"))
+
+    assert emitted[-1] == {
+        "type": "references",
+        "references": [
+            {
+                "type": "url_citation",
+                "title": titles[group],
+                "url": f"https://example.com/{group}/{index}",
+                "start_index": markers[group][0],
+                "end_index": markers[group][1],
+            }
+            for group, index in enumerate([0, 1, 0])
+        ],
     }
 
 

@@ -471,14 +471,16 @@ def _get_url_citation_container(reference: Any) -> dict | None:
 
 
 def _remap_ai_search_reference_urls(
-    references: list[dict], ai_search_get_urls: list[str], answer_text: str = ""
+    references: list[dict], ai_search_get_urls: list[str], answer_text: str = "",
+    ai_search_get_url_groups: list[list[str]] | None = None,
 ) -> list[dict]:
     """
     Replace internal search.windows.net citation URLs only when the source can be identified.
 
     :param references: Extracted reference annotations.
-    :param ai_search_get_urls: URLs from AI Search get_urls output.
+    :param ai_search_get_urls: URLs from the latest AI Search get_urls output.
     :param answer_text: Full answer, used to match annotation offsets to source markers.
+    :param ai_search_get_url_groups: Ordered result sets from all AI Search calls.
     :return: References with resolved AI Search URLs replaced.
     """
     if not references:
@@ -496,7 +498,9 @@ def _remap_ai_search_reference_urls(
     if not internal_citations:
         return references
 
-    citation_markers = _extract_ai_search_citation_markers(answer_text, len(ai_search_get_urls))
+    groups = ai_search_get_url_groups if ai_search_get_url_groups is not None else [ai_search_get_urls]
+    source_count = max((len(group) for group in groups), default=0) if ai_search_get_urls else 0
+    citation_markers = _extract_ai_search_citation_markers(answer_text, source_count)
     marker_indices_by_start = {
         _python_index_to_utf16(answer_text, start): indices
         for start, _, indices in citation_markers
@@ -505,26 +509,27 @@ def _remap_ai_search_reference_urls(
         _python_index_to_utf16(answer_text, start): answer_text[start:end]
         for start, end, _ in citation_markers
     }
-    metadata_by_index: dict[int, dict | None] = {}
-    lookup_deadline = time.monotonic() + 10.0
+    metadata_by_url: dict[str, dict | None] = {}
+    lookup_deadline = time.monotonic() + max(10.0, sum(len(group) for group in groups) * 1.5)
 
-    def fetch_metadata(index: int) -> dict | None:
-        if index in metadata_by_index:
-            return metadata_by_index[index]
+    def fetch_metadata(get_url: str, group_index: int, source_index: int) -> dict | None:
+        if get_url in metadata_by_url:
+            return metadata_by_url[get_url]
         remaining_s = lookup_deadline - time.monotonic()
         if remaining_s <= 0:
             return None
         metadata = _fetch_ai_search_document_metadata(
-            get_url=ai_search_get_urls[index],
+            get_url=get_url,
             timeout_s=min(remaining_s, 1.5),
         )
-        metadata_by_index[index] = metadata if isinstance(metadata, dict) else None
+        metadata_by_url[get_url] = metadata if isinstance(metadata, dict) else None
         logger.debug(
-            "AI Search citation metadata lookup (source_index=%s available=%s)",
-            index,
-            metadata_by_index[index] is not None,
+            "AI Search citation metadata lookup (group=%s source_index=%s available=%s)",
+            group_index,
+            source_index,
+            metadata_by_url[get_url] is not None,
         )
-        return metadata_by_index[index]
+        return metadata_by_url[get_url]
 
     unresolved_count = 0
     for citation_position, citation in enumerate(internal_citations):
@@ -534,22 +539,31 @@ def _remap_ai_search_reference_urls(
         reason = "resolved"
 
         if index is not None:
-            metadata = fetch_metadata(index)
-            if not metadata:
-                reason = "metadata_unavailable"
-            else:
+            citation_title_key = _normalize_title_key(citation.get("title"))
+            matching_urls: set[str] = set()
+            incomplete_lookup = False
+            for group_index, group in enumerate(groups):
+                if index >= len(group):
+                    continue
+                metadata = fetch_metadata(group[index], group_index, index)
+                if not metadata:
+                    incomplete_lookup = True
+                    continue
                 metadata_title_key = _normalize_title_key(metadata.get("title"))
-                citation_title_key = _normalize_title_key(citation.get("title"))
-                if not metadata_title_key or not citation_title_key:
-                    reason = "title_missing"
-                elif metadata_title_key != citation_title_key:
-                    reason = "title_mismatch"
-                else:
+                if citation_title_key and metadata_title_key == citation_title_key:
                     public_url = _extract_public_url_from_metadata(metadata)
                     if public_url:
-                        citation["url"] = public_url
+                        matching_urls.add(public_url)
                     else:
-                        reason = "public_url_missing"
+                        incomplete_lookup = True
+            if not citation_title_key:
+                reason = "title_missing"
+            elif incomplete_lookup:
+                reason = "metadata_unavailable"
+            elif len(matching_urls) != 1:
+                reason = "ambiguous_or_no_indexed_title_match"
+            else:
+                citation["url"] = next(iter(matching_urls))
         elif len(source_indices) > 1:
             reason = "ambiguous_marker"
         else:
@@ -575,8 +589,8 @@ def _remap_ai_search_reference_urls(
             "AI Search citations unresolved; internal fallback URLs suppressed "
             "(count=%s fetched=%s total_sources=%s)",
             unresolved_count,
-            len(metadata_by_index),
-            len(ai_search_get_urls),
+            len(metadata_by_url),
+            sum(len(group) for group in groups),
         )
 
     return references
@@ -1382,6 +1396,7 @@ class Agent(AzureOpenAIClient):
         references_emitted = False
         last_status = None
         ai_search_get_urls: list[str] = []
+        ai_search_get_url_groups: list[list[str]] = []
         response_text_parts: list[str] = []
         web_search_seen = False
 
@@ -1454,11 +1469,22 @@ class Agent(AzureOpenAIClient):
                 )
             if extracted_get_urls or is_ai_search_result_event:
                 ai_search_get_urls = extracted_get_urls
+                if event_type == "response.output_item.done":
+                    ai_search_get_url_groups.append(extracted_get_urls)
+                elif event_type == "response.completed":
+                    completed_groups = [
+                        _extract_ai_search_get_urls_from_item(output_item)
+                        for output_item in output_items
+                        if _get_field(output_item, "type") == "azure_ai_search_call_output"
+                    ]
+                    if completed_groups:
+                        ai_search_get_url_groups = completed_groups
                 if event_type != "response.output_item.added":
                     logger.debug(
-                        "Agent stream selected latest ai_search result set (thread_id=%s event=%s count=%s)",
+                        "Agent stream selected ai_search result sets (thread_id=%s event=%s groups=%s latest_count=%s)",
                         thread_id,
                         event_type,
+                        len(ai_search_get_url_groups),
                         len(ai_search_get_urls),
                     )
 
@@ -1492,6 +1518,7 @@ class Agent(AzureOpenAIClient):
                         references=latest_references,
                         ai_search_get_urls=ai_search_get_urls,
                         answer_text="".join(response_text_parts),
+                        ai_search_get_url_groups=ai_search_get_url_groups,
                     )
                     logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
@@ -1521,6 +1548,7 @@ class Agent(AzureOpenAIClient):
                     references=latest_references,
                     ai_search_get_urls=ai_search_get_urls,
                     answer_text="".join(response_text_parts),
+                    ai_search_get_url_groups=ai_search_get_url_groups,
                 )
                 logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
@@ -1548,6 +1576,7 @@ class Agent(AzureOpenAIClient):
                 references=latest_references,
                 ai_search_get_urls=ai_search_get_urls,
                 answer_text="".join(response_text_parts),
+                ai_search_get_url_groups=ai_search_get_url_groups,
             )
             logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
