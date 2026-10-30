@@ -1,3 +1,4 @@
+from http.client import IncompleteRead
 from types import SimpleNamespace
 
 import utils.azure_openai as azure_openai
@@ -582,6 +583,26 @@ def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch)
     assert metadata is None
 
 
+def test_fetch_ai_search_document_metadata_keeps_truncated_response_nonfatal(monkeypatch):
+    monkeypatch.setattr(azure_openai, "AZURE_AISEARCH_API_KEY", "dummy-key")
+    monkeypatch.setattr(
+        azure_openai,
+        "AZURE_AISEARCH_ENDPOINT",
+        "https://we-aisearch-it.search.windows.net",
+    )
+    monkeypatch.setattr(
+        azure_openai,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(IncompleteRead(b"partial response")),
+    )
+
+    metadata = azure_openai._fetch_ai_search_document_metadata(
+        get_url="https://we-aisearch-it.search.windows.net/indexes/docs/doc_1",
+    )
+
+    assert metadata is None
+
+
 def test_stream_chat_response_with_metadata_remaps_internal_ai_search_urls(monkeypatch):
     get_url = (
         "https://we-aisearch-it.search.windows.net/indexes/aisearch-randersdk-index/docs/doc_1"
@@ -932,6 +953,37 @@ def test_remap_ai_search_reference_urls_does_not_title_fallback_for_indexed_titl
 
     assert calls == [get_urls[1]]
     assert remapped[0]["url"] == ""
+
+
+def test_remap_ai_search_reference_urls_requires_nonblank_title_match(monkeypatch):
+    get_url = "https://we-aisearch-it.search.windows.net/docs/0"
+    answer = "Se kilden \u30105:0\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+
+    for citation_title, metadata_title in (("", ""), ("Source", ""), ("", "Source")):
+        monkeypatch.setattr(
+            azure_openai,
+            "_fetch_ai_search_document_metadata",
+            lambda get_url, timeout_s=5.0, title=metadata_title: {
+                "title": title,
+                "url": "https://example.com/source",
+            },
+        )
+        reference = {
+            "type": "url_citation",
+            "title": citation_title,
+            "url": "https://we-aisearch-it.search.windows.net/",
+            "start_index": marker_start,
+            "end_index": len(answer),
+        }
+
+        remapped = azure_openai._remap_ai_search_reference_urls(
+            [reference],
+            [get_url],
+            answer_text=answer,
+        )
+
+        assert remapped[0]["url"] == ""
 
 
 def test_stream_remaps_citation_to_indexed_source_instead_of_first_result(monkeypatch):

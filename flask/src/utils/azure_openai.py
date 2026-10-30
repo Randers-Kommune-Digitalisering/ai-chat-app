@@ -7,6 +7,7 @@ import random
 import re
 import time
 import urllib.parse
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from abc import abstractmethod
@@ -344,7 +345,7 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
         logger.warning("AI Search metadata lookup returned a non-object payload")
     except HTTPError as exc:
         logger.warning("AI Search metadata request failed (status=%s)", exc.code)
-    except (URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+    except (HTTPException, URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("AI Search metadata request failed (error_type=%s)", type(exc).__name__)
 
     return None
@@ -536,14 +537,19 @@ def _remap_ai_search_reference_urls(
             metadata = fetch_metadata(index)
             if not metadata:
                 reason = "metadata_unavailable"
-            elif _normalize_title_key(metadata.get("title")) != _normalize_title_key(citation.get("title")):
-                reason = "title_mismatch"
             else:
-                public_url = _extract_public_url_from_metadata(metadata)
-                if public_url:
-                    citation["url"] = public_url
+                metadata_title_key = _normalize_title_key(metadata.get("title"))
+                citation_title_key = _normalize_title_key(citation.get("title"))
+                if not metadata_title_key or not citation_title_key:
+                    reason = "title_missing"
+                elif metadata_title_key != citation_title_key:
+                    reason = "title_mismatch"
                 else:
-                    reason = "public_url_missing"
+                    public_url = _extract_public_url_from_metadata(metadata)
+                    if public_url:
+                        citation["url"] = public_url
+                    else:
+                        reason = "public_url_missing"
         elif len(source_indices) > 1:
             reason = "ambiguous_marker"
         else:
