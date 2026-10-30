@@ -521,7 +521,9 @@ def _remap_ai_search_reference_urls(
                 if public_url:
                     citation["url"] = public_url
                     continue
-        unresolved.append(citation)
+
+        if index is None:
+            unresolved.append(citation)
 
     if unresolved and any(_normalize_title_key(citation.get("title")) for citation in unresolved):
         title_to_urls: dict[str, set[str]] = {}
@@ -928,10 +930,10 @@ class Chat(AzureOpenAIClient):
         """Return the configured legacy system prompt."""
         system_prompt = SYSTEM_PROMPT.strip()
         if self.emphasize_recent_content:
-            weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lordag", "Sondag"]
+            weekdays_danish = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"]
             now = datetime.now()
             date = f"{weekdays_danish[now.weekday()]} d. {now.strftime('%d-%m-%Y')}"
-            system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgaengelig."
+            system_prompt += f"\nDagens dato er {date}, og du skal altid bruge den nyeste information, der er tilgængelig."
         return system_prompt
 
     @staticmethod
@@ -1041,13 +1043,13 @@ class Chat(AzureOpenAIClient):
             return None, [], message, status
 
         if not response or not getattr(response, "choices", None):
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
         choice = response.choices[0]
         response_message = getattr(choice, "message", None)
         assistant_response = getattr(response_message, "content", None)
         if assistant_response is None:
-            return None, [], "Der opstod en fejl ved indlaesning af assistentens svar. Prøv igen senere.", 502
+            return None, [], "Der opstod en fejl ved indlæsning af assistentens svar. Prøv igen senere.", 502
 
         citation_refs = [int(ref) for ref in re.findall(r"\[(?:doc)?(\d{1,2})\]", assistant_response)]
         unique_refs = sorted(set(citation_refs))
@@ -1552,15 +1554,15 @@ class AzureOpenAITitleGenerator:
         system_prompt = {
             "role": "system",
             "content": (
-                "Du er en hjaelpsom assistent, der genererer korte og praecise titler "
-                "(maksimalt 24 tegn) til samtaler baseret pa brugerens forste besked. "
-                "Titlen skal vaere pa dansk og opsummere samtalens emne uden at inkludere "
+                "Du er en hjælpsom assistent, der genererer korte og præcise titler "
+                "(maksimalt 24 tegn) til samtaler baseret på brugerens første besked. "
+                "Titlen skal være på dansk og opsummere samtalens emne uden at inkludere "
                 "citater eller referencer."
             ),
         }
         user_prompt = {
             "role": "user",
-            "content": f"Generer en kort titel for folgende besked: '{conversation_messages[0]['content']}'",
+            "content": f"Generer en kort titel for følgende besked: '{conversation_messages[0]['content']}'",
         }
 
         response = self.client.chat.completions.create(
