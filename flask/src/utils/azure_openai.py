@@ -344,7 +344,7 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
         logger.warning("AI Search metadata lookup returned a non-object payload")
     except HTTPError as exc:
         logger.warning("AI Search metadata request failed (status=%s)", exc.code)
-    except (URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError) as exc:
+    except (URLError, TimeoutError, OSError, JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("AI Search metadata request failed (error_type=%s)", type(exc).__name__)
 
     return None
