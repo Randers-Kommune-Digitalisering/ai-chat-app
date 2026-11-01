@@ -307,6 +307,45 @@
         color: var(--color-text-primary);
     }
 
+    .user-input-form {
+        overflow: hidden;
+        border-radius: 2rem;
+    }
+    @property --border-angle {
+        syntax: "<angle>";
+        inherits: false;
+        initial-value: 0deg;
+    }
+    .user-input-form:has(.user-input--busy)::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: conic-gradient(
+            from var(--border-angle),
+            transparent 0deg 235deg,
+            #1b293318 255deg,
+            #1774b6a0 350deg
+        );
+        animation: rotate 3s linear infinite;
+    }
+    @keyframes rotate {
+        to {
+            --border-angle: 360deg;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .user-input-form::before {
+            animation: none;
+        }
+    }
+    .user-input-form:has(.user-input--busy)::after {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        background: var(--color-input-background);
+        border-radius: 2rem;
+    }
+
     .alt-assistant-toggle {
         width: max-content;
         position: absolute;

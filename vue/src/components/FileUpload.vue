@@ -361,7 +361,12 @@
         @dragover="handleOverlayDragOver"
         @dragenter="onDropZoneDragEnter"
         @dragleave="onDropZoneDragLeave"
-        :class="['dropZone', { 'dragging': isDragging, 'dropped': fileDropped, 'error': fileNotAccepted }]"
+        :class="['dropZone', {
+            'dragging': isDragging,
+            'dropped': fileDropped,
+            'uploading': fileDropped && !fileUploaded && !fileNotAccepted,
+            'error': fileNotAccepted
+        }]"
         :style="{ pointerEvents: isDragging ? 'auto' : 'none' }"
     ></div>
 
@@ -373,17 +378,15 @@
         :style="{ pointerEvents: isDragging ? 'auto' : 'none' }"
     >
         <div :class="{ 'over-zone': isOverDropZone }">
-
             <template v-if="isOverDropZone">
                 Slip filen nu
             </template>
 
             <template v-else>
-
                 <template v-if="fileDropped && !fileUploaded && !fileNotAccepted">
                     <i class="fa-solid fa-rotate rotate"></i>
                     <span>
-                        Uploader {{ 
+                        Uploader {{
                             filesTotalToUpload > 1 ?
                                 ((filesTotalToUpload - filesAwaitingUpload + 1) + " / " + filesTotalToUpload)
                                 : "filen"
@@ -404,9 +407,7 @@
                 <template v-if="!fileUploaded && !fileDropped && !fileNotAccepted">
                     <span>Træk filen hertil for at tilføje til samtalen</span>
                 </template>
-
             </template>
-
         </div>
     </div>
 </template>
@@ -513,8 +514,8 @@
             color: var(--color-dropzone-text);
             transition: border 0.2s ease, color 0.2s ease, background-color 0.2s ease-in-out;
         }
-        .dropZone.dropped:not(.error) ~ .dropOverlay > div {
-            border: 0.2rem dashed var(--color-dropzone-green-border) !important;
+        .dropZone.dropped:not(.error):not(.uploading) ~ .dropOverlay > div {
+            border: 0.2rem solid var(--color-dropzone-green-border) !important;
             color: var(--color-dropzone-green) !important;
             background-color: var(--color-dropzone-background-active);
         }
@@ -523,10 +524,41 @@
             color: var(--color-dropzone-red) !important;
             background-color: var(--color-dropzone-background-active);
         }
-        .dropZone.dragging ~ .dropOverlay > div.over-zone{
+        .dropZone.dragging ~ .dropOverlay > div.over-zone {
             border: 0.2rem dashed var(--color-dropzone-yellow-border) !important;
             color: var(--color-dropzone-yellow) !important;
             background-color: var(--color-dropzone-background-active);
+        }
+
+        .dropZone.dropped.uploading ~ .dropOverlay > div {
+            color: var(--color-dropzone-yellow) !important;
+            border: 0.2rem solid transparent !important;
+            background:
+                linear-gradient(var(--color-dropzone-background-active), var(--color-dropzone-background-active)) padding-box,
+                conic-gradient(
+                    from var(--drop-border-angle),
+                    transparent 0deg 235deg,
+                    var(--color-dropzone-yellow-border) 255deg,
+                    var(--color-dropzone-yellow) 350deg
+                ) border-box !important;
+            background-origin: border-box !important;
+            background-clip: padding-box, border-box !important;
+            animation: rotate-drop-border 3s linear infinite;
+        }
+
+        @property --drop-border-angle {
+            syntax: "<angle>";
+            inherits: false;
+            initial-value: 0deg;
+        }
+        @keyframes rotate-drop-border {
+            to { --drop-border-angle: 360deg; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .dropZone.dropped.uploading ~ .dropOverlay > div {
+                animation: none;
+            }
         }
 
         .rotate {
