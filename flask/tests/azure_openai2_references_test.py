@@ -563,7 +563,7 @@ def test_normalize_ai_search_get_url_selects_storage_path_only_when_requested():
     assert query["api-version"] == ["2024-07-01"]
     enriched_url = azure_openai._normalize_ai_search_get_url(input_url, include_storage_path=True)
     enriched_query = azure_openai.urllib.parse.parse_qs(azure_openai.urllib.parse.urlparse(enriched_url).query)
-    assert enriched_query["$select"] == ["title,url,metadata_storage_path"]
+    assert enriched_query["$select"] == ["title,url,metadata_storage_path,metadata_storage_name"]
 
 
 def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch):
@@ -1023,6 +1023,7 @@ def test_stream_resolves_pdf_doc_marker_and_rewrites_inline_blob_link(monkeypatc
             "title": None,
             "url": public_url,
             "metadata_storage_path": blob_url,
+            "metadata_storage_name": "meeting.pdf",
         },
     )
     agent = Agent.__new__(Agent)
@@ -1039,6 +1040,7 @@ def test_stream_resolves_pdf_doc_marker_and_rewrites_inline_blob_link(monkeypatc
     assert emitted[-1]["references"] == [
         {
             **annotation,
+            "title": "meeting.pdf",
             "url": public_url,
             "start_index": expected_text.index("\u3010"),
             "end_index": len(expected_text),
@@ -1132,6 +1134,7 @@ def test_remap_ai_search_reference_urls_enriches_untitled_pdf_without_inline_lin
         metadata = {"title": None, "url": "https://example.com/agenda.pdf"}
         if include_storage_path:
             metadata["metadata_storage_path"] = "https://storage.blob.core.windows.net/json/agenda.pdf"
+            metadata["metadata_storage_name"] = "Agenda for meeting.pdf"
         return metadata
 
     monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
@@ -1143,6 +1146,7 @@ def test_remap_ai_search_reference_urls_enriches_untitled_pdf_without_inline_lin
 
     assert calls == [False, True]
     assert remapped[0]["url"] == "https://example.com/agenda.pdf"
+    assert remapped[0]["title"] == "Agenda for meeting.pdf"
 
 
 def test_remap_ai_search_reference_urls_rejects_ambiguous_indexed_matches(monkeypatch):
@@ -1531,7 +1535,7 @@ def test_stream_reconstructs_ai_search_reference_when_annotations_are_missing(mo
 
     requested_get_urls = []
 
-    def fetch_metadata(get_url, timeout_s=5.0):
+    def fetch_metadata(get_url, timeout_s=5.0, include_storage_path=False):
         requested_get_urls.append(get_url)
         return {
             "title": metadata_title,
@@ -1622,7 +1626,7 @@ def test_build_ai_search_references_from_text_supports_bracket_marker_without_tu
     monkeypatch.setattr(
         azure_openai,
         "_fetch_ai_search_document_metadata",
-        lambda get_url, timeout_s=5.0: {
+        lambda get_url, timeout_s=5.0, include_storage_path=False: {
             "title": "Regler",
             "url": "https://www.randers.dk/regler",
         },
@@ -1639,6 +1643,34 @@ def test_build_ai_search_references_from_text_supports_bracket_marker_without_tu
             "url": "https://www.randers.dk/regler",
         }
     ]
+
+
+def test_build_ai_search_references_from_text_uses_pdf_filename_when_title_missing(monkeypatch):
+    get_url = "https://we-aisearch-it.search.windows.net/docs/0"
+    answer = "Se dagsordenen \u30105:0\u2020source\u3011."
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0, include_storage_path=False):
+        calls.append(include_storage_path)
+        return {
+            "title": None,
+            "url": "https://broen.example.org/agenda.pdf",
+            "metadata_storage_path": "https://storage.blob.core.windows.net/json/agenda.pdf",
+            "metadata_storage_name": "Dagsorden til AM-møde.pdf",
+        }
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+
+    references = azure_openai._build_ai_search_references_from_text(answer, [get_url])
+
+    assert calls == [True]
+    assert references == [{
+        "type": "url_citation",
+        "start_index": answer.index("【"),
+        "end_index": answer.index("】") + 1,
+        "title": "Dagsorden til AM-møde.pdf",
+        "url": "https://broen.example.org/agenda.pdf",
+    }]
 
 
 def test_extract_ai_search_citation_markers_supports_malformed_foundry_variants():

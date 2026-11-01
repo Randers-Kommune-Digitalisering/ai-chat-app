@@ -195,6 +195,26 @@ a:focus, button:focus, .alert:focus {
 }
 
 
+/* Loading animations */
+
+.shimmer-text {
+  width: fit-content;
+  color: transparent;
+  background: linear-gradient(90deg, #687972 25%, #abbcb3 50%, #687972 75%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: shimmer-sweep 1.5s linear infinite;
+}
+@keyframes shimmer-sweep {
+  /* from { background-position: 100% 0; } */
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; color: #687972; }
+}
+
+
 
 /* Tooltip */
 

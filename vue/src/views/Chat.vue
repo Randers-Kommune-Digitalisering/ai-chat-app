@@ -490,7 +490,6 @@
             )
 
             const { success, message: backendMessage, response, references, conversation_id, title } = result
-            console.debug('Agent stream result references from backend:', references || [])
 
             if (generation !== responseGeneration.value)
                 return  // Ignore outdated generation
@@ -765,7 +764,7 @@
 
         <div v-if="awaitingResponse" class="loading-indicator">
             <i class="fa-solid fa-rotate rotate"></i>
-            <span>{{ responseStatus }}</span>
+            <span class="shimmer-text">{{ responseStatus }}</span>
             <span class="timer">
                 <i class="fa-regular fa-clock"></i>
                 {{ (timeSpent / 1000).toFixed(2) }}

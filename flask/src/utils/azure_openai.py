@@ -231,7 +231,7 @@ def _normalize_ai_search_get_url(get_url: str, include_storage_path: bool = Fals
         return get_url
 
     query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-    query["$select"] = ["title,url,metadata_storage_path" if include_storage_path else "title,url"]
+    query["$select"] = ["title,url,metadata_storage_path,metadata_storage_name" if include_storage_path else "title,url"]
 
     if "api-version" not in query:
         query["api-version"] = ["2024-07-01"]
@@ -369,6 +369,18 @@ def _extract_public_url_from_metadata(metadata: dict) -> str:
     ):
         return url_value
     return ""
+
+
+def _pdf_filename_from_metadata(metadata: dict) -> str:
+    storage_path = str(metadata.get("metadata_storage_path") or "")
+    if not _is_azure_blob_url(storage_path) or not urllib.parse.unquote(
+        urllib.parse.urlparse(storage_path).path
+    ).lower().endswith(".pdf"):
+        return ""
+    filename = urllib.parse.unquote(
+        str(metadata.get("filename") or metadata.get("metadata_storage_name") or "").strip()
+    )
+    return filename if filename and "/" not in filename and "\\" not in filename else ""
 
 
 def _is_azure_blob_url(url: str) -> bool:
@@ -525,10 +537,11 @@ def _build_ai_search_references_from_text(answer_text: str, ai_search_get_urls: 
             if source_index not in metadata_by_index:
                 metadata = _fetch_ai_search_document_metadata(
                     get_url=ai_search_get_urls[source_index],
+                    include_storage_path=True,
                 )
                 if isinstance(metadata, dict):
                     public_url = _extract_public_url_from_metadata(metadata)
-                    title = str(metadata.get("title") or "").strip()
+                    title = str(metadata.get("title") or "").strip() or _pdf_filename_from_metadata(metadata)
                     metadata_by_index[source_index] = (title, public_url)
                 else:
                     metadata_by_index[source_index] = ("", "")
@@ -648,6 +661,7 @@ def _remap_ai_search_reference_urls(
         if index is not None:
             citation_title_key = _normalize_title_key(citation.get("title"))
             matching_urls: set[str] = set()
+            matching_filenames: set[str] = set()
             incomplete_lookup = False
             for group_index, group in enumerate(groups):
                 if index >= len(group):
@@ -679,6 +693,10 @@ def _remap_ai_search_reference_urls(
                     public_url = _extract_public_url_from_metadata(metadata)
                     if public_url:
                         matching_urls.add(public_url)
+                        if indexed_pdf:
+                            filename = _pdf_filename_from_metadata(metadata)
+                            if filename:
+                                matching_filenames.add(filename)
                     else:
                         incomplete_lookup = True
             if not citation_title_key:
@@ -689,6 +707,8 @@ def _remap_ai_search_reference_urls(
                 reason = "ambiguous_or_no_indexed_title_match"
             else:
                 citation["url"] = next(iter(matching_urls))
+                if citation_title_key == f"doc_{index}" and len(matching_filenames) == 1:
+                    citation["title"] = next(iter(matching_filenames))
         elif len(source_indices) > 1:
             reason = "ambiguous_marker"
         else:
