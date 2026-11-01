@@ -549,7 +549,7 @@ def test_extract_ai_search_get_urls_from_completed_event_preserves_latest_empty_
     assert azure_openai._extract_ai_search_get_urls_from_stream_event(event=event) == []
 
 
-def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
+def test_normalize_ai_search_get_url_selects_storage_path_only_when_requested():
     input_url = (
         "https://we-aisearch-it.search.windows.net/indexes/aisearch-randersdk-index/docs/doc_1"
         "?api-version=2024-07-01&$select=id,content,title"
@@ -561,6 +561,9 @@ def test_normalize_ai_search_get_url_sets_select_to_title_and_url():
 
     assert query["$select"] == ["title,url"]
     assert query["api-version"] == ["2024-07-01"]
+    enriched_url = azure_openai._normalize_ai_search_get_url(input_url, include_storage_path=True)
+    enriched_query = azure_openai.urllib.parse.parse_qs(azure_openai.urllib.parse.urlparse(enriched_url).query)
+    assert enriched_query["$select"] == ["title,url,metadata_storage_path"]
 
 
 def test_fetch_ai_search_document_metadata_blocks_cross_domain_urls(monkeypatch):
@@ -984,6 +987,162 @@ def test_remap_ai_search_reference_urls_requires_nonblank_title_match(monkeypatc
         )
 
         assert remapped[0]["url"] == ""
+
+
+def test_stream_resolves_pdf_doc_marker_and_rewrites_inline_blob_link(monkeypatch):
+    blob_url = "https://storage.blob.core.windows.net/json/media/meeting.pdf"
+    public_url = "https://broen.example.org/meetings/agenda.pdf"
+    get_url = "https://search.search.windows.net/docs/0"
+    answer = f"Read [agenda]({blob_url}) here \u30105:0\u2020source\u3011"
+    marker_start = answer.index("\u3010")
+    annotation = {
+        "type": "url_citation",
+        "title": "doc_0",
+        "url": "https://search.search.windows.net/",
+        "start_index": marker_start,
+        "end_index": len(answer),
+    }
+    search_item = SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": [get_url]})
+    message_item = SimpleNamespace(
+        type="message", content=[SimpleNamespace(type="output_text", annotations=[annotation])]
+    )
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta="Read [agenda](https://storage.blob.core."),
+        SimpleNamespace(
+            type="response.output_text.delta",
+            delta="windows.net/json/media/meeting.pdf) here \u30105:0\u2020source\u3011",
+        ),
+        SimpleNamespace(type="response.output_text.annotation.added", annotation=annotation),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item, message_item])),
+    ]
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0, include_storage_path=False: {
+            "title": None,
+            "url": public_url,
+            "metadata_storage_path": blob_url,
+        },
+    )
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: iter(events)))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_pdf"))
+    deltas = [event["text"] for event in emitted if event["type"] == "delta"]
+    expected_text = answer.replace(blob_url, public_url)
+
+    assert "".join(deltas) == expected_text
+    assert all(".blob.core.windows.net" not in delta for delta in deltas)
+    assert emitted[-1]["references"] == [
+        {
+            **annotation,
+            "url": public_url,
+            "start_index": expected_text.index("\u3010"),
+            "end_index": len(expected_text),
+        }
+    ]
+
+
+def test_replace_ai_search_blob_links_removes_unverified_markdown_targets(monkeypatch):
+    blob_url = "https://storage.blob.core.windows.net/json/media/unknown.pdf"
+    text = f"Read [document]({blob_url}) or {blob_url}. Public [home](https://example.com/)."
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0, include_storage_path=False: None,
+    )
+
+    sanitized, changes = azure_openai._replace_ai_search_blob_links(
+        text,
+        [["https://search.search.windows.net/docs/0"]],
+        {},
+    )
+
+    assert sanitized == "Read document or . Public [home](https://example.com/)."
+    assert len(changes) == 2
+    assert ".blob.core.windows.net" not in sanitized
+
+
+def test_replace_ai_search_blob_links_rewrites_blob_url_used_as_link_label(monkeypatch):
+    blob_url = "https://storage.blob.core.windows.net/json/media/meeting.pdf"
+    public_url = "https://example.com/agenda.pdf"
+    get_url = "https://search.search.windows.net/docs/0"
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0, include_storage_path=False: {
+            "metadata_storage_path": blob_url,
+            "url": public_url,
+        },
+    )
+
+    sanitized, _ = azure_openai._replace_ai_search_blob_links(
+        f"Read [{blob_url}]({blob_url})",
+        [[get_url]],
+        {},
+    )
+
+    assert sanitized == f"Read [{public_url}]({public_url})"
+    assert blob_url not in sanitized
+
+
+def test_remap_ai_search_reference_urls_rejects_doc_label_without_pdf_storage_path(monkeypatch):
+    answer = "See \u30105:0\u2020source\u3011"
+    reference = {
+        "type": "url_citation",
+        "title": "doc_0",
+        "url": "https://search.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
+    }
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda get_url, timeout_s=5.0, include_storage_path=False: {
+            "title": None,
+            "url": "https://example.com/incorrect",
+        },
+    )
+
+    remapped = azure_openai._remap_ai_search_reference_urls(
+        [reference],
+        ["https://search.search.windows.net/docs/0"],
+        answer_text=answer,
+    )
+
+    assert remapped[0]["url"] == ""
+
+
+def test_remap_ai_search_reference_urls_enriches_untitled_pdf_without_inline_link(monkeypatch):
+    answer = "See \u30105:0\u2020source\u3011"
+    reference = {
+        "type": "url_citation",
+        "title": "doc_0",
+        "url": "https://search.search.windows.net/",
+        "start_index": answer.index("\u3010"),
+        "end_index": len(answer),
+    }
+    calls = []
+
+    def fetch_metadata(get_url, timeout_s=5.0, include_storage_path=False):
+        calls.append(include_storage_path)
+        metadata = {"title": None, "url": "https://example.com/agenda.pdf"}
+        if include_storage_path:
+            metadata["metadata_storage_path"] = "https://storage.blob.core.windows.net/json/agenda.pdf"
+        return metadata
+
+    monkeypatch.setattr(azure_openai, "_fetch_ai_search_document_metadata", fetch_metadata)
+    remapped = azure_openai._remap_ai_search_reference_urls(
+        [reference],
+        ["https://search.search.windows.net/docs/0"],
+        answer_text=answer,
+    )
+
+    assert calls == [False, True]
+    assert remapped[0]["url"] == "https://example.com/agenda.pdf"
 
 
 def test_remap_ai_search_reference_urls_rejects_ambiguous_indexed_matches(monkeypatch):

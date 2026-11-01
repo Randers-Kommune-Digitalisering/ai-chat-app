@@ -219,19 +219,19 @@ def _is_internal_ai_search_url(url: str) -> bool:
     return parsed.scheme in {"http", "https"} and host.endswith(".search.windows.net")
 
 
-def _normalize_ai_search_get_url(get_url: str) -> str:
+def _normalize_ai_search_get_url(get_url: str, include_storage_path: bool = False) -> str:
     """
     Ensure AI Search document endpoint requests include the fields needed for remapping.
 
     :param get_url: Source URL from AI Search tool output.
-    :return: Normalized URL with $select=title,url.
+    :return: Normalized URL with citation title and public URL fields.
     """
     parsed = urllib.parse.urlparse(get_url or "")
     if not parsed.scheme or not parsed.netloc:
         return get_url
 
     query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-    query["$select"] = ["title,url"]
+    query["$select"] = ["title,url,metadata_storage_path" if include_storage_path else "title,url"]
 
     if "api-version" not in query:
         query["api-version"] = ["2024-07-01"]
@@ -307,7 +307,9 @@ def _extract_ai_search_get_urls_from_stream_event(event: Any) -> list[str]:
     return []
 
 
-def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> dict | None:
+def _fetch_ai_search_document_metadata(
+    get_url: str, timeout_s: float = 5.0, include_storage_path: bool = False
+) -> dict | None:
     """
     Fetch AI Search document metadata for one get_url endpoint.
 
@@ -319,7 +321,7 @@ def _fetch_ai_search_document_metadata(get_url: str, timeout_s: float = 5.0) -> 
         logger.warning("AI Search metadata lookup skipped because its API key is not configured")
         return None
 
-    request_url = _normalize_ai_search_get_url(get_url)
+    request_url = _normalize_ai_search_get_url(get_url, include_storage_path=include_storage_path)
     request_host = (urllib.parse.urlparse(request_url).netloc or "").strip().lower()
     endpoint_host = (urllib.parse.urlparse(AZURE_AISEARCH_ENDPOINT).netloc or "").strip().lower()
     if endpoint_host and request_host and request_host != endpoint_host:
@@ -358,11 +360,114 @@ def _extract_public_url_from_metadata(metadata: dict) -> str:
         return ""
 
     decoded_url = urllib.parse.unquote(url_value).strip()
-    if decoded_url.startswith(("https://", "http://")):
+    if decoded_url.startswith(("https://", "http://")) and not (
+        _is_azure_blob_url(decoded_url) or _is_internal_ai_search_url(decoded_url)
+    ):
         return decoded_url
-    if url_value.startswith(("https://", "http://")):
+    if url_value.startswith(("https://", "http://")) and not (
+        _is_azure_blob_url(url_value) or _is_internal_ai_search_url(url_value)
+    ):
         return url_value
     return ""
+
+
+def _is_azure_blob_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.scheme in {"http", "https"} and (parsed.hostname or "").endswith(".blob.core.windows.net")
+
+
+_INLINE_URL_PATTERN = re.compile(
+    r"(?P<markdown>!?\[[^\]\n]*\]\((?P<markdown_url>https?://[^\s)]+)\))"
+    r"|(?P<plain_url>https?://[^\s<>\])\"']+)",
+    re.IGNORECASE,
+)
+
+
+def _replace_ai_search_blob_links(
+    answer_text: str,
+    get_url_groups: list[list[str]],
+    metadata_by_url: dict[str, dict | None],
+) -> tuple[str, list[tuple[int, int, int]]]:
+    """Replace blob links only when the indexed storage path identifies one public URL."""
+    if ".blob.core.windows.net" not in answer_text.lower():
+        return answer_text, []
+
+    blob_to_public_urls: dict[tuple[str, str], set[str]] = {}
+    incomplete_lookup = False
+    for group in get_url_groups:
+        for get_url in group:
+            if get_url not in metadata_by_url:
+                metadata_by_url[get_url] = _fetch_ai_search_document_metadata(
+                    get_url=get_url, timeout_s=1.5, include_storage_path=True
+                )
+                if metadata_by_url[get_url] is None:
+                    metadata_by_url[get_url] = _fetch_ai_search_document_metadata(get_url=get_url, timeout_s=1.5)
+            metadata = metadata_by_url[get_url]
+            if not isinstance(metadata, dict):
+                incomplete_lookup = True
+                continue
+            storage_path = str(metadata.get("metadata_storage_path") or "")
+            storage_url = urllib.parse.urlparse(storage_path)
+            if not _is_azure_blob_url(storage_path):
+                continue
+            public_url = _extract_public_url_from_metadata(metadata)
+            if public_url:
+                blob_to_public_urls.setdefault(
+                    (storage_url.hostname or "", urllib.parse.unquote(storage_url.path)), set()
+                ).add(public_url)
+
+    replacements: list[tuple[int, int, int]] = []
+
+    def replace(match: re.Match[str]) -> str:
+        url = match.group("markdown_url") or match.group("plain_url")
+        trimmed_url = url.rstrip(".,;:") if match.group("plain_url") else url
+        if not _is_azure_blob_url(trimmed_url):
+            return match.group()
+        parsed = urllib.parse.urlparse(trimmed_url)
+        candidates = blob_to_public_urls.get((parsed.hostname or "", urllib.parse.unquote(parsed.path)), set())
+        public_url = next(iter(candidates)) if len(candidates) == 1 and not incomplete_lookup else ""
+        if match.group("markdown"):
+            label = match.group("markdown").split("](", 1)[0]
+            label = label[2:] if label.startswith("![") else label[1:]
+            if ".blob.core.windows.net" in label.lower():
+                label = public_url or "Link ikke tilgængeligt"
+            replacement = match.group().replace(url, public_url) if public_url else label
+            if public_url and ".blob.core.windows.net" in match.group("markdown").split("](", 1)[0].lower():
+                replacement = f"[{label}]({public_url})"
+        else:
+            replacement = (public_url if public_url else "") + url[len(trimmed_url):]
+        replacements.append((
+            _python_index_to_utf16(answer_text, match.start()),
+            _python_index_to_utf16(answer_text, match.end()),
+            _python_index_to_utf16(replacement, len(replacement)),
+        ))
+        return replacement
+
+    sanitized = _INLINE_URL_PATTERN.sub(replace, answer_text)
+    if replacements:
+        logger.debug("AI Search blob links rewritten or suppressed (count=%s)", len(replacements))
+    return sanitized, replacements
+
+
+def _shift_citation_offsets(references: list[dict], replacements: list[tuple[int, int, int]]) -> None:
+    """Keep annotation offsets aligned with the sanitized answer text."""
+    for reference in references:
+        citation = _get_url_citation_container(reference)
+        if not citation:
+            continue
+        start, end = citation.get("start_index"), citation.get("end_index")
+        if type(start) is not int or type(end) is not int:
+            continue
+        if any(old_start < offset < old_end for old_start, old_end, _ in replacements for offset in (start, end)):
+            citation.pop("start_index", None)
+            citation.pop("end_index", None)
+            continue
+        for key, offset in (("start_index", start), ("end_index", end)):
+            citation[key] = offset + sum(
+                new_length - (old_end - old_start)
+                for old_start, old_end, new_length in replacements
+                if old_end <= offset
+            )
 
 
 def _python_index_to_utf16(value: str, index: int) -> int:
@@ -473,6 +578,7 @@ def _get_url_citation_container(reference: Any) -> dict | None:
 def _remap_ai_search_reference_urls(
     references: list[dict], ai_search_get_urls: list[str], answer_text: str = "",
     ai_search_get_url_groups: list[list[str]] | None = None,
+    metadata_by_url: dict[str, dict | None] | None = None,
 ) -> list[dict]:
     """
     Replace internal search.windows.net citation URLs only when the source can be identified.
@@ -509,7 +615,8 @@ def _remap_ai_search_reference_urls(
         _python_index_to_utf16(answer_text, start): answer_text[start:end]
         for start, end, _ in citation_markers
     }
-    metadata_by_url: dict[str, dict | None] = {}
+    metadata_by_url = metadata_by_url if metadata_by_url is not None else {}
+    storage_lookup_attempted: set[str] = set()
     lookup_deadline = time.monotonic() + max(10.0, sum(len(group) for group in groups) * 1.5)
 
     def fetch_metadata(get_url: str, group_index: int, source_index: int) -> dict | None:
@@ -545,12 +652,30 @@ def _remap_ai_search_reference_urls(
             for group_index, group in enumerate(groups):
                 if index >= len(group):
                     continue
-                metadata = fetch_metadata(group[index], group_index, index)
+                get_url = group[index]
+                metadata = fetch_metadata(get_url, group_index, index)
                 if not metadata:
                     incomplete_lookup = True
                     continue
                 metadata_title_key = _normalize_title_key(metadata.get("title"))
-                if citation_title_key and metadata_title_key == citation_title_key:
+                if (
+                    not metadata_title_key
+                    and citation_title_key == f"doc_{index}"
+                    and not metadata.get("metadata_storage_path")
+                    and get_url not in storage_lookup_attempted
+                ):
+                    storage_lookup_attempted.add(get_url)
+                    enriched = _fetch_ai_search_document_metadata(
+                        get_url=get_url, timeout_s=1.5, include_storage_path=True
+                    )
+                    if enriched:
+                        metadata_by_url[get_url] = metadata = enriched
+                indexed_pdf = (
+                    not metadata_title_key
+                    and citation_title_key == f"doc_{index}"
+                    and _is_azure_blob_url(str(metadata.get("metadata_storage_path") or ""))
+                )
+                if citation_title_key and (metadata_title_key == citation_title_key or indexed_pdf):
                     public_url = _extract_public_url_from_metadata(metadata)
                     if public_url:
                         matching_urls.add(public_url)
@@ -1397,8 +1522,11 @@ class Agent(AzureOpenAIClient):
         last_status = None
         ai_search_get_urls: list[str] = []
         ai_search_get_url_groups: list[list[str]] = []
+        ai_search_metadata: dict[str, dict | None] = {}
+        ai_search_seen = False
         response_text_parts: list[str] = []
         web_search_seen = False
+        offset_replacements: list[tuple[int, int, int]] = []
 
         for event in stream:
             event_type = getattr(event, "type", None)
@@ -1410,6 +1538,8 @@ class Agent(AzureOpenAIClient):
 
             if event_type in {"response.output_item.added", "response.output_item.done"}:
                 item = _get_field(event, "item")
+                if _get_field(item, "type") in {"azure_ai_search_call", "azure_ai_search_call_output"}:
+                    ai_search_seen = True
                 if _get_field(item, "type") in {
                     "web_search_call",
                     "bing_grounding_call",
@@ -1454,7 +1584,8 @@ class Agent(AzureOpenAIClient):
 
             if event_type == "response.output_text.delta" and getattr(event, "delta", None):
                 response_text_parts.append(event.delta)
-                yield {"type": "delta", "text": event.delta}
+                if not ai_search_seen:
+                    yield {"type": "delta", "text": event.delta}
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
             is_ai_search_result_event = (
@@ -1468,6 +1599,7 @@ class Agent(AzureOpenAIClient):
                     for output_item in output_items
                 )
             if extracted_get_urls or is_ai_search_result_event:
+                ai_search_seen = True
                 ai_search_get_urls = extracted_get_urls
                 if event_type == "response.output_item.done":
                     ai_search_get_url_groups.append(extracted_get_urls)
@@ -1487,6 +1619,13 @@ class Agent(AzureOpenAIClient):
                         len(ai_search_get_url_groups),
                         len(ai_search_get_urls),
                     )
+
+            if event_type == "response.completed" and ai_search_seen:
+                sanitized_text, offset_replacements = _replace_ai_search_blob_links(
+                    "".join(response_text_parts), ai_search_get_url_groups, ai_search_metadata
+                )
+                if sanitized_text:
+                    yield {"type": "delta", "text": sanitized_text}
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":
@@ -1519,7 +1658,9 @@ class Agent(AzureOpenAIClient):
                         ai_search_get_urls=ai_search_get_urls,
                         answer_text="".join(response_text_parts),
                         ai_search_get_url_groups=ai_search_get_url_groups,
+                        metadata_by_url=ai_search_metadata,
                     )
+                    _shift_citation_offsets(latest_references, offset_replacements)
                     logger.debug(
                         "Agent stream emitting references at completed (thread_id=%s count=%s): %s",
                         thread_id,
@@ -1549,7 +1690,9 @@ class Agent(AzureOpenAIClient):
                     ai_search_get_urls=ai_search_get_urls,
                     answer_text="".join(response_text_parts),
                     ai_search_get_url_groups=ai_search_get_url_groups,
+                    metadata_by_url=ai_search_metadata,
                 )
+                _shift_citation_offsets(latest_references, offset_replacements)
                 logger.debug(
                     "Agent stream emitting fallback references at completed (thread_id=%s count=%s): %s",
                     thread_id,
@@ -1560,6 +1703,12 @@ class Agent(AzureOpenAIClient):
                 references_emitted = True
 
         if not references_emitted:
+            if ai_search_seen:
+                sanitized_text, offset_replacements = _replace_ai_search_blob_links(
+                    "".join(response_text_parts), ai_search_get_url_groups, ai_search_metadata
+                )
+                if sanitized_text:
+                    yield {"type": "delta", "text": sanitized_text}
             if not latest_references and not web_search_seen:
                 latest_references = _build_ai_search_references_from_text(
                     answer_text="".join(response_text_parts),
@@ -1577,7 +1726,9 @@ class Agent(AzureOpenAIClient):
                 ai_search_get_urls=ai_search_get_urls,
                 answer_text="".join(response_text_parts),
                 ai_search_get_url_groups=ai_search_get_url_groups,
+                metadata_by_url=ai_search_metadata,
             )
+            _shift_citation_offsets(latest_references, offset_replacements)
             logger.debug(
                 "Agent stream emitting end-of-stream references (thread_id=%s count=%s): %s",
                 thread_id,
