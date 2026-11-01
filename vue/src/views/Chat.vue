@@ -907,6 +907,24 @@
         margin-bottom: auto;
     }
 
+    
+    .user-input-container:has(.fileSelectButton)
+    :deep(.user-input-form)::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: transparent;
+        transition: background-color 0.25s ease-in-out;
+        pointer-events: none;
+    }    
+    .user-input-container:has(.fileSelectButton:hover)
+    :deep(.user-input-form)::before {
+        background-color: var(--color-dropzone-background-active);
+    }
+
     .alert-content-filter {
         position: relative;
         z-index: 11 !important;

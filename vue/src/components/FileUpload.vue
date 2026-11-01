@@ -315,12 +315,16 @@
             v-for="(file, index) in files"
             :key="index"
             class="file-upload-item"
-            @click="removeFile(file)"
             @mouseenter="file.hover = true"
             @mouseleave="file.hover = false"
         >
-            <i v-if="!file.hover" class="fa-regular fa-file"></i>
-            <i v-else class="fa-solid fa-trash"></i>
+            <div class="file-icon" 
+            @click="removeFile(file)"
+            aria-label="Fjern denne fil">
+                <i v-if="!file.hover" class="fa-regular fa-file"></i>
+                <i v-else class="fa-solid fa-trash" style="transform:translateX(-0.05rem)"></i>
+                <div class="tooltip">Fjern denne fil</div>
+            </div>
             {{ file.name }} ({{ (file.size / 1024).toFixed(0) }} KB)
         </div>
     </div>
@@ -446,12 +450,12 @@
         width: calc(min(56rem, 100dvw) - 8rem) !important;
         white-space: normal;
         bottom: 50%;
-        background-color: var(--color-input-background);
+        background-color: transparent;
         font-size: 1em;
         pointer-events: none;
         transform: translateY(50%);
         padding: 0.5rem 0.8rem;
-        color: inherit;
+        color: var(--color-dropzone-yellow) !important;
         text-align: left;
     }
     .tooltip-text {
@@ -584,37 +588,63 @@
         display: flex;
         flex-direction: row;
         flex-wrap: wrap-reverse;
-        gap: 0.8rem;
+        gap: 0.6rem;
     }
     .user-input-container.landing-page .fileUploads {
         padding-top: 0;
         top: auto;
         bottom: 0;
-        transform: translateY(calc(100% - 1rem));
-        padding-bottom: 0;
+        transform: translateY(calc(100% - 1rem)); 
         flex-wrap: wrap;
     }
     .fileUploads.with-assistant-toggle-padding {
         padding-right: 13rem;
         width: auto;
     }
-    .fileUploads div {
-        background-color: var(--color-options-background-hover);
+    .fileUploads .file-upload-item {
+        background-color: var(--color-toolbar-background);
+        border: 0.05rem solid var(--color-toolbar-border);
         border-radius: 0.5rem;
         padding: 0.4rem 0.8rem;
+        padding-top: 0.42rem;
         font-size: 0.8rem;
-        color: var(--color-text-primary);
+        color: var(--color-text-faded);
         user-select: none;
         transition: background-color 0.3s, color 0.2s;
     }
-    .fileUploads div i {
-        width: 0.6rem;
-        margin-right: 0.4rem;
-        font-size: 0.8em;
-    }
-    .fileUploads div:hover {
+    
+    /* .fileUploads .file-upload-item:hover {
         color: var(--color-dropzone-red);
         background-color: var(--color-input-background-focus);
         cursor: pointer;
+    } */
+
+    .file-upload-item:has(.file-icon) {
+        padding-left: 0.2rem !important;
+    }
+    .file-upload-item:has(.file-icon:hover) {
+        color: var(--color-dropzone-red);
+    }
+    .file-upload-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .file-icon {
+        cursor: pointer;
+        padding-left: 0.6rem;
+        padding-right: 0.6rem;
+        border-right: 0.05rem solid var(--color-toolbar-border);
+    }
+    .file-icon .tooltip {
+        bottom: -1rem;
+        left: 0.5rem;
+    }
+    /* .file-icon:hover {
+        color: var(--color-dropzone-red);
+    } */
+    .file-upload-item i {
+        width: 0.8em;
+        font-size: 0.8em;
     }
 </style>
