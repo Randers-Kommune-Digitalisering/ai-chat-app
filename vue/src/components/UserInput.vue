@@ -308,7 +308,7 @@
     }
 
     .user-input-form {
-        overflow: hidden;
+        overflow: visible;
         border-radius: 2rem;
     }
     @property --border-angle {
@@ -320,6 +320,7 @@
         content: "";
         position: absolute;
         inset: 0;
+        border-radius: inherit;
         background: conic-gradient(
             from var(--border-angle),
             transparent 0deg 235deg,
@@ -342,6 +343,7 @@
         content: "";
         position: absolute;
         inset: 3px;
+        border-radius: inherit;
         background: var(--color-input-background);
         border-radius: 2rem;
     }
