@@ -920,6 +920,7 @@
         background-color: transparent;
         transition: background-color 0.25s ease-in-out;
         pointer-events: none;
+        border-radius: 2rem;
     }    
     .user-input-container:has(.fileSelectButton:hover)
     :deep(.user-input-form)::before {
