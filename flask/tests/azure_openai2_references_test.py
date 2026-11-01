@@ -1092,7 +1092,7 @@ def test_ai_search_stream_holds_split_blob_links_but_streams_preceding_text(monk
         SimpleNamespace(type="response.output_item.done", item=search_item),
         SimpleNamespace(type="response.output_text.delta", delta="Look "),
         SimpleNamespace(type="response.output_text.delta", delta="[agenda](htt"),
-        SimpleNamespace(type="response.output_text.delta", delta=f"ps://storage.blob.core.windows.net/json/media/meeting.pdf) now."),
+        SimpleNamespace(type="response.output_text.delta", delta="ps://storage.blob.core.windows.net/json/media/meeting.pdf) now."),
         SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item])),
     ]
     consumed = []
