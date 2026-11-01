@@ -395,6 +395,34 @@ _INLINE_URL_PATTERN = re.compile(
 )
 
 
+def _safe_stream_prefix_length(text: str) -> int:
+    """Keep links that may be rewritten, including links split across deltas, out of the stream."""
+    safe_end = len(text)
+    for match in re.finditer(r"!?\[[^\]\n]*", text):
+        end = match.end()
+        if end == len(text) and (not text or text[-1] != "\n"):
+            safe_end = min(safe_end, match.start())
+        elif end < len(text) and text[end] == "]":
+            after_bracket = text[end + 1:]
+            if not after_bracket or after_bracket == "(":
+                safe_end = min(safe_end, match.start())
+            elif after_bracket.startswith("(") and (
+                after_bracket[1:].lower().startswith(("http://", "https://"))
+                or any(scheme.startswith(after_bracket[1:].lower()) for scheme in ("http://", "https://"))
+            ):
+                safe_end = min(safe_end, match.start())
+
+    for match in re.finditer(r"https?://[^\s<>\])\"']*", text, re.IGNORECASE):
+        if match.end() == len(text) or _is_azure_blob_url(match.group()):
+            safe_end = min(safe_end, match.start())
+
+    for scheme in ("http://", "https://"):
+        for length in range(1, len(scheme)):
+            if text.lower().endswith(scheme[:length]):
+                safe_end = min(safe_end, len(text) - length)
+    return safe_end
+
+
 def _replace_ai_search_blob_links(
     answer_text: str,
     get_url_groups: list[list[str]],
@@ -1547,6 +1575,9 @@ class Agent(AzureOpenAIClient):
         response_text_parts: list[str] = []
         web_search_seen = False
         offset_replacements: list[tuple[int, int, int]] = []
+        streamed_text_length = 0
+        pending_text = ""
+        text_flushed = False
 
         for event in stream:
             event_type = getattr(event, "type", None)
@@ -1604,8 +1635,12 @@ class Agent(AzureOpenAIClient):
 
             if event_type == "response.output_text.delta" and getattr(event, "delta", None):
                 response_text_parts.append(event.delta)
-                if not ai_search_seen:
-                    yield {"type": "delta", "text": event.delta}
+                pending_text += event.delta
+                safe_end = _safe_stream_prefix_length(pending_text)
+                if safe_end:
+                    yield {"type": "delta", "text": pending_text[:safe_end]}
+                    streamed_text_length += safe_end
+                    pending_text = pending_text[safe_end:]
 
             extracted_get_urls = _extract_ai_search_get_urls_from_stream_event(event=event)
             is_ai_search_result_event = (
@@ -1640,12 +1675,18 @@ class Agent(AzureOpenAIClient):
                         len(ai_search_get_urls),
                     )
 
-            if event_type == "response.completed" and ai_search_seen:
-                sanitized_text, offset_replacements = _replace_ai_search_blob_links(
-                    "".join(response_text_parts), ai_search_get_url_groups, ai_search_metadata
-                )
-                if sanitized_text:
-                    yield {"type": "delta", "text": sanitized_text}
+            if event_type == "response.completed":
+                raw_text = "".join(response_text_parts)
+                answer_text = raw_text
+                if ai_search_seen:
+                    answer_text, offset_replacements = _replace_ai_search_blob_links(
+                        answer_text, ai_search_get_url_groups, ai_search_metadata
+                    )
+                if not answer_text.startswith(raw_text[:streamed_text_length]):
+                    raise ValueError("AI Search link rewrite changed text already streamed")
+                if answer_text[streamed_text_length:]:
+                    yield {"type": "delta", "text": answer_text[streamed_text_length:]}
+                text_flushed = True
 
             # Web/file citations can be streamed incrementally via annotation.added events.
             if event_type == "response.output_text.annotation.added":
@@ -1722,13 +1763,19 @@ class Agent(AzureOpenAIClient):
                 yield {"type": "references", "references": latest_references}
                 references_emitted = True
 
-        if not references_emitted:
+        if not text_flushed:
+            raw_text = "".join(response_text_parts)
+            answer_text = raw_text
             if ai_search_seen:
-                sanitized_text, offset_replacements = _replace_ai_search_blob_links(
-                    "".join(response_text_parts), ai_search_get_url_groups, ai_search_metadata
+                answer_text, offset_replacements = _replace_ai_search_blob_links(
+                    answer_text, ai_search_get_url_groups, ai_search_metadata
                 )
-                if sanitized_text:
-                    yield {"type": "delta", "text": sanitized_text}
+            if not answer_text.startswith(raw_text[:streamed_text_length]):
+                raise ValueError("AI Search link rewrite changed text already streamed")
+            if answer_text[streamed_text_length:]:
+                yield {"type": "delta", "text": answer_text[streamed_text_length:]}
+
+        if not references_emitted:
             if not latest_references and not web_search_seen:
                 latest_references = _build_ai_search_references_from_text(
                     answer_text="".join(response_text_parts),

@@ -1031,7 +1031,10 @@ def test_stream_resolves_pdf_doc_marker_and_rewrites_inline_blob_link(monkeypatc
     agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
     agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
 
-    emitted = list(agent.stream_chat_response_with_metadata("Hej", [], "conv_pdf"))
+    stream_events = agent.stream_chat_response_with_metadata("Hej", [], "conv_pdf")
+    first_delta = next(event for event in stream_events if event["type"] == "delta")
+    assert first_delta == {"type": "delta", "text": "Read "}
+    emitted = [first_delta, *stream_events]
     deltas = [event["text"] for event in emitted if event["type"] == "delta"]
     expected_text = answer.replace(blob_url, public_url)
 
@@ -1046,6 +1049,80 @@ def test_stream_resolves_pdf_doc_marker_and_rewrites_inline_blob_link(monkeypatc
             "end_index": len(expected_text),
         }
     ]
+
+
+def test_ai_search_stream_emits_safe_text_before_response_completes():
+    search_item = SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": []})
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta="First sentence. "),
+        SimpleNamespace(type="response.output_text.delta", delta="Second sentence."),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item])),
+    ]
+    consumed = []
+
+    def stream():
+        for event in events:
+            consumed.append(event.type)
+            yield event
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: stream()))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    stream_events = agent.stream_chat_response_with_metadata("Hej", [], "conv_stream")
+    first_delta = next(event for event in stream_events if event["type"] == "delta")
+    assert first_delta["text"] == "First sentence. "
+    assert "response.completed" not in consumed
+    emitted = [first_delta, *stream_events]
+    assert [event["text"] for event in emitted if event["type"] == "delta"] == [
+        "First sentence. ",
+        "Second sentence.",
+    ]
+    assert consumed[-1] == "response.completed"
+
+
+def test_ai_search_stream_holds_split_blob_links_but_streams_preceding_text(monkeypatch):
+    blob_url = "https://storage.blob.core.windows.net/json/media/meeting.pdf"
+    public_url = "https://broen.example.org/meetings/agenda.pdf"
+    get_url = "https://search.search.windows.net/docs/0"
+    search_item = SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": [get_url]})
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta="Look "),
+        SimpleNamespace(type="response.output_text.delta", delta="[agenda](htt"),
+        SimpleNamespace(type="response.output_text.delta", delta=f"ps://storage.blob.core.windows.net/json/media/meeting.pdf) now."),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item])),
+    ]
+    consumed = []
+
+    def stream():
+        for event in events:
+            consumed.append(event.type)
+            yield event
+
+    monkeypatch.setattr(
+        azure_openai,
+        "_fetch_ai_search_document_metadata",
+        lambda *args, **kwargs: {
+            "metadata_storage_path": blob_url,
+            "url": public_url,
+        },
+    )
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: stream()))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    stream_events = agent.stream_chat_response_with_metadata("Hej", [], "conv_split")
+    first_delta = next(event for event in stream_events if event["type"] == "delta")
+    assert first_delta == {"type": "delta", "text": "Look "}
+    assert "response.completed" not in consumed
+    emitted = [first_delta, *stream_events]
+    deltas = [event["text"] for event in emitted if event["type"] == "delta"]
+    assert "".join(deltas) == f"Look [agenda]({public_url}) now."
+    assert all(blob_url not in delta for delta in deltas)
 
 
 def test_replace_ai_search_blob_links_removes_unverified_markdown_targets(monkeypatch):

@@ -52,7 +52,12 @@ stream, not new HTTP error responses. `references` is delivered in the final
 the final `conversation_id` can differ from the initial `start` value. A
 successful response is formed by joining text deltas and stripping leading and
 trailing whitespace. The endpoint and citation tests protect these shapes;
-they do not prescribe the internals of the Foundry SDK.
+they do not prescribe the internals of the Foundry SDK. For Agent answers using
+AI Search, ordinary text deltas are forwarded as they arrive. A link that could
+contain an internal blob URL (including a link split across deltas) is held
+until the answer is complete so its destination can be resolved or suppressed
+before it reaches the frontend. Citation references and offsets still describe
+the final, sanitized answer.
 
 ## Behavioral boundaries for the refactor
 
