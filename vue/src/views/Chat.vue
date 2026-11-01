@@ -897,6 +897,7 @@
         padding-bottom: 2rem;
         width: 100%;
         background-color: var(--color-background-primary);
+        border-top: 0.05rem solid var(--color-background-primary);
     }
     @media screen and (min-width: 875px) {
         .user-input-container  {

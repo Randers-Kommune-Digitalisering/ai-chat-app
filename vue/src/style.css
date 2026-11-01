@@ -215,7 +215,6 @@ a:focus, button:focus, .alert:focus {
 }
 
 
-
 /* Tooltip */
 
 .tooltip {
@@ -237,4 +236,26 @@ a:focus, button:focus, .alert:focus {
 *:hover > .tooltip, *:focus > .tooltip {
   visibility: visible !important;
   opacity: 1 !important;
+}
+
+
+/* File upload item styles */
+
+.file-upload-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background-color: var(--color-toolbar-background);
+  border: 0.05rem solid var(--color-toolbar-border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  padding-top: 0.42rem;
+  font-size: 0.8rem;
+  color: var(--color-text-faded);
+  user-select: none;
+  transition: background-color 0.3s, color 0.2s;
+}
+.file-upload-item i {
+  width: 0.8em;
+  font-size: 0.8em;
 }

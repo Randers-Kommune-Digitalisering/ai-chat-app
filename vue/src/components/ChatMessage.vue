@@ -756,21 +756,10 @@
         gap: 0.8rem;
         border-top-right-radius: 0.5rem;
     }
-    .fileUploads div {
-        background-color: var(--color-options-background-hover);
-        border-radius: 0.5rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
-        color: var(--color-text-primary);
-        user-select: none;
-        transition: background-color 0.3s, color 0.2s;
-    }
-    .fileUploads div i {
-        width: 0.6rem;
-        margin-right: 0.4rem;
-        font-size: 0.8em;
-    }
 
+    .file-upload-item {
+        background-color: var(--color-options-background-hover);
+    }
     /* .chat-message .assistant {
     } */
 
