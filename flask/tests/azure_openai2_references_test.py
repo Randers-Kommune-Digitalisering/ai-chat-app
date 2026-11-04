@@ -1083,6 +1083,71 @@ def test_ai_search_stream_emits_safe_text_before_response_completes():
     assert consumed[-1] == "response.completed"
 
 
+def test_ai_search_stream_resumes_after_completed_public_citation_link():
+    search_item = SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": []})
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta="First [source](https://www.randers.dk/"),
+        SimpleNamespace(type="response.output_text.delta", delta="source) "),
+        SimpleNamespace(type="response.output_text.delta", delta="then more text."),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item])),
+    ]
+    consumed = []
+
+    def stream():
+        for event in events:
+            consumed.append(event.type)
+            yield event
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: stream()))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    stream_events = agent.stream_chat_response_with_metadata("Hej", [], "conv_citation")
+    deltas_before_completion = []
+    for event in stream_events:
+        if event["type"] == "delta":
+            deltas_before_completion.append(event["text"])
+            if "then more text." in "".join(deltas_before_completion):
+                break
+
+    assert "response.completed" not in consumed
+    assert "".join(deltas_before_completion) == "First [source](https://www.randers.dk/source) then more text."
+    assert "".join(deltas_before_completion + [
+        event["text"] for event in stream_events if event["type"] == "delta"
+    ]) == "First [source](https://www.randers.dk/source) then more text."
+
+
+def test_ai_search_stream_does_not_release_blob_link_before_completion():
+    blob_url = "https://storage.blob.core.windows.net/json/media/meeting.pdf"
+    search_item = SimpleNamespace(type="azure_ai_search_call_output", output={"get_urls": []})
+    events = [
+        SimpleNamespace(type="response.output_item.done", item=search_item),
+        SimpleNamespace(type="response.output_text.delta", delta=f"First [source]({blob_url}) "),
+        SimpleNamespace(type="response.output_text.delta", delta="then more text."),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(output=[search_item])),
+    ]
+    consumed = []
+
+    def stream():
+        for event in events:
+            consumed.append(event.type)
+            yield event
+
+    agent = Agent.__new__(Agent)
+    agent.client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: stream()))
+    agent._resolve_agent_reference = lambda use_alt: {"name": "agent_1", "type": "agent_reference"}
+    agent._prepare_response_input = lambda chat_message, files: [{"role": "user", "content": []}]
+
+    stream_events = agent.stream_chat_response_with_metadata("Hej", [], "conv_blob")
+    first_delta = next(event for event in stream_events if event["type"] == "delta")
+    assert first_delta == {"type": "delta", "text": "First "}
+    assert "response.completed" not in consumed
+    emitted = [first_delta, *stream_events]
+    assert "".join(event["text"] for event in emitted if event["type"] == "delta") == "First source then more text."
+
+
 def test_ai_search_stream_holds_split_blob_links_but_streams_preceding_text(monkeypatch):
     blob_url = "https://storage.blob.core.windows.net/json/media/meeting.pdf"
     public_url = "https://broen.example.org/meetings/agenda.pdf"
