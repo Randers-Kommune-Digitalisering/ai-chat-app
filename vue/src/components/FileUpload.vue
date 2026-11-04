@@ -1,23 +1,74 @@
 <script setup>
 
-    import { ref, onMounted, onUnmounted } from 'vue'
+    import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-    const fileTypesAccepted = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-        'application/msword', // .doc + .dot
-        'text/markdown', // .md
-        'text/x-markdown', // .md (alternative MIME type)
-        'text/plain', // .txt + .text
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-excel' // .xls + .xlsm + .xlt + .xltm
-    ]
+    const showFileUpload = ref(true)
+    const acceptedFileTypesByAssistant = {
+        chat: {
+            '.csv': ['text/csv', 'application/csv'],
+            '.pdf': ['application/pdf'],
+            '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            '.txt': ['text/plain'],
+            '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+            '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            '.xls': ['application/vnd.ms-excel'],
+            '.xlsm': ['application/vnd.ms-excel.sheet.macroenabled.12'],
+            '.xlt': ['application/vnd.ms-excel'],
+            '.xltm': ['application/vnd.ms-excel.template.macroenabled.12']
+        },
+        agent: {
+            '.c': ['text/x-c', 'text/plain'],
+            '.cpp': ['text/x-c++', 'text/plain'],
+            '.css': ['text/css'],
+            '.csv': ['text/csv', 'application/csv'],
+            '.pdf': ['application/pdf'],
+            '.doc': ['application/msword'],
+            '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            '.gif': ['image/gif'],
+            '.go': ['text/x-go', 'text/plain'],
+            '.html': ['text/html'],
+            '.java': ['text/x-java-source', 'text/plain'],
+            '.jpeg': ['image/jpeg'],
+            '.jpg': ['image/jpeg'],
+            '.js': ['text/javascript', 'application/javascript'],
+            '.json': ['application/json'],
+            '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+            '.php': ['application/x-httpd-php', 'text/x-php', 'text/plain'],
+            '.pkl': ['application/octet-stream'],
+            '.png': ['image/png'],
+            '.pptx': ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+            '.py': ['text/x-python', 'text/plain'],
+            '.rb': ['text/x-ruby', 'text/plain'],
+            '.tar': ['application/x-tar'],
+            '.tex': ['application/x-tex', 'text/x-tex', 'text/plain'],
+            '.ts': ['text/typescript', 'application/typescript', 'video/mp2t', 'text/plain'],
+            '.txt': ['text/plain'],
+            '.webp': ['image/webp'],
+            '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            '.xml': ['application/xml', 'text/xml']
+        }
+    }
+    const acceptedFileTypesStringByAssistant = {
+        chat: "PDF, Word, Regneark (.xlsx, .csv)",
+        agent: "PDF, Word, Regneark (.xlsx, .csv), PowerPoint (.pptx), Billeder (.jpg, .png, .gif, .webp)"
+    }
+
     const emit = defineEmits(['remove-file', 'add-file', 'clear-files'])
 
     const props = defineProps({
         files: {
             type: Array,
             required: true
+        },
+        assistantType: {
+            type: String,
+            required: false,
+            default: 'chat'
+        },
+        maxFileSizeBytes: {
+            type: Number,
+            required: false,
+            default: 10 * 1024 * 1024
         },
         showAssistantTogglePadding: {
             type: Boolean,
@@ -29,10 +80,47 @@
     const isOverDropZone = ref(false)
     const filesAwaitingUpload = ref(0)
     const filesTotalToUpload = ref(0)
+    const fileUploadTimeoutMs = 5_000
     const fileDropped = ref(false)
     const fileUploaded = ref(false)
     const fileInputRef = ref(null)
     const fileNotAccepted = ref(false)
+    const uploadErrorMessage = ref('')
+    const activeAcceptedFileTypes = computed(() => {
+        const type = (props.assistantType || 'chat').toLowerCase()
+        return acceptedFileTypesByAssistant[type] || acceptedFileTypesByAssistant.chat
+    })
+    const acceptedFileExtensionsString = computed(() => {
+        const type = (props.assistantType || 'chat').toLowerCase()
+        return acceptedFileTypesStringByAssistant[type] || acceptedFileTypesStringByAssistant.chat
+    })
+    const acceptedFileExtensions = computed(() => Object.keys(activeAcceptedFileTypes.value))
+
+    function showUploadError(message) {
+        uploadErrorMessage.value = message
+        fileNotAccepted.value = true
+        fileDropped.value = true
+        setTimeout(() => {
+            fileDropped.value = false
+        }, 2000)
+        setTimeout(() => {
+            fileNotAccepted.value = false
+            uploadErrorMessage.value = ''
+        }, 3500)
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`
+        if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+        return `${bytes} bytes`
+    }
+
+    function isAcceptedFile(file) {
+        const extensionIndex = file.name.lastIndexOf('.')
+        const extension = extensionIndex >= 0 ? file.name.slice(extensionIndex).toLowerCase() : ''
+        const acceptedMimeTypes = activeAcceptedFileTypes.value[extension]
+        return Boolean(acceptedMimeTypes) && (!file.type || acceptedMimeTypes.includes(file.type))
+    }
 
     function onDrop(e) {
         e.preventDefault()
@@ -57,21 +145,55 @@
     }
 
     async function uploadFiles(files, simulateDrop = true) {
-        const acceptedFiles = files.filter(file => fileTypesAccepted.includes(file.type))
+        const acceptedFiles = files.filter(isAcceptedFile)
+        if (acceptedFiles.length === 0) {
+            console.warn("File type not accepted")
+            showUploadError('Ugyldig filtype')
+            return
+        }
+
+        if (acceptedFiles.some(file => file.size > props.maxFileSizeBytes)) {
+            showUploadError(`Filen må højst fylde ${formatFileSize(props.maxFileSizeBytes)}`)
+            return
+        }
+
         filesAwaitingUpload.value = filesTotalToUpload.value = acceptedFiles.length
         fileDropped.value = true
         if (acceptedFiles.length > 0) {
-
-            // Read all files as base64
-            const filesWithContent = await Promise.all(
-                acceptedFiles.map(async file => ({
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    content: await readFileAsBase64(file),
-                    hover: false
-                }))
-            )
+            let uploadTimeout
+            let filesWithContent
+            try {
+                filesWithContent = await Promise.race([
+                    Promise.all(
+                        acceptedFiles.map(async file => ({
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            content: await readFileAsBase64(file),
+                            hover: false
+                        }))
+                    ),
+                    new Promise((_, reject) => {
+                        uploadTimeout = setTimeout(
+                            () => reject(new Error('File upload timed out')),
+                            fileUploadTimeoutMs
+                        )
+                    })
+                ])
+            } catch (error) {
+                console.error('File upload failed', error)
+                filesAwaitingUpload.value = 0
+                filesTotalToUpload.value = 0
+                fileUploaded.value = false
+                showUploadError(
+                    error instanceof Error && error.message === 'File upload timed out'
+                        ? 'Uploaden tog for lang tid. Prøv igen.'
+                        : 'Filen kunne ikke uploades'
+                )
+                return
+            } finally {
+                clearTimeout(uploadTimeout)
+            }
 
             // Initiate upload animation in input field
             const totalUploadTime = 300 + (filesWithContent.length - 1) * 500
@@ -100,15 +222,8 @@
             }, totalUploadTime + 2000)
 
         } else {
-            console.log("File type not accepted")
-            // Show error notification for 2 seconds
-            fileNotAccepted.value = true
-            setTimeout(() => {
-                fileDropped.value = false
-            }, 2000)
-            setTimeout(() => {
-                fileNotAccepted.value = false
-            }, 2500)
+            console.warn("File type not accepted")
+            showUploadError('Ugyldig filtype')
         }
     }
 
@@ -166,6 +281,10 @@
         }
     }
 
+    function setFileUploadVisibility(isVisible) {
+        showFileUpload.value = isVisible
+    }
+
     onMounted(() => {
         window.addEventListener('dragenter', handleWindowDragEnter)
         window.addEventListener('dragleave', handleWindowDragLeave)
@@ -180,38 +299,54 @@
         window.removeEventListener('dragover', preventWindowDragOver)
         document.body.removeEventListener('drop', preventWindowDrop)
     })
+
+    defineExpose({
+        setFileUploadVisibility
+    })
 </script>
 
 <template>
-    <div :class="['fileUploads', { 'with-assistant-toggle-padding': showAssistantTogglePadding }]" id="file-uploads">
+    <div
+        v-if="showFileUpload"
+        :class="['fileUploads', { 'with-assistant-toggle-padding': showAssistantTogglePadding }]"
+        id="file-uploads"
+    >
         <div
             v-for="(file, index) in files"
             :key="index"
             class="file-upload-item"
-            @click="removeFile(file)"
             @mouseenter="file.hover = true"
             @mouseleave="file.hover = false"
         >
-            <i v-if="!file.hover" class="fa-regular fa-file"></i>
-            <i v-else class="fa-solid fa-trash"></i>
+            <div class="file-icon" 
+            @click="removeFile(file)"
+            aria-label="Fjern denne fil">
+                <i v-if="!file.hover" class="fa-regular fa-file"></i>
+                <i v-else class="fa-solid fa-trash" style="transform:translateX(-0.05rem)"></i>
+                <div class="tooltip">Fjern denne fil</div>
+            </div>
             {{ file.name }} ({{ (file.size / 1024).toFixed(0) }} KB)
         </div>
     </div>
 
     <button
+        v-if="showFileUpload"
         type="button"
         :class="['fileSelectButton', { 'disabled': isDragging || fileDropped }]"
         :disabled="isDragging || fileDropped"
         @click="() => fileInputRef.click()"
+        aria-label="Upload filer"
     >
         <i class="fa-solid fa-plus"></i>
         <div class="tooltip">
-            Upload dokument
+            <span class="tooltip-text">Tilføj fil til samtale</span>
             <i class="fa-regular fa-file"></i>
+            <div class="file-types">{{ acceptedFileExtensionsString}}</div>
         </div>
     </button>
 
     <input
+        v-if="showFileUpload"
         ref="fileInputRef"
         type="file"
         multiple
@@ -221,36 +356,41 @@
             uploadFiles(files, true)
             e.target.value = ''
         }"
-        :accept="fileTypesAccepted.join(', ')"
+        :accept="acceptedFileExtensions.join(',')"
     />
 
     <div
+        v-if="showFileUpload"
         @drop.prevent="onDrop"
         @dragover="handleOverlayDragOver"
         @dragenter="onDropZoneDragEnter"
         @dragleave="onDropZoneDragLeave"
-        :class="['dropZone', { 'dragging': isDragging, 'dropped': fileDropped, 'error': fileNotAccepted }]"
+        :class="['dropZone', {
+            'dragging': isDragging,
+            'dropped': fileDropped,
+            'uploading': fileDropped && !fileUploaded && !fileNotAccepted,
+            'error': fileNotAccepted
+        }]"
         :style="{ pointerEvents: isDragging ? 'auto' : 'none' }"
     ></div>
 
     <div
+        v-if="showFileUpload"
         class="dropOverlay"
         @dragover="handleOverlayDragOver"
         @drop.prevent="onDrop"
         :style="{ pointerEvents: isDragging ? 'auto' : 'none' }"
     >
         <div :class="{ 'over-zone': isOverDropZone }">
-
             <template v-if="isOverDropZone">
-                Slip filen her ...
+                Slip filen nu
             </template>
 
             <template v-else>
-
                 <template v-if="fileDropped && !fileUploaded && !fileNotAccepted">
                     <i class="fa-solid fa-rotate rotate"></i>
                     <span>
-                        Uploader {{ 
+                        Uploader {{
                             filesTotalToUpload > 1 ?
                                 ((filesTotalToUpload - filesAwaitingUpload + 1) + " / " + filesTotalToUpload)
                                 : "filen"
@@ -260,7 +400,7 @@
 
                 <template v-if="fileNotAccepted">
                     <i class="fa-solid fa-circle-exclamation"></i>
-                    <span>Ugyldig filtype</span>
+                    <span>{{ uploadErrorMessage }}</span>
                 </template>
 
                 <template v-if="fileUploaded">
@@ -269,11 +409,9 @@
                 </template>
 
                 <template v-if="!fileUploaded && !fileDropped && !fileNotAccepted">
-                    <span>Træk og slip filen her for at uploade</span>
+                    <span>Træk filen hertil for at tilføje til samtalen</span>
                 </template>
-
             </template>
-
         </div>
     </div>
 </template>
@@ -293,6 +431,8 @@
         border: 0;
         color: var(--color-input-fileselect-button);
         transition: opacity 0.3s, color 0.2s ease;
+        border-top-left-radius: 2rem;
+        border-bottom-left-radius: 2rem;
     }
     .fileSelectButton:hover {
         color: var(--color-input-fileselect-button-hover);
@@ -304,18 +444,32 @@
         opacity: 0;
     }
     .fileSelectButton .tooltip {
-        bottom: 50%;
+        position: absolute;
         left: 2.5rem;
-        background-color: var(--color-input-background);
+        right: auto;
+        width: calc(min(56rem, 100dvw) - 8rem) !important;
+        white-space: normal;
+        bottom: 50%;
+        background-color: transparent;
         font-size: 1em;
         pointer-events: none;
         transform: translateY(50%);
         padding: 0.5rem 0.8rem;
-        color: inherit;
+        color: var(--color-dropzone-yellow) !important;
+        text-align: left;
+    }
+    .tooltip-text {
+        letter-spacing: 0.03rem;
     }
     .fileSelectButton .tooltip i {
         margin-left: 0.4rem;
         font-size: 0.8em;
+    }
+    .file-types {
+        margin-top: 0.3rem;
+        margin-left: 0.05rem;
+        font-size: 0.8em;
+        color: var(--color-text-faded);
     }
 
     .dropZone {
@@ -364,8 +518,8 @@
             color: var(--color-dropzone-text);
             transition: border 0.2s ease, color 0.2s ease, background-color 0.2s ease-in-out;
         }
-        .dropZone.dropped:not(.error) ~ .dropOverlay > div {
-            border: 0.2rem dashed var(--color-dropzone-green-border) !important;
+        .dropZone.dropped:not(.error):not(.uploading) ~ .dropOverlay > div {
+            border: 0.2rem solid var(--color-dropzone-green-border) !important;
             color: var(--color-dropzone-green) !important;
             background-color: var(--color-dropzone-background-active);
         }
@@ -374,10 +528,41 @@
             color: var(--color-dropzone-red) !important;
             background-color: var(--color-dropzone-background-active);
         }
-        .dropZone.dragging ~ .dropOverlay > div.over-zone{
+        .dropZone.dragging ~ .dropOverlay > div.over-zone {
             border: 0.2rem dashed var(--color-dropzone-yellow-border) !important;
             color: var(--color-dropzone-yellow) !important;
             background-color: var(--color-dropzone-background-active);
+        }
+
+        .dropZone.dropped.uploading ~ .dropOverlay > div {
+            color: var(--color-dropzone-yellow) !important;
+            border: 0.2rem solid transparent !important;
+            background:
+                linear-gradient(var(--color-dropzone-background-active), var(--color-dropzone-background-active)) padding-box,
+                conic-gradient(
+                    from var(--drop-border-angle),
+                    transparent 0deg 235deg,
+                    var(--color-dropzone-yellow-border) 255deg,
+                    var(--color-dropzone-yellow) 350deg
+                ) border-box !important;
+            background-origin: border-box !important;
+            background-clip: padding-box, border-box !important;
+            animation: rotate-drop-border 3s linear infinite;
+        }
+
+        @property --drop-border-angle {
+            syntax: "<angle>";
+            inherits: false;
+            initial-value: 0deg;
+        }
+        @keyframes rotate-drop-border {
+            to { --drop-border-angle: 360deg; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .dropZone.dropped.uploading ~ .dropOverlay > div {
+                animation: none;
+            }
         }
 
         .rotate {
@@ -403,37 +588,36 @@
         display: flex;
         flex-direction: row;
         flex-wrap: wrap-reverse;
-        gap: 0.8rem;
+        gap: 0.6rem;
     }
     .user-input-container.landing-page .fileUploads {
         padding-top: 0;
         top: auto;
         bottom: 0;
-        transform: translateY(100%);
-        padding-bottom: 0;
+        transform: translateY(calc(100% - 1rem)); 
         flex-wrap: wrap;
     }
     .fileUploads.with-assistant-toggle-padding {
         padding-right: 13rem;
         width: auto;
     }
-    .fileUploads div {
-        background-color: var(--color-options-background-hover);
-        border-radius: 0.5rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
-        color: var(--color-text-primary);
-        user-select: none;
-        transition: background-color 0.3s, color 0.2s;
+    .file-upload-item:has(.file-icon) {
+        padding-left: 0.2rem !important;
     }
-    .fileUploads div i {
-        width: 0.6rem;
-        margin-right: 0.4rem;
-        font-size: 0.8em;
-    }
-    .fileUploads div:hover {
+    .file-upload-item:has(.file-icon:hover) {
         color: var(--color-dropzone-red);
-        background-color: var(--color-input-background-focus);
-        cursor: pointer;
     }
+    .file-icon {
+        cursor: pointer;
+        padding-left: 0.6rem;
+        padding-right: 0.6rem;
+        border-right: 0.05rem solid var(--color-toolbar-border);
+    }
+    .file-icon .tooltip {
+        bottom: -1rem;
+        left: 0.5rem;
+    }
+    /* .file-icon:hover {
+        color: var(--color-dropzone-red);
+    } */
 </style>

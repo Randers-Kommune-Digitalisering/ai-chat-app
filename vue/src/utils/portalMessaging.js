@@ -47,7 +47,7 @@ export function isPortalDebugEnabled() {
 export function portalDebugLog(...args) {
 	if (!isPortalDebugEnabled()) return;
 	// Prefix helps distinguish iframe logs from parent logs
-	console.log('[ai-chat app]', ...args);
+	console.debug('[ai-chat app]', ...args);
 }
 
 function tryDeriveOriginFromReferrer() {

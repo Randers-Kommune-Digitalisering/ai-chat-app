@@ -73,6 +73,7 @@ coverage
 *.sln
 *.sw?
 .env*
+!.env.example
 
 # virtualenv
 .venv

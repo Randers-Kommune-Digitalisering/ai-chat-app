@@ -25,7 +25,7 @@ def metrics_base_labels() -> dict:
     }
 
 
-# App metrics
+# App usage metrics
 chat_messages_counter = Counter(
     'chat_messages_total',
     'Number of user messages received by the backend',
@@ -42,6 +42,25 @@ chat_feedback_counter = Counter(
 chat_conversations_counter = Counter(
     'chat_conversations_total',
     'Number of conversations started (created) in the backend',
+    labelnames=['app', 'deployment', 'instance', 'mode'],
+)
+
+# App debug metrics
+title_generation_saturation_counter = Counter(
+    'title_generation_saturation_total',
+    'Number of times title generation was skipped due to concurrency saturation',
+    labelnames=['app', 'deployment', 'instance', 'mode'],
+)
+
+title_generation_timeout_counter = Counter(
+    'title_generation_timeout_total',
+    'Number of title generation waits that timed out',
+    labelnames=['app', 'deployment', 'instance', 'mode'],
+)
+
+title_generation_inflight_gauge = Gauge(
+    'title_generation_inflight',
+    'Number of in-flight title generation jobs',
     labelnames=['app', 'deployment', 'instance', 'mode'],
 )
 

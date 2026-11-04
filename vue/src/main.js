@@ -11,12 +11,18 @@ try {
 		window?.localStorage?.getItem('portalDebug') === '1';
 
 	if (debugEnabled) {
-		console.log('[ai-chat iframe] DEBUG: Bootstrap', {
+		console.debug('[ai-chat iframe] DEBUG: Bootstrap', {
 			origin: window.location.origin,
 			href: window.location.href
 		});
 		window.addEventListener('message', (e) => {
-			console.log('[ai-chat chat] DEBUG: Raw message received', {
+			// Ignore cross-extension window chatter (e.g. Selenium IDE) and only
+			// log likely portal traffic from the direct parent frame.
+			if (window.parent && window.parent !== window && e.source !== window.parent) return;
+			if (!e.data || typeof e.data !== 'object') return;
+			if (e.data.type === 'SELENIUM_IDE_CS_MSG') return;
+
+			console.debug('[ai-chat main] DEBUG: Raw message received', {
 				origin: e.origin,
 				data: e.data
 			});
@@ -28,10 +34,26 @@ try {
 
 // createApp(App).mount('#app')
 
+const DEFAULT_CONFIG = {
+	conversationLoadCutoffDate: '2026-09-15T00:00:00'
+};
+
 async function fetchConfig() {
-	const res = await fetch('/api/config');
-	if (!res.ok) return {};
-	return await res.json();
+	try {
+		const res = await fetch('/api/config');
+		if (!res.ok) {
+			console.error('[ai-chat main] Failed to fetch /api/config', { status: res.status });
+			return { ...DEFAULT_CONFIG };
+		}
+		const config = await res.json();
+		return {
+			...DEFAULT_CONFIG,
+			...(config || {})
+		};
+	} catch (error) {
+		console.error('[ai-chat main] Error fetching /api/config', error);
+		return { ...DEFAULT_CONFIG };
+	}
 }
 
 fetchConfig().then(config => {
