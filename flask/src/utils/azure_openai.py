@@ -406,11 +406,14 @@ def _safe_stream_prefix_length(text: str) -> int:
             after_bracket = text[end + 1:]
             if not after_bracket or after_bracket == "(":
                 safe_end = min(safe_end, match.start())
-            elif after_bracket.startswith("(") and (
-                after_bracket[1:].lower().startswith(("http://", "https://"))
-                or any(scheme.startswith(after_bracket[1:].lower()) for scheme in ("http://", "https://"))
-            ):
-                safe_end = min(safe_end, match.start())
+            elif after_bracket.startswith("("):
+                target = after_bracket[1:]
+                if target.lower().startswith(("http://", "https://")):
+                    closing_bracket = target.find(")")
+                    if closing_bracket == -1 or _is_azure_blob_url(target[:closing_bracket]):
+                        safe_end = min(safe_end, match.start())
+                elif any(scheme.startswith(target.lower()) for scheme in ("http://", "https://")):
+                    safe_end = min(safe_end, match.start())
 
     for match in re.finditer(r"https?://[^\s<>\])\"']*", text, re.IGNORECASE):
         if match.end() == len(text) or _is_azure_blob_url(match.group()):
